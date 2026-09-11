@@ -82,8 +82,7 @@ needed. Run it from the **Actions** tab (`Release` → **Run workflow**) and pic
 - **version** — base semver, e.g. `0.2.0`.
 
 It builds on a `macos-26` runner with Xcode 26 and publishes a GitHub Release tagged
-`v<full-version>` with a versioned DMG and zip asset, marked prerelease for beta. On success it also
-bumps the matching cask in the tap and announces the release on Discord.
+`v<full-version>` with a versioned DMG and zip asset, marked prerelease for beta.
 
 A stable run then fans out to a second job, `universal`, which rebuilds the same commit with
 `ARCHS="arm64 x86_64"` and attaches `Tinycast-Universal-<version>.dmg` / `.zip` to the release the
@@ -120,19 +119,6 @@ Two details the script exists for:
 
 The Discord announcement carries the same changelog, truncated to fit Discord's component limit, and
 pings `@everyone`.
-
-### Homebrew tap automation
-
-Each job's final step rewrites the `version` + `sha256` of its cask (`tinycast`, `tinycast@beta` or
-`tinycast-universal`) in the [`homebrew-tinycast`](https://github.com/abue-ammar/homebrew-tinycast) tap
-and pushes. It needs a `HOMEBREW_TAP_TOKEN` repo secret — a fine-grained PAT with **Contents:
-read/write** on the tap repo. Without the secret the step logs a warning and skips; the release still
-publishes. The `sed` is anchored to `^  version` / `^  sha256`, so a cask's two-space indent on those
-lines is load-bearing.
-
-The three macOS 26 / macOS 15 casks all install `Tinycast.app` under `com.tinycast.app`, so they
-`conflicts_with` one another and Homebrew routes each Mac by `depends_on`: `tinycast` requires
-`arch: :arm64`, `tinycast-universal` takes the Intel Macs, and `tinycast-sequoia` covers macOS 15.
 
 ## Website
 
