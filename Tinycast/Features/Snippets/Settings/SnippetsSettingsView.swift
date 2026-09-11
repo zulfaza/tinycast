@@ -41,7 +41,7 @@ struct SnippetsSettingsView: View {
             }
 
             Group {
-                shortcuts
+                FeatureCommandsSection(owner: .snippets, anchor: .snippetsCommands)
                 library
                 libraryNotices
             }
@@ -58,18 +58,6 @@ struct SnippetsSettingsView: View {
                     delete(record)
                 },
                 secondaryButton: .cancel())
-        }
-    }
-
-    private var shortcuts: some View {
-        Section {
-            SettingsRow(title: "Search Snippets", anchor: .snippetsGlobalShortcut) {
-                ShortcutRecorder(action: .command(.searchSnippets))
-            }
-        } header: {
-            SettingsSectionHeader(.snippetsGlobalShortcut)
-        } footer: {
-            Text("Opens the snippets browser, whatever app you are in.")
         }
     }
 
