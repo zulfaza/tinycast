@@ -28,15 +28,10 @@ zip is produced with `ditto -c -k --keepParent --sequesterRsrc` — the only zip
 signature verifiable, which matters because the updater refuses any bundle whose leaf certificate does
 not match the running app's.
 
-A stable release publishes two more from the `universal` job, `Tinycast-Universal-<version>.dmg` and
-`.zip`, built from the same commit at the same version and bundle id but with both slices. They are
-uploaded *after* the thin pair, which keeps the thin zip first in the asset list so builds predating
-architecture-aware selection keep choosing it.
-
 Three things a release must keep true, or the updater skips it:
 
 - **It carries a `.zip` asset this Mac can run.** A DMG-only release is not installable and is not
-  offered, and an Intel build is offered nothing rather than a thin arm64 zip.
+  offered.
 - **The tag parses as `vMAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH-beta.N`,** and agrees with the
   `prerelease` flag. `v0.9.7-sequoia` deliberately parses as neither, which is what keeps beta
   installs off the macOS 15 build.
