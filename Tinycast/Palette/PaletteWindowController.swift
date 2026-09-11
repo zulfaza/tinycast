@@ -199,7 +199,7 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
     /// Not for one of our own dialogs: hiding would tear down a command mid-`confirmAlert`.
     func windowDidResignKey(_ notification: Notification) {
         guard isVisible, !core.isShowingDialog else { return }
-        core.paletteCoordinator.hidePalette(restoreFocus: false)
+        core.paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
     }
 
     /// Re-bump a turn later: on the first show a synchronous bump lands before `onChange`.

@@ -522,6 +522,12 @@ private struct CommandRows: View {
         ).entryID
     }
 
+    private var entry: AppEntry {
+        AppEntry(
+            id: entryID, name: command.title, url: installed.directory, bundleID: nil,
+            kind: .extensionCommand)
+    }
+
     // Hidden or unpublished commands never reach rank, so typing here would match nothing.
     private var aliasReachesRanker: Bool {
         settings.extensionsShowInLauncher && !visibility.hiddenItemKeys.contains(entryID)
@@ -538,6 +544,10 @@ private struct CommandRows: View {
                     // Per command, not per extension: a shortcut has to land on one thing to run.
                     ShortcutRecorder(action: .extensionCommand(entryID: entryID))
                 }
+                Toggle("", isOn: visibilityBinding)
+                    .labelsHidden()
+                    .toggleStyle(.checkbox)
+                    .accessibilityLabel("Show \(command.title) in launcher")
             }
         }
         // Indented under its command: at the same inset the association is reading order.
@@ -553,6 +563,12 @@ private struct CommandRows: View {
                 extensionName: installed.manifest.name, command: command, schedule: schedule,
                 indent: Theme.Spacing.lg)
         }
+    }
+
+    private var visibilityBinding: Binding<Bool> {
+        Binding(
+            get: { visibility.isItemVisible(entry) },
+            set: { visibility.setItemVisible($0, for: entry) })
     }
 }
 

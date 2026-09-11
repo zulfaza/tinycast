@@ -82,7 +82,14 @@ final class PaletteCoordinator {
 
     func hidePalette(restoreFocus: Bool = true) {
         fileSearch.cancel()
+        palette.query = ""
         windowController.hide(restoreFocus: restoreFocus)
+    }
+
+    /// Feature actions finish at the launcher, even when Pop to Root Search is delayed.
+    func hidePaletteToRoot(restoreFocus: Bool = true) {
+        hidePalette(restoreFocus: restoreFocus)
+        windowController.popToRootNow()
     }
 
     /// Reset to the root search now rather than after the Pop to Root Search delay.

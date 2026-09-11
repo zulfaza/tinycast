@@ -17,6 +17,10 @@ final class PalettePanel: NSPanel {
     var onFieldEditorFocused: ((NSTextInputContext) -> Void)?
     /// Inline argument fields use arrows at their text boundaries to continue their focus ring.
     var onHeaderFieldBoundaryArrow: ((HeaderFieldBoundary) -> Bool)?
+    /// The field editor can consume Tab before SwiftUI sees it, so the palette routes it here.
+    var onTab: ((Bool) -> Bool)?
+    /// Focused option controls need arrows before the palette's row navigation sees them.
+    var onHeaderOptionArrow: ((Int) -> Bool)?
     /// Arms hover from `sendEvent`, the one place both event streams pass through.
     weak var paletteState: PaletteState? {
         didSet {
@@ -179,6 +183,19 @@ final class PalettePanel: NSPanel {
             onHeaderFieldBoundaryArrow?(boundary) == true
         {
             return
+        }
+        if event.type == .keyDown, Int(event.keyCode) == kVK_Tab {
+            let backwards = event.modifierFlags.contains(.shift)
+            if onTab?(backwards) == true { return }
+        }
+        if event.type == .keyDown {
+            switch Int(event.keyCode) {
+            case kVK_UpArrow where event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]):
+                if onHeaderOptionArrow?(-1) == true { return }
+            case kVK_DownArrow where event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]):
+                if onHeaderOptionArrow?(1) == true { return }
+            default: break
+            }
         }
         // The controller owns the chords the field editor or a missing main menu would eat.
         if event.type == .keyDown,

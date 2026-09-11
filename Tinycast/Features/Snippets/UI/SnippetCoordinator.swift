@@ -113,7 +113,7 @@ final class SnippetCoordinator {
     }
 
     func showSnippetInFinder(_ record: StoredSnippet) {
-        paletteCoordinator.hidePalette(restoreFocus: false)
+        paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
         AppLauncher.showInFinder(record.fileURL)
     }
 
@@ -154,10 +154,16 @@ final class SnippetCoordinator {
     }
 
     /// The browser's ↵. The target has to be read before the panel hides, as the launcher's does.
-    func expandSnippetFromPalette(id: StoredSnippet.ID) {
+    func expandSnippetFromPalette(
+        id: StoredSnippet.ID, userArguments: [String: String] = [:]
+    ) {
         let target = windowController.previousApp
-        paletteCoordinator.hidePalette(restoreFocus: false)
-        expandSnippet(id: id, targetApp: target)
+        paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
+        expandSnippet(id: id, targetApp: target, userArguments: userArguments)
+    }
+
+    func promptedArguments(for record: StoredSnippet) -> [SnippetTemplateEngine.MissingArgument] {
+        SnippetTemplateEngine.declaredArguments(in: record, snippets: store.snippets)
     }
 
     func expandSnippet(
@@ -165,7 +171,8 @@ final class SnippetCoordinator {
         targetApp: NSRunningApplication?,
         expectedKeyword: String? = nil,
         keywordLength: Int = 0,
-        automaticGeneration: UInt? = nil
+        automaticGeneration: UInt? = nil,
+        userArguments: [String: String] = [:]
     ) {
         let records = store.snippets
         guard let record = records.first(where: { $0.id == id }) else {
@@ -184,8 +191,7 @@ final class SnippetCoordinator {
             clipboardHistory: clipboardHistoryForExpansion())
         let result = SnippetTemplateEngine.expand(
             record,
-            snippets: records,
-            context: context)
+            snippets: records, context: context, userArguments: userArguments)
         if !result.missingArguments.isEmpty {
             promptSnippetArguments(
                 record: record,
@@ -195,8 +201,8 @@ final class SnippetCoordinator {
                 targetApp: targetApp,
                 expectedKeyword: expectedKeyword,
                 keywordLength: keywordLength,
-                automaticGeneration: automaticGeneration,
-                confirmation: confirmation)
+                automaticGeneration: automaticGeneration, confirmation: confirmation,
+                userArguments: userArguments)
             return
         }
         completeSnippetExpansion(
@@ -218,7 +224,8 @@ final class SnippetCoordinator {
         expectedKeyword: String?,
         keywordLength: Int,
         automaticGeneration: UInt?,
-        confirmation: String?
+        confirmation: String?,
+        userArguments: [String: String]
     ) {
         guard
             let arguments = SnippetArgumentsPrompt.run(
@@ -232,10 +239,8 @@ final class SnippetCoordinator {
         }
 
         let result = SnippetTemplateEngine.expand(
-            record,
-            snippets: records,
-            context: context,
-            userArguments: arguments)
+            record, snippets: records, context: context,
+            userArguments: userArguments.merging(arguments) { _, prompted in prompted })
         completeSnippetExpansion(
             result,
             recordID: record.id,

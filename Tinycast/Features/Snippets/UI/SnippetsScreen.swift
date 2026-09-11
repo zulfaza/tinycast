@@ -6,6 +6,7 @@ struct SnippetsScreen: PaletteScreen {
     let core: AppCore
     let vm: PaletteState
     let openActions: () -> Void
+    let openArgumentOptions: (String) -> Void
 
     /// A disabled snippet is off everywhere, so the browser lists exactly what the launcher does.
     var rows: [StoredSnippet] {
@@ -44,10 +45,22 @@ struct SnippetsScreen: PaletteScreen {
 
     func activate(at selection: Int) {
         guard let record = record(at: selection) else { return }
-        core.snippetCoordinator.expandSnippetFromPalette(id: record.id)
+        core.snippetCoordinator.expandSnippetFromPalette(
+            id: record.id,
+            userArguments: SnippetArgumentsAccessory.values(
+                for: record, coordinator: core.snippetCoordinator, vm: vm))
     }
 
     func secondary(at selection: Int) -> Bool { false }
+
+    func headerAccessory(
+        at selection: Int, focus: FocusState<String?>.Binding
+    ) -> PaletteHeaderAccessory? {
+        SnippetArgumentsAccessory.make(
+            snippet: record(at: selection), coordinator: core.snippetCoordinator, vm: vm,
+            focus: focus, onOpenOptions: openArgumentOptions,
+            onSubmit: { activate(at: selection) })
+    }
 
     func body(selection: Int, scroll: ScrollIntent) -> AnyView {
         AnyView(content(selection: selection, scroll: scroll))
@@ -97,11 +110,11 @@ enum SnippetActionsMenu {
                     core.snippetCoordinator.expandSnippetFromPalette(id: record.id)
                 },
                 PopoverMenuItem(title: "Edit Snippet", systemImage: "pencil", startsSection: true) {
-                    core.paletteCoordinator.hidePalette(restoreFocus: false)
+                    core.paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
                     core.snippetCoordinator.editSnippet(record)
                 },
                 PopoverMenuItem(title: "Create Snippet", systemImage: "plus") {
-                    core.paletteCoordinator.hidePalette(restoreFocus: false)
+                    core.paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
                     core.snippetCoordinator.editSnippet(nil)
                 },
                 PopoverMenuItem(title: "Show in Finder", systemImage: "folder", startsSection: true) {

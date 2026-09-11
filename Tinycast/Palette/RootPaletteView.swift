@@ -64,7 +64,8 @@ struct RootPaletteView: View {
                 openArgumentOptions: openArgumentOptions)
         case .snippets:
             return SnippetsScreen(
-                store: snippets, core: core, vm: vm, openActions: openActions)
+                store: snippets, core: core, vm: vm, openActions: openActions,
+                openArgumentOptions: openArgumentOptions)
         case .emoji:
             return EmojiScreen(
                 index: emojiIndex, frequent: frequentEmoji, core: core, vm: vm,
@@ -347,9 +348,11 @@ struct RootPaletteView: View {
             }
             // The hosted tree is its own hierarchy, so the highlight has to be pushed into it.
             .onChange(of: menuSelection) { syncMenuPanel(presenting: false) }
-            .onDisappear {
-                menuPanel.hide()
-                (hostWindow as? PalettePanel)?.onHeaderFieldBoundaryArrow = nil
+        .onDisappear {
+            menuPanel.hide()
+            (hostWindow as? PalettePanel)?.onHeaderFieldBoundaryArrow = nil
+            (hostWindow as? PalettePanel)?.onTab = nil
+            (hostWindow as? PalettePanel)?.onHeaderOptionArrow = nil
             }
             .onAppear { searchFocused = !screen.hidesSearchField }
             .modifier(SearchFieldHiding(hidden: hidesSearchField, apply: applySearchFieldHiding))
@@ -365,6 +368,7 @@ struct RootPaletteView: View {
         content
             // Repeat included: holding the key keeps stepping, as the bare-key form does.
             .onKeyPress(keys: [.downArrow], phases: [.down, .repeat]) { press in
+                if changeFocusedOption(by: 1) { return .handled }
                 if let reorder = moveFavorite(1, modifiers: press.modifiers) { return reorder }
                 // A control's own list owns every navigation key while it is up.
                 if vm.isControlListOpen { return .ignored }
@@ -381,6 +385,7 @@ struct RootPaletteView: View {
                 return moveVertically(1)
             }
             .onKeyPress(keys: [.upArrow], phases: [.down, .repeat]) { press in
+                if changeFocusedOption(by: -1) { return .handled }
                 if let reorder = moveFavorite(-1, modifiers: press.modifiers) { return reorder }
                 if vm.isControlListOpen { return .ignored }
                 if isCollapsed { return .ignored }
@@ -415,7 +420,9 @@ struct RootPaletteView: View {
                     guard !vm.isComposing else { return .ignored }
                     // The fallback for a hidden-field screen with no control focused to answer.
                     let answersWithoutFocus = screen.hidesSearchField && screen.rows.isEmpty
-                    guard searchFocused || answersWithoutFocus else { return .ignored }
+                    guard searchFocused || argumentFocused != nil || answersWithoutFocus else {
+                        return .ignored
+                    }
                     activateSelection()
                     return .handled
                 }
@@ -1101,6 +1108,13 @@ struct RootPaletteView: View {
         searchFocused = next == nil
     }
 
+    private func changeFocusedOption(by step: Int) -> Bool {
+        guard !menuOpen, !vm.isControlListOpen, !isCollapsed,
+            let field = argumentFocused, let accessory = headerAccessory
+        else { return false }
+        return accessory.changeOption(field, step)
+    }
+
     /// Right at an inline field's end and Left at its start continue the same ring as Tab.
     private func installHeaderArrowHandler(in window: NSWindow?) {
         guard let panel = window as? PalettePanel else { return }
@@ -1117,6 +1131,17 @@ struct RootPaletteView: View {
                 advanceTabFocus(backwards: false)
             }
             return true
+        }
+        panel.onTab = { backwards in
+            guard !menuOpen, !vm.isControlListOpen, !isCollapsed else { return false }
+            advanceTabFocus(backwards: backwards)
+            return true
+        }
+        panel.onHeaderOptionArrow = { step in
+            guard !menuOpen, !vm.isControlListOpen, !isCollapsed,
+                let field = argumentFocused, let accessory = headerAccessory
+            else { return false }
+            return accessory.changeOption(field, step)
         }
     }
 

@@ -66,6 +66,13 @@ enum SnippetTemplateEngine {
     struct MissingArgument: Sendable, Equatable {
         let name: String
         let options: [String]
+        let defaultValue: String?
+
+        init(name: String, options: [String], defaultValue: String? = nil) {
+            self.name = name
+            self.options = options
+            self.defaultValue = defaultValue
+        }
     }
 
     struct ExpansionResult: Sendable, Equatable {
@@ -131,6 +138,41 @@ enum SnippetTemplateEngine {
             else { continue }
             declared.append(MissingArgument(name: token.name, options: token.options))
         }
+        return declared
+    }
+
+    /// The arguments a snippet exposes, including references, without evaluating its values.
+    static func declaredArguments(
+        in record: StoredSnippet, snippets: [StoredSnippet]
+    ) -> [MissingArgument] {
+        var declared: [MissingArgument] = []
+        var seenNames = Set<String>()
+        let orderedSnippets = snippets.sorted { $0.id < $1.id }
+
+        func collect(_ text: String, depth: Int, visitedIDs: Set<StoredSnippet.ID>) {
+            guard depth <= maximumReferenceDepth else { return }
+            for segment in parseSegments(text) {
+                switch segment {
+                case .argument(let token, _, _):
+                    guard seenNames.insert(token.name).inserted else {
+                        continue
+                    }
+                    declared.append(MissingArgument(
+                        name: token.name, options: token.options, defaultValue: token.defaultValue))
+                case .snippetReference(let key, _):
+                    guard let target = resolveReference(key, snippets: orderedSnippets),
+                        !visitedIDs.contains(target.id)
+                    else { continue }
+                    var nextVisited = visitedIDs
+                    nextVisited.insert(target.id)
+                    collect(target.snippet.text, depth: depth + 1, visitedIDs: nextVisited)
+                default:
+                    continue
+                }
+            }
+        }
+
+        collect(record.snippet.text, depth: 0, visitedIDs: [record.id])
         return declared
     }
 
