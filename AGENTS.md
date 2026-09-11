@@ -118,6 +118,16 @@ feature's doc, under its own `## Invariants`.
 - **XcodeGen owns the project.** `Tinycast.xcodeproj` is committed but generated from `project.yml`;
   after editing it, run `xcodegen generate` and commit both. No SwiftPM, and never `Bundle.module`.
 
+## Testing
+
+- **New test files are opt-in.** Do not create unit, integration, end-to-end, or spec files, or new
+  test-only helpers/fixtures, unless the user explicitly requests their creation or approves it first.
+  A request to implement, fix, test, or verify something does not by itself authorize new test files.
+  Assume no by default; ask only when creating them has a concrete benefit, not as a routine step.
+- **Prefer running existing tests and direct browser/runtime checks without adding test files.** Where
+  test changes are in scope, exercise observable behavior rather than asserting source-code strings,
+  implementation shapes, or that tests exist.
+
 ## Before you finish
 
 Each item is explained in [testing.md](docs/testing.md#definition-of-done).
