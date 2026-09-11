@@ -1,6 +1,6 @@
 import AppKit
 
-/// Owns the snippet flow: listener, browser, editor handoff, delivery, presence.
+/// Owns the snippet flow: listener, browser, editor, delivery, presence.
 @MainActor
 final class SnippetCoordinator {
     private let store: SnippetsStore
@@ -11,10 +11,10 @@ final class SnippetCoordinator {
     private let settings: AppSettings
     private let windowController: PaletteWindowController
     private let paletteCoordinator: PaletteCoordinator
-    private let settingsCoordinator: SettingsCoordinator
+    private let snippetWindowController: SnippetWindowController
     /// Routed out so `MessageHUDController` stays owned by `AppCore`.
     private let showMessage: @MainActor (String) -> Void
-    /// The consent dialog and the `pendingSnippetEdit` handoff to the Settings pane.
+    /// The consent dialog and the editor panel are coordinated here.
     private unowned let core: AppCore
 
     init(
@@ -26,7 +26,7 @@ final class SnippetCoordinator {
         settings: AppSettings,
         windowController: PaletteWindowController,
         paletteCoordinator: PaletteCoordinator,
-        settingsCoordinator: SettingsCoordinator,
+        snippetWindowController: SnippetWindowController,
         showMessage: @escaping @MainActor (String) -> Void,
         core: AppCore
     ) {
@@ -38,7 +38,7 @@ final class SnippetCoordinator {
         self.settings = settings
         self.windowController = windowController
         self.paletteCoordinator = paletteCoordinator
-        self.settingsCoordinator = settingsCoordinator
+        self.snippetWindowController = snippetWindowController
         self.showMessage = showMessage
         self.core = core
     }
@@ -106,10 +106,9 @@ final class SnippetCoordinator {
         paletteCoordinator.togglePalette(mode: .snippets)
     }
 
-    /// Opens the Snippets pane with the editor showing `record`; nil is a new snippet.
+    /// Opens the standalone snippet editor showing `record`; nil is a new snippet.
     func editSnippet(_ record: StoredSnippet?) {
-        core.pendingSnippetEdit = SnippetEditRequest(record: record)
-        settingsCoordinator.showSettings(tab: .snippets)
+        snippetWindowController.show(record: record)
     }
 
     func showSnippetInFinder(_ record: StoredSnippet) {

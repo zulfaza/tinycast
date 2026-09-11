@@ -23,6 +23,7 @@ struct SnippetMarkdownSerializer {
         }
 
         var name: String?
+        var iconSymbol: String?
         var keyword: String?
         var isEnabled = true
         var showsConfirmation = false
@@ -51,6 +52,10 @@ struct SnippetMarkdownSerializer {
                 let decoded = try decodeScalar(rawValue, fileURL: fileURL, line: lineNumber)
                 // A blank name reads as absent, so the filename fallback still yields a label.
                 name = decoded.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : decoded
+            case "icon":
+                let decoded = try decodeScalar(rawValue, fileURL: fileURL, line: lineNumber)
+                iconSymbol = decoded.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? nil : decoded
             case "keyword":
                 keyword = try decodeScalar(rawValue, fileURL: fileURL, line: lineNumber)
             case "enabled":
@@ -65,6 +70,7 @@ struct SnippetMarkdownSerializer {
         let bodyStart = lines[closingIndex].endIncludingTerminator
         return Snippet(
             name: name ?? defaultName(for: fileURL),
+            iconSymbol: iconSymbol,
             text: String(content[bodyStart...]),
             keyword: keyword,
             isEnabled: isEnabled,
@@ -77,6 +83,9 @@ struct SnippetMarkdownSerializer {
             "---",
             "name: \(encodeScalar(snippet.name))"
         ]
+        if let iconSymbol = snippet.iconSymbol {
+            lines.append("icon: \(encodeScalar(iconSymbol))")
+        }
         if let keyword = snippet.keyword {
             lines.append("keyword: \(encodeScalar(keyword))")
         }
@@ -131,7 +140,7 @@ struct SnippetMarkdownSerializer {
     private static func canonicalKey(for rawKey: String) -> String? {
         let key = rawKey.lowercased()
         switch key {
-        case "name", "keyword", "enabled", "show_confirmation":
+        case "name", "icon", "keyword", "enabled", "show_confirmation":
             return key
         default:
             return nil

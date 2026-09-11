@@ -188,6 +188,9 @@ enum Theme {
         static let formLabelWidth: CGFloat = 110
         /// The multi-line box inside those modals; it scrolls rather than grows the sheet.
         static let editorTextHeight: CGFloat = 120
+        /// The larger template surface in the standalone Snippets editor.
+        static let snippetEditorTextHeight: CGFloat = 300
+        static let snippetControlHeight: CGFloat = 34
         /// The argument prompt's field column, kept under the alert's natural width.
         static let argumentPromptWidth: CGFloat = 220
         /// The confirmation HUD's width ceiling, and its distance above the screen bottom.
@@ -365,6 +368,9 @@ enum Theme {
         static let progress = Color.blue
         /// The command output window's page: a flat surface the log sits directly on.
         static let terminalSurface = adaptive(
+            dark: .srgbInk(0.07, alpha: 1), light: .srgbInk(0.99, alpha: 1))
+        /// The snippet editor must hide the surface behind its borderless floating panel.
+        static let snippetSurface = adaptive(
             dark: .srgbInk(0.07, alpha: 1), light: .srgbInk(0.99, alpha: 1))
     }
 }

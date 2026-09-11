@@ -88,9 +88,8 @@ private struct SnippetRow: View {
                 .fill(Theme.Colors.controlSurface)
                 .frame(width: Theme.Size.rowIcon, height: Theme.Size.rowIcon)
                 .overlay(
-                    Image(systemName: "curlybraces")
-                        .font(.system(size: 12))
-                        .symbolRenderingMode(.hierarchical)
+                    SnippetIconGlyph(
+                        value: record.snippet.iconSymbol ?? "curlybraces", size: 12)
                         .foregroundStyle(.secondary))
             Text(record.snippet.name)
                 .font(Theme.Typography.rowTitle)

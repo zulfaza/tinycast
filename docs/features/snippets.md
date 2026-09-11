@@ -75,6 +75,7 @@ Canonical output uses this order:
 ```markdown
 ---
 name: "Meeting Notes"
+icon: "note.text"
 keyword: "!notes"
 enabled: true
 show_confirmation: false
@@ -83,8 +84,9 @@ show_confirmation: false
 Template body
 ```
 
-`name` is optional when reading and defaults from the filename, and `keyword` is optional. `enabled`
-defaults to `true`; `show_confirmation` defaults to `false`.
+`name` is optional when reading and defaults from the filename, and `icon` and `keyword` are optional.
+`icon` stores an SF Symbol name and defaults to `curlybraces`; `enabled` defaults to `true`;
+`show_confirmation` defaults to `false`.
 
 String values must use double quotes. The codec escapes and decodes `\\`, `\"`, `\n`, `\r`, and
 `\t`; unsupported escapes, unquoted strings, duplicate or unknown keys, non-exact delimiters, and

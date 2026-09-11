@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SnippetsSettingsView: View {
@@ -48,10 +49,6 @@ struct SnippetsSettingsView: View {
         }
         .formStyle(.grouped)
         .settingsScrollTarget(.snippets)
-        // Presented from the pane, so the browser's Edit and Create rows can open it too.
-        .sheet(item: $core.pendingSnippetEdit) { request in
-            SnippetEditorSheet(record: request.record)
-        }
         .alert(item: $pendingDeletion) { record in
             Alert(
                 title: Text("Delete “\(record.snippet.name)”?"),
@@ -123,8 +120,8 @@ struct SnippetsSettingsView: View {
                 retryHint: "Reloads snippet files after you fix them on disk.")
         }
 
-        // The editor reports its own failures, so this covers the ones with no sheet behind.
-        if core.pendingSnippetEdit == nil, let operationError = snippetsStore.operationError {
+        // Keep library failures visible while the standalone editor is closed.
+        if let operationError = snippetsStore.operationError {
             noticeSection(
                 "The snippet operation failed", operationError, tint: .red, retryHint: nil)
         }
@@ -174,12 +171,6 @@ struct SnippetsSettingsView: View {
     }
 }
 
-struct SnippetEditRequest: Identifiable {
-    let id = UUID()
-    /// nil for a snippet that has no file yet.
-    let record: StoredSnippet?
-}
-
 private struct SnippetSettingsRow: View {
     let record: StoredSnippet
     let onEdit: () -> Void
@@ -215,14 +206,17 @@ private struct SnippetSettingsRow: View {
     }
 }
 
-private struct SnippetEditorSheet: View {
+struct SnippetEditorView: View {
     /// nil while adding; otherwise the record whose file (and revision) the save targets.
     let record: StoredSnippet?
 
-    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
     @Environment(SnippetsStore.self) private var store
     @FocusState private var isTemplateFocused: Bool
+    @State private var showingIconPicker = false
+    @State private var isIconHovered = false
     @State private var name: String
+    @State private var iconSymbol: String?
     @State private var keyword: String
     @State private var text: String
     @State private var selection: TextSelection?
@@ -231,10 +225,12 @@ private struct SnippetEditorSheet: View {
     @State private var errorMessage: String?
     @State private var isSaving = false
 
-    init(record: StoredSnippet?) {
+    init(record: StoredSnippet?, onDismiss: @escaping () -> Void) {
         self.record = record
+        self.onDismiss = onDismiss
         let snippet = record?.snippet
         _name = State(initialValue: snippet?.name ?? "")
+        _iconSymbol = State(initialValue: snippet?.iconSymbol)
         _keyword = State(initialValue: snippet?.keyword ?? "")
         _text = State(initialValue: snippet?.text ?? "")
         _isEnabled = State(initialValue: snippet?.isEnabled ?? true)
@@ -242,47 +238,89 @@ private struct SnippetEditorSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-            Text(record == nil ? "Add Snippet" : "Edit Snippet")
-                .font(.title2.weight(.bold))
-
-            field(
-                title: "Name", placeholder: "Email Sign-off", text: $name,
-                hint: "Required. Shown in the library and launcher.")
-            field(
-                title: "Keyword", placeholder: "Optional, for example !notes", text: $keyword,
-                hint: "Optional. Type this to expand the snippet.")
-
-            templateEditor
-
-            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                optionToggle(
-                    "Enabled", isOn: $isEnabled,
-                    detail: "Disabled snippets cannot be expanded.")
-                optionToggle(
-                    "Show confirmation", isOn: $showsConfirmation,
-                    detail: "Confirm on screen after this snippet is inserted.")
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: Theme.Spacing.lg) {
+                Button(action: onDismiss) {
+                    SymbolImage(name: "chevron.left", size: 16)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+                Spacer()
+                Text("Snippets Guide")
+                    .underline()
+                    .foregroundStyle(.secondary)
             }
 
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: Theme.Spacing.xxxl) {
+                templateEditor
+                    .frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+                    nameAndIconField
+                    field(
+                        title: "Keyword", placeholder: "Optional, for example !notes", text: $keyword,
+                        hint: "Optional. Type this to expand the snippet.")
+                    optionToggle(
+                        "Enabled", isOn: $isEnabled, detail: "Disabled snippets cannot be expanded.")
+                    optionToggle(
+                        "Show confirmation", isOn: $showsConfirmation, detail: "Confirm after insertion.")
+                }
+                .frame(width: 270)
             }
+            .padding(.top, Theme.Spacing.xxxl)
+
+            Spacer(minLength: Theme.Spacing.xl)
 
             HStack {
+                HStack(spacing: Theme.Spacing.sm) {
+                    SymbolImage(name: record == nil ? "doc.badge.plus" : "doc.text", size: 15)
+                    Text(record == nil ? "Create Snippet" : "Edit Snippet")
+                }
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .padding(.horizontal, Theme.Spacing.md)
+                .frame(height: Theme.Size.snippetControlHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                        .strokeBorder(Theme.Colors.cardStroke, lineWidth: 1))
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .lineLimit(2)
+                        .padding(.leading, Theme.Spacing.md)
+                }
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save", action: save)
-                    .keyboardShortcut(.defaultAction)
+                Button(action: save) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text("Save Snippet")
+                        KeyCapChip(text: "⌘", scale: .compact)
+                        KeyCapChip(text: "↵", scale: .compact)
+                    }
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .frame(height: 40)
+                    .background(
+                        Capsule()
+                            .fill(Theme.Colors.controlSurface)
+                            .overlay(Capsule().strokeBorder(Theme.Colors.cardStroke, lineWidth: 1))
+                    )
+                }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.return, modifiers: .command)
                     .disabled(
                         isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(Theme.Spacing.xxl)
-        .frame(width: Theme.Size.editorSheetWidth)
+        .frame(width: 720)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+                .fill(Theme.Colors.snippetSurface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+                        .strokeBorder(
+                            Theme.Colors.panelEdgeHighlight(transparency: 0), lineWidth: 1)
+                )
+        )
+        .onExitCommand(perform: onDismiss)
     }
 
     private var templateEditor: some View {
@@ -297,7 +335,7 @@ private struct SnippetEditorSheet: View {
                 .font(.body.monospaced())
                 .scrollContentBackground(.hidden)
                 .padding(Theme.Spacing.sm)
-                .frame(height: Theme.Size.editorTextHeight)
+                .frame(height: Theme.Size.snippetEditorTextHeight)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
                         .fill(Theme.Colors.cardFill)
@@ -309,6 +347,53 @@ private struct SnippetEditorSheet: View {
                 .focused($isTemplateFocused)
                 .accessibilityLabel("Snippet template")
                 .accessibilityHint("Enter the text Tinycast expands.")
+        }
+    }
+
+    private var resolvedSymbol: String { iconSymbol ?? "curlybraces" }
+
+    private var iconField: some View {
+        Button { showingIconPicker = true } label: {
+            HStack(spacing: Theme.Spacing.sm) {
+                    SnippetIconGlyph(value: resolvedSymbol, size: 15)
+                SymbolImage(name: "chevron.down", size: 9)
+            }
+            .frame(width: 52, height: Theme.Size.snippetControlHeight)
+            .contentShape(Rectangle())
+            .background(isIconHovered ? Theme.Colors.rowHover : Color.clear)
+            .onHover { isIconHovered = $0 }
+        }
+        .buttonStyle(.plain)
+            .popover(isPresented: $showingIconPicker, arrowEdge: .bottom) {
+                SnippetIconPicker(selection: $iconSymbol) {
+                    showingIconPicker = false
+                }
+            }
+    }
+
+    private var nameAndIconField: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("Name & Icon")
+                .font(.callout.weight(.medium))
+            HStack(spacing: 0) {
+                TextField("Snippet name", text: $name)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .frame(height: Theme.Size.snippetControlHeight)
+                Rectangle()
+                    .fill(Theme.Colors.cardStroke)
+                    .frame(width: 1, height: Theme.Size.snippetControlHeight - Theme.Spacing.md)
+                iconField
+            }
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                    .fill(Theme.Colors.controlSurface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                            .strokeBorder(Theme.Colors.cardStroke, lineWidth: 1))
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityHint("Required name and optional custom icon.")
         }
     }
 
@@ -364,7 +449,16 @@ private struct SnippetEditorSheet: View {
             Text(title)
                 .font(.callout.weight(.medium))
             TextField(placeholder, text: text)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, Theme.Spacing.md)
+                .frame(height: Theme.Size.snippetControlHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                        .fill(Theme.Colors.controlSurface)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                                .strokeBorder(Theme.Colors.cardStroke, lineWidth: 1))
+                )
                 .accessibilityLabel("Snippet \(title.lowercased())")
                 .accessibilityHint(hint)
         }
@@ -388,6 +482,7 @@ private struct SnippetEditorSheet: View {
     private var draft: Snippet {
         Snippet(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            iconSymbol: iconSymbol,
             text: text,
             keyword: trimmedOrNil(keyword),
             isEnabled: isEnabled,
@@ -412,10 +507,155 @@ private struct SnippetEditorSheet: View {
                 } else {
                     try await store.create(draft)
                 }
-                dismiss()
+                onDismiss()
             } catch {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+}
+
+struct SnippetIconGlyph: View {
+    let value: String
+    let size: CGFloat
+
+    var body: some View {
+        if NSImage(systemSymbolName: value, accessibilityDescription: nil) != nil {
+            SymbolImage(name: value, size: size)
+        } else {
+            Text(value)
+                .font(.system(size: size))
+        }
+    }
+}
+
+private struct SnippetIconPicker: View {
+    @Binding var selection: String?
+    let onDone: () -> Void
+    @Environment(EmojiIndex.self) private var emojiIndex
+    @State private var mode: Mode
+    @State private var icon: String
+    @State private var emoji: String
+    @State private var query = ""
+    @State private var pastedEmoji = ""
+
+    private enum Mode: String, CaseIterable {
+        case icons, emoji
+    }
+
+    private static let symbols = [
+        "curlybraces", "doc.text", "note.text", "text.quote", "envelope", "message",
+        "calendar", "clock", "checklist", "star", "bookmark", "folder", "link", "globe",
+        "terminal", "hammer", "wrench", "bolt", "gearshape", "lightbulb", "heart", "flag",
+        "person", "person.2", "house", "cart", "creditcard", "cloud", "server.rack", "lock"
+    ]
+
+    init(selection: Binding<String?>, onDone: @escaping () -> Void) {
+        _selection = selection
+        self.onDone = onDone
+        let value = selection.wrappedValue
+        let isSymbol = value.map { NSImage(systemSymbolName: $0, accessibilityDescription: nil) != nil } ?? true
+        _mode = State(initialValue: isSymbol ? .icons : .emoji)
+        _icon = State(initialValue: isSymbol ? (value ?? "curlybraces") : "curlybraces")
+        _emoji = State(initialValue: isSymbol ? "💻" : (value ?? "💻"))
+    }
+
+    private var filteredSymbols: [String] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return Self.symbols }
+        return Self.symbols.filter { $0.localizedCaseInsensitiveContains(query) }
+    }
+
+    private var emojis: [String] {
+        let catalog = emojiIndex.entries.map(\.glyph)
+        return Array((catalog.isEmpty ? Self.fallbackEmojis : catalog).prefix(80))
+    }
+
+    private static let fallbackEmojis = [
+        "💻", "🛠️", "🚀", "🤖", "✨", "⚡", "🌐", "📱", "🖥️", "⌨️", "⚙️", "🗄️",
+        "☁️", "📦", "📚", "🧪", "🔒", "🎮", "🎵", "🎬", "🖼️", "🛍️", "🔥", "💡",
+        "🧩", "📊", "🧠", "🦄", "🐙", "🌱"
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+            Text("Choose snippet icon")
+                .font(.title2.weight(.bold))
+            Text("Pick an SF Symbol or use an emoji.")
+                .foregroundStyle(.secondary)
+            Picker("Icon type", selection: $mode) {
+                Text("Icons").tag(Mode.icons)
+                Text("Emoji").tag(Mode.emoji)
+            }
+            .pickerStyle(.segmented)
+            if mode == .icons { iconPicker } else { emojiPicker }
+            HStack {
+                Spacer()
+                Button("Cancel", action: onDone)
+                Button("Save icon", action: save)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(Theme.Spacing.xxl)
+        .frame(width: 420)
+    }
+
+    private var iconPicker: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            TextField("Search SF Symbols", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .frame(height: Theme.Size.snippetControlHeight)
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: Theme.Spacing.sm
+            ) {
+                ForEach(filteredSymbols, id: \.self) { symbol in
+                    Button { icon = symbol } label: {
+                        SymbolImage(name: symbol, size: 18)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 34)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.menu, style: .continuous)
+                                    .fill(icon == symbol ? Theme.Colors.selection : Color.clear))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(symbol)
+                }
+            }
+        }
+    }
+
+    private var emojiPicker: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: Theme.Spacing.sm
+            ) {
+                ForEach(emojis, id: \.self) { value in
+                    Button { emoji = value } label: {
+                        Text(value)
+                            .font(.title3)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 34)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.menu, style: .continuous)
+                                    .fill(emoji == value ? Theme.Colors.selection : Color.clear))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text("Or paste any emoji")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            TextField("Paste an emoji", text: $pastedEmoji)
+                .textFieldStyle(.roundedBorder)
+                .frame(height: Theme.Size.snippetControlHeight)
+                .onChange(of: pastedEmoji) { _, value in
+                    if let first = value.first { emoji = String(first) }
+                }
+        }
+    }
+
+    private func save() {
+        selection = mode == .icons ? icon : emoji
+        onDone()
     }
 }
