@@ -111,6 +111,12 @@ final class SnippetCoordinator {
         snippetWindowController.show(record: record)
     }
 
+    var isEditingSnippet: Bool { snippetWindowController.isVisible }
+
+    func toggleEditor() {
+        snippetWindowController.toggle()
+    }
+
     func showSnippetInFinder(_ record: StoredSnippet) {
         paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
         AppLauncher.showInFinder(record.fileURL)

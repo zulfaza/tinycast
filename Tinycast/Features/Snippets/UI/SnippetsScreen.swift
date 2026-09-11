@@ -87,7 +87,7 @@ struct SnippetsScreen: PaletteScreen {
                 )
                 .frame(width: Theme.Size.clipboardListWidth)
                 Rectangle().fill(Theme.Colors.separator).frame(width: Theme.Size.hairline)
-                SnippetPreview(record: selected)
+                SnippetPreview(record: selected, usage: store.usage)
             }
         }
     }

@@ -89,7 +89,7 @@ private struct SnippetRow: View {
                 .frame(width: Theme.Size.rowIcon, height: Theme.Size.rowIcon)
                 .overlay(
                     SnippetIconGlyph(
-                        value: record.snippet.iconSymbol ?? "curlybraces", size: 12)
+                        value: record.snippet.iconSymbol ?? "doc.text", size: 12)
                         .foregroundStyle(.secondary))
             Text(record.snippet.name)
                 .font(Theme.Typography.rowTitle)
@@ -113,6 +113,7 @@ private struct SnippetRow: View {
 
 struct SnippetPreview: View {
     let record: StoredSnippet?
+    let usage: SnippetUsageStore
 
     var body: some View {
         if let record {
@@ -120,12 +121,13 @@ struct SnippetPreview: View {
                 // The raw template: expanding here would read the clipboard on every arrow key.
                 ScrollView {
                     Text(record.snippet.text)
-                        .font(.system(.subheadline, design: .monospaced))
+                        .font(Theme.Typography.rowTitle)
+                        .lineSpacing(2)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                SnippetInfoSection(record: record)
+            SnippetInfoSection(record: record, usage: usage)
             }
             .padding(.horizontal, 12)
         } else {
@@ -137,6 +139,7 @@ struct SnippetPreview: View {
 /// The "Information" block; everything in it is already in memory, so nothing is gathered off-main.
 private struct SnippetInfoSection: View {
     let record: StoredSnippet
+    let usage: SnippetUsageStore
 
     private struct InfoRow: Identifiable {
         let label: String
@@ -145,15 +148,24 @@ private struct SnippetInfoSection: View {
     }
 
     private var rows: [InfoRow] {
-        var rows = [InfoRow(label: "Name", value: record.snippet.name)]
-        if let keyword = record.snippet.keyword, !keyword.isEmpty {
-            rows.append(InfoRow(label: "Keyword", value: keyword))
+        var rows = [
+            InfoRow(label: "Name", value: record.snippet.name),
+            InfoRow(label: "Content Type", value: "Text"),
+            InfoRow(label: "Times Copied", value: usage.records[record.id]?.count.formatted() ?? "0")
+        ]
+        if let lastUsed = usage.lastUsed(for: record.id) {
+            rows.append(InfoRow(label: "Last Copied", value: Self.dateFormatter.string(from: lastUsed)))
         }
-        rows.append(InfoRow(label: "File", value: record.fileURL.lastPathComponent))
-        rows.append(
-            InfoRow(label: "Characters", value: record.snippet.text.count.formatted()))
         return rows
     }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.doesRelativeDateFormatting = true
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return formatter
+    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -161,16 +173,19 @@ private struct SnippetInfoSection: View {
                 .font(Theme.Typography.sectionHeader)
                 .foregroundStyle(.secondary)
             VStack(spacing: 0) {
-                let rows = self.rows
-                ForEach(rows) { row in
-                    if row.id != rows.first?.id { Divider() }
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                     HStack(spacing: Theme.Spacing.sm) {
                         Text(row.label).foregroundStyle(.secondary)
                         Spacer(minLength: Theme.Spacing.lg)
                         Text(row.value).lineLimit(1).truncationMode(.middle)
                     }
                     .font(Theme.Typography.keyCap)
-                    .padding(.vertical, Theme.Spacing.xs)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                            .fill(index.isMultiple(of: 2) ? Theme.Colors.cardFill : .clear)
+                    )
                 }
             }
         }
