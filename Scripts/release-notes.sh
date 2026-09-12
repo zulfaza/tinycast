@@ -44,7 +44,15 @@ COMPARE_URL="$(printf '%s\n' "$GENERATED" | sed -n 's|^\*\*Full Changelog\*\*: \
 CHANGELOG="$(printf '%s\n' "$GENERATED" | sed -E \
     -e '/^\*\*Full Changelog\*\*:/d' \
     -e "s|https://github\.com/${REPO}/pull/([0-9]+)|#\1|g")"
-[ -n "$(printf '%s' "$CHANGELOG" | tr -d '[:space:]')" ] || CHANGELOG="Maintenance and internal changes."
+if [ -z "$(printf '%s' "$CHANGELOG" | tr -d '[:space:]')" ] || \
+    [ "$CHANGELOG" = "Maintenance and internal changes." ]; then
+    COMMIT_SUBJECT="$(gh api "repos/${REPO}/commits/${SHA}" --jq '.commit.message' | sed -n '1p')"
+    if [ -n "$COMMIT_SUBJECT" ]; then
+        CHANGELOG="- ${COMMIT_SUBJECT}"
+    else
+        CHANGELOG="Maintenance and internal changes."
+    fi
+fi
 
 {
     printf '%s\n\n' "$CHANGELOG"
