@@ -16,6 +16,10 @@ import {
   finished,
   finishedPromise,
   getDefaultHighWaterMark,
+  isDisturbed,
+  isErrored,
+  isReadable,
+  isWritable,
   pipeline,
   pipelinePromise,
   setDefaultHighWaterMark,
@@ -795,6 +799,7 @@ class BufferedChildProcess extends EventEmitter {
     this.stderr = new PassThrough();
     this._input = [];
     this._started = false;
+    this._unrefed = false;
 
     const self = this;
     this.stdin = new Writable({
@@ -831,8 +836,8 @@ class BufferedChildProcess extends EventEmitter {
         env: options.env,
         timeout: options.timeout,
         input,
-        // A detached child outlives the caller (`caffeinate -t 300 &`); don't wait for it to exit.
         detached: !!options.detached,
+        fireAndForget: this._unrefed,
       },
     ]).then(
       (raw) => {
@@ -865,12 +870,12 @@ class BufferedChildProcess extends EventEmitter {
     return false;
   }
 
-  // Node uses these to detach a child from the event loop. Nothing here keeps the runtime alive, so
-  // they only need to exist and chain — `spawn(...).unref()` is a common one-liner.
   unref() {
+    this._unrefed = true;
     return this;
   }
   ref() {
+    this._unrefed = false;
     return this;
   }
 }
@@ -1098,6 +1103,20 @@ function httpRequest(input, options, callback) {
 
 function httpGet(input, options, callback) {
   return httpRequest(input, options, callback).end();
+}
+
+class Agent extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    this.options = { ...options };
+    this.keepAlive = Boolean(options.keepAlive);
+    this.keepAliveMsecs = options.keepAliveMsecs ?? 1000;
+    this.maxSockets = options.maxSockets ?? Infinity;
+    this.maxFreeSockets = options.maxFreeSockets ?? 256;
+    this.scheduling = options.scheduling ?? "lifo";
+  }
+
+  destroy() {}
 }
 
 // ─── util ───────────────────────────────────────────────────────────
@@ -1345,7 +1364,9 @@ const httpLike = (name) =>
     validateHeaderValue,
     IncomingMessage,
     ClientRequest,
-    globalAgent: {},
+    Agent,
+    globalAgent: new Agent(),
+    maxHeaderSize: 16 * 1024,
     STATUS_CODES: {},
     METHODS: [],
   });
@@ -1375,11 +1396,182 @@ const streamModule = unsupportedModule(
     finished,
     getDefaultHighWaterMark,
     setDefaultHighWaterMark,
+    isDisturbed,
+    isErrored,
+    isReadable,
+    isWritable,
     promises: { pipeline: (...stages) => pipelinePromise(stages), finished: finishedPromise },
   }),
 );
 
 const webStreamModule = { ReadableStream, WritableStream, TransformStream };
+
+class AsyncResource {
+  runInAsyncScope(fn, thisArg, ...args) {
+    return Reflect.apply(fn, thisArg, args);
+  }
+
+  emitDestroy() { return this; }
+  asyncId() { return 0; }
+  triggerAsyncId() { return 0; }
+}
+
+const diagnosticChannels = new Map();
+
+class DiagnosticChannel {
+  constructor(name) {
+    this.name = String(name);
+    this._subscribers = new Set();
+  }
+
+  get hasSubscribers() { return this._subscribers.size > 0; }
+  subscribe(subscriber) { this._subscribers.add(subscriber); }
+  unsubscribe(subscriber) { return this._subscribers.delete(subscriber); }
+
+  publish(message) {
+    for (const subscriber of this._subscribers) subscriber(message, this.name);
+  }
+}
+
+function diagnosticChannel(name) {
+  const key = String(name);
+  if (!diagnosticChannels.has(key)) diagnosticChannels.set(key, new DiagnosticChannel(key));
+  return diagnosticChannels.get(key);
+}
+
+function isIPv4(input) {
+  const parts = String(input).split(".");
+  return parts.length === 4 && parts.every((part) =>
+    /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255);
+}
+
+function isIPv6(input) {
+  const address = String(input).split("%")[0];
+  if (!address || address.split("::").length > 2) return false;
+  const [head, tail] = address.split("::");
+  const groups = [...(head ? head.split(":") : []), ...(tail ? tail.split(":") : [])];
+  if (groups.some((group) => !/^[\da-f]{1,4}$/i.test(group) && !isIPv4(group))) return false;
+  const count = groups.reduce((total, group) => total + (isIPv4(group) ? 2 : 1), 0);
+  return address.includes("::") ? count < 8 : count === 8;
+}
+
+function isIP(input) {
+  if (isIPv4(input)) return 4;
+  return isIPv6(input) ? 6 : 0;
+}
+
+class BridgeSocket extends Duplex {
+  constructor(options = {}, secure = false) {
+    super({
+      highWaterMark: options.highWaterMark,
+      write(chunk, encoding, callback) {
+        this._requestBytes.push(Buffer.from(chunk, encoding));
+        this.bytesWritten += chunk.length ?? 0;
+        this._sendIfComplete();
+        callback(null);
+      },
+    });
+    this._requestBytes = [];
+    this._sending = false;
+    this._secure = secure;
+    this._host = options.host ?? options.hostname ?? "localhost";
+    this._port = Number(options.port ?? (secure ? 443 : 80));
+    this.bytesRead = 0;
+    this.bytesWritten = 0;
+    this.connecting = true;
+    this.encrypted = secure;
+    this.authorized = secure;
+    this.alpnProtocol = secure ? "http/1.1" : null;
+    this.servername = options.servername ?? null;
+    this.localAddress = "127.0.0.1";
+    this.localPort = 0;
+    this.remoteAddress = this._host;
+    this.remotePort = this._port;
+    this.remoteFamily = isIPv6(this._host) ? "IPv6" : "IPv4";
+    this.timeout = 0;
+    queueMicrotask(() => {
+      if (this.destroyed) return;
+      this.connecting = false;
+      this.emit(secure ? "secureConnect" : "connect");
+    });
+  }
+
+  setKeepAlive() { return this; }
+  setNoDelay() { return this; }
+  ref() { return this; }
+  unref() { return this; }
+
+  setTimeout(milliseconds, callback) {
+    this.timeout = Number(milliseconds) || 0;
+    if (callback) this.once("timeout", callback);
+    return this;
+  }
+
+  address() {
+    return { address: this.localAddress, port: this.localPort, family: "IPv4" };
+  }
+
+  _sendIfComplete() {
+    if (this._sending) return;
+    const request = Buffer.concat(this._requestBytes);
+    const marker = request.toString("latin1").indexOf("\r\n\r\n");
+    if (marker < 0) return;
+    const head = request.subarray(0, marker).toString("latin1");
+    const contentLength = Number(/^content-length:\s*(\d+)$/im.exec(head)?.[1] ?? 0);
+    if (request.length < marker + 4 + contentLength) return;
+    this._sending = true;
+    const [requestLine, ...headerLines] = head.split("\r\n");
+    const [method, path] = requestLine.split(" ");
+    const headers = {};
+    for (const line of headerLines) {
+      const separator = line.indexOf(":");
+      if (separator > 0) headers[line.slice(0, separator).toLowerCase()] = line.slice(separator + 1).trim();
+    }
+    const authority = headers.host ?? `${this._host}:${this._port}`;
+    const url = `${this._secure ? "https" : "http"}://${authority}${path}`;
+    const body = request.subarray(marker + 4, marker + 4 + contentLength);
+    hostCall("fetch", "request", [{
+      url,
+      method,
+      headers,
+      bodyBase64: body.length ? body.toString("base64") : null,
+    }]).then(
+      (response) => this._receiveResponse(response),
+      (error) => this.destroy(error instanceof Error ? error : new Error(String(error))),
+    );
+  }
+
+  _receiveResponse(response) {
+    if (this.destroyed) return;
+    const body = Buffer.from(response.bodyBase64 ?? "", "base64");
+    const headers = { ...(response.headers ?? {}) };
+    delete headers["content-encoding"];
+    delete headers["transfer-encoding"];
+    headers["content-length"] = String(body.length);
+    headers.connection = "keep-alive";
+    const lines = Object.entries(headers).map(([name, value]) => `${name}: ${value}`);
+    const rawHead = `HTTP/1.1 ${response.status} ${response.statusText ?? ""}\r\n${lines.join("\r\n")}\r\n\r\n`;
+    const raw = Buffer.concat([Buffer.from(rawHead, "latin1"), body]);
+    this._requestBytes = [];
+    this._sending = false;
+    this.bytesRead += raw.length;
+    this.push(raw);
+  }
+}
+
+function connect(options, listener) {
+  if (typeof options === "number") options = { port: options, host: arguments[1] };
+  const socket = new BridgeSocket(options ?? {}, false);
+  const callback = typeof listener === "function" ? listener : arguments[2];
+  if (callback) socket.once("connect", callback);
+  return socket;
+}
+
+function tlsConnect(options, listener) {
+  const socket = new BridgeSocket(options ?? {}, true);
+  if (listener) socket.once("secureConnect", listener);
+  return socket;
+}
 
 // ─── Registry ───────────────────────────────────────────────────────
 
@@ -1405,8 +1597,8 @@ export const nodeModules = {
   perf_hooks: { performance: globalThis.performance },
   http: httpLike("http"),
   https: httpLike("https"),
-  net: unsupportedModule("net"),
-  tls: unsupportedModule("tls"),
+  net: unsupportedModule("net", { connect, createConnection: connect, isIP, isIPv4, isIPv6 }),
+  tls: unsupportedModule("tls", { connect: tlsConnect, createConnection: tlsConnect }),
   dns: unsupportedModule("dns"),
   stream: streamModule,
   "stream/web": webStreamModule,
@@ -1420,7 +1612,16 @@ export const nodeModules = {
   cluster: { isPrimary: true, isMaster: true },
   inspector: {},
   v8: {},
-  async_hooks: { AsyncLocalStorage: class { run(_store, fn) { return fn(); } getStore() { return undefined; } } },
+  async_hooks: {
+    AsyncLocalStorage: class { run(_store, fn) { return fn(); } getStore() { return undefined; } },
+    AsyncResource,
+  },
+  diagnostics_channel: {
+    channel: diagnosticChannel,
+    hasSubscribers: (name) => diagnosticChannel(name).hasSubscribers,
+    subscribe: (name, subscriber) => diagnosticChannel(name).subscribe(subscriber),
+    unsubscribe: (name, subscriber) => diagnosticChannel(name).unsubscribe(subscriber),
+  },
 };
 
 function requireStub(name) {

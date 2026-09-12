@@ -109,7 +109,7 @@ enum ExtensionAsyncProcess {
         let environment = (fields["env"]?.objectValue).map { $0.compactMapValues(\.stringValue) }
         let input = fields["input"]?.stringValue.flatMap { Data(base64Encoded: $0) }
         let timeout = fields["timeout"]?.doubleValue
-        let detached = fields["detached"]?.boolValue ?? false
+        let fireAndForget = fields["fireAndForget"]?.boolValue ?? false
 
         return try await withCheckedThrowingContinuation { continuation in
             // `Process` termination is delivered on a private queue; run the whole thing off-main.
@@ -118,7 +118,7 @@ enum ExtensionAsyncProcess {
                     let result = try execute(
                         command: command, useShell: useShell, args: args, cwd: cwd,
                         environment: environment, input: input, timeout: timeout,
-                        detached: detached)
+                        fireAndForget: fireAndForget)
                     continuation.resume(returning: result)
                 } catch {
                     continuation.resume(throwing: error)
@@ -129,7 +129,7 @@ enum ExtensionAsyncProcess {
 
     private static func execute(
         command: String, useShell: Bool, args: [String], cwd: String?,
-        environment: [String: String]?, input: Data?, timeout: Double?, detached: Bool = false
+        environment: [String: String]?, input: Data?, timeout: Double?, fireAndForget: Bool = false
     ) throws -> [String: Any] {
         let task = Process()
         if useShell {
@@ -163,8 +163,8 @@ enum ExtensionAsyncProcess {
         } catch {
             throw ProcessError.failedToStart(command, error.localizedDescription)
         }
-        // A detached child outlives the call, so answer once running rather than pin a thread.
-        if detached {
+        // `detached` creates a process group; only `unref()` releases the caller's wait.
+        if fireAndForget {
             return ["stdout": "", "stderr": "", "status": 0, "signal": NSNull()]
         }
         let (outData, errData) = drain(task, stdout: stdout, stderr: stderr, timeout: timeout)

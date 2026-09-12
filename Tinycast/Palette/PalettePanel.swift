@@ -1,9 +1,12 @@
 import AppKit
 import Carbon.HIToolbox
+import OSLog
 import SwiftUI
 
 /// Borderless floating panel that hosts the SwiftUI command palette.
 final class PalettePanel: NSPanel {
+    private static let logger = Logger(subsystem: "com.tinycast", category: "ExtensionFocus")
+
     enum HeaderFieldBoundary {
         case leading
         case trailing
@@ -51,7 +54,11 @@ final class PalettePanel: NSPanel {
     private var compositionObserver: NotificationToken?
 
     override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
-        guard super.makeFirstResponder(responder) else { return false }
+        let result = super.makeFirstResponder(responder)
+        let actual = String(describing: self.firstResponder)
+        let requested = String(describing: responder)
+        Self.logger.info("panel responder request=\(requested) result=\(result) actual=\(actual)")
+        guard result else { return false }
         trackComposition()
         if let context = fieldEditorContext { onFieldEditorFocused?(context) }
         return true

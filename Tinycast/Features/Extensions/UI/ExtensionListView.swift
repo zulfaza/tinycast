@@ -180,7 +180,7 @@ private struct ExtensionItemRow: View {
     var body: some View {
         HStack(spacing: Theme.Spacing.lg) {
             ExtensionIconView(
-                resolved: ExtensionImage.resolve(node.props["icon"], assetsPath: assetsPath, isDark: isDark))
+                resolved: ExtensionImage.listIcon(node, assetsPath: assetsPath, isDark: isDark))
             Text(node.string("title") ?? "")
                 .font(Theme.Typography.rowTitle)
                 .lineLimit(1)

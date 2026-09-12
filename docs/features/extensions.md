@@ -73,7 +73,8 @@ work is not in the interpreter, it's in the `@raycast/api` shim and the Node sur
 same either way. A bare `JSContext` has the full modern language (checked: `Object.groupBy`,
 `Array.fromAsync`, `Intl`, lookbehind regex) and nothing else, so the runtime supplies `console`,
 timers, `fetch`, `URL`, `URLSearchParams`, `TextEncoder`/`TextDecoder`, `AbortController`, `atob`/
-`btoa`, `ReadableStream`/`WritableStream`/`TransformStream` and `structuredClone` itself.
+`btoa`, `Event`/`EventTarget`, `ReadableStream`/`WritableStream`/`TransformStream` and
+`structuredClone` itself.
 
 ## The JS runtime
 
@@ -208,6 +209,8 @@ screens hold (see [palette.md](palette.md)).
   main actor, which is exactly what the decode must not touch. Anything reading a decoded image keys
   its `.task` on `ExtensionImage.LoadKey`, since the URL alone no longer says what will be drawn.
   The feature's own fills live in `ExtensionColors` — never in `Theme`.
+  An iconless list row with a `Path` detail-metadata label uses that file's Finder icon; an executable
+  inside an `.app` resolves to the bundle, while an explicit icon always wins.
 - **Form** — label-left/control-right rows. Field values live in the extension (React owns them); every
   edit dispatches `onTinycastChange` and the resulting re-render is what updates the control, so
   `defaultValue`, a controlled `value`, and `ref.reset()` all behave. **A form takes the whole
@@ -536,8 +539,10 @@ descriptor calls `tar` unpacks through), `os`,
 `crypto` (hashes, HMAC, random, UUID), `zlib` (gzip/zlib/raw deflate, both directions), `http`/`https`
 (`request` and `get`, buffered over the same URLSession bridge as `fetch`), `stream` (`Readable`,
 `Writable`, `Duplex`, `Transform`, `PassThrough`, `pipeline`, `finished`, plus `stream/promises` and
-`stream/web`), `util`, `events`, `buffer`, `url`, `querystring`, `punycode`, `assert`,
-`string_decoder`, `timers`. Every other built-in resolves to a stub that throws only when used, so a
+`stream/web` and the stream-state predicates), `net`'s IP predicates, `util`, `events`, `buffer`
+(`Buffer`, `Blob`), `url`, `querystring`, `punycode`, `assert`,
+`string_decoder`, `timers`, `async_hooks`, `diagnostics_channel`. Every other built-in resolves to a
+stub that throws only when used, so a
 bundle that merely references `dgram` or `http2` still loads.
 
 **Streams** — the stream core is Node's real contract, not a stand-in: an extension that ships
@@ -560,6 +565,10 @@ A bundle that ships its own HTTP client rather than calling `fetch` — node-fet
 shim answers it: one request when the body ends, one response chunk when the bridge replies. The
 transport decodes for us, so the response drops `content-encoding` and `content-length` rather than
 have the client gunzip plaintext.
+
+Bundled Undici writes HTTP/1.1 through `net` / `tls` instead. Those socket-shaped requests are
+buffered into the same bridge and replayed as HTTP responses; they are not general sockets. Its
+llhttp parser is Wasm, so JavaScriptCore's synchronous compiler backs the standard async Wasm API.
 
 Two things decide whether it gets there. Axios enables that adapter only when
 `Object.prototype.toString.call(process)` reads `[object process]`, so `process` carries the tag; and
@@ -589,7 +598,7 @@ OAuth extensions it excluded are not counted yet — re-measure before quoting t
 | **WebSocket** | No polyfill yet; `URLSessionWebSocketTask` could back one. |
 | **Aborting a `fetch` already in flight** | `AbortSignal` is complete — `timeout`, `abort` and `any` included — and `fetch` checks it on both sides of the host call, so a caller gets its `AbortError`. The request itself still runs to completion: the signal isn't carried across the bridge, so nothing cancels the `URLSessionTask`. A timeout bounds the caller, not the network. |
 | **Streaming `child_process.spawn`** | `spawn` runs the child to completion and emits its output as one chunk (async-iterable, which is what `get-stream`/`execa` consume). True duplex streaming would need a bidirectional channel across the bridge. Extensions built on `execa`'s deeper stream API can still fail. |
-| **`net` / `tls`** | Resolve but throw on use. Nothing bridges a socket. |
+| **General `net` / `tls` sockets** | HTTP/1.1 written by bundled clients is bridged request-by-request. Arbitrary protocols, server sockets and duplex network streams remain unsupported. |
 | **Streaming HTTP** | The bridge answers a request with the whole body at once, so `http.request` delivers one chunk and `Response.body` replays bytes that already arrived. Server-sent events, network-level progress and backpressure onto the socket are all out of reach; `stream` itself is real enough to carry them the day the bridge is. |
 | **Tool/AI-extension entry points (`tools/`)** | Not surfaced. |
 
@@ -620,8 +629,8 @@ Scripts/run-tests.sh ext-test
 `ext-test` compiles the real engine sources — there is no copy to keep in sync. `EXT_TEST_VERBOSE=1`
 prints the extension's own console output; `EXT_TEST_SETTLE_MS=8000` gives a slow command longer;
 `EXT_TEST_PREFS='{"version":"v8"}'` stands in for preferences the user set in Settings, which is the
-only way to reach a code path an extension gates on a preference with no manifest default. Both
-harnesses read the same three variables.
+only way to reach a code path an extension gates on a preference with no manifest default;
+`EXT_TEST_QUERY='hello'` dispatches text to the active list. Both harnesses read the same variables.
 
 ### Debugging a failing extension
 

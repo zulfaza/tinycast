@@ -496,6 +496,9 @@ enum SettingsSearchCatalog {
             .extensionsInstall, "Add from folder",
             keywords: ["local", "develop", "sideload"]),
         .init(
+            .extensionsDeveloper, "Developer mode",
+            keywords: ["debug", "logging", "trace", "diagnostics"]),
+        .init(
             .extensionsStorage, "Leftover files",
             keywords: ["clean up", "disk", "reclaim", "cache"])
     ]

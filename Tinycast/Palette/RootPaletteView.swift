@@ -1,6 +1,9 @@
+import OSLog
 import SwiftUI
 
 struct RootPaletteView: View {
+    private static let logger = Logger(subsystem: "com.tinycast", category: "ExtensionFocus")
+
     @Environment(AppCore.self) private var core
     @Environment(PaletteState.self) private var vm
     @Environment(AppIndex.self) private var appIndex
@@ -333,6 +336,13 @@ struct RootPaletteView: View {
                     core.customCommandCoordinator.cancelCustomCommandArguments()
                 }
             }
+            .onChange(of: extensions.navigationDepth) {
+                guard vm.mode == .extensionCommand else { return }
+                let rootID = extensionScreen.root?.id ?? 0
+                let kind = String(describing: extensionScreen.kind)
+                Self.logger.info(
+                    "extension depth=\(extensions.navigationDepth) root=\(rootID) kind=\(kind)")
+            }
             // `prepare` may change nothing, so this intent still snaps the scroll to the origin.
             .onChange(of: vm.resetToken) {
                 scroll = ScrollIntent(kind: .top)
@@ -348,11 +358,11 @@ struct RootPaletteView: View {
             }
             // The hosted tree is its own hierarchy, so the highlight has to be pushed into it.
             .onChange(of: menuSelection) { syncMenuPanel(presenting: false) }
-        .onDisappear {
-            menuPanel.hide()
-            (hostWindow as? PalettePanel)?.onHeaderFieldBoundaryArrow = nil
-            (hostWindow as? PalettePanel)?.onTab = nil
-            (hostWindow as? PalettePanel)?.onHeaderOptionArrow = nil
+            .onDisappear {
+                menuPanel.hide()
+                (hostWindow as? PalettePanel)?.onHeaderFieldBoundaryArrow = nil
+                (hostWindow as? PalettePanel)?.onTab = nil
+                (hostWindow as? PalettePanel)?.onHeaderOptionArrow = nil
             }
             .onAppear { searchFocused = !screen.hidesSearchField }
             .modifier(SearchFieldHiding(hidden: hidesSearchField, apply: applySearchFieldHiding))

@@ -23,6 +23,80 @@ for (const noop of ["group", "groupEnd", "table", "time", "timeEnd", "dir", "ass
 if (!g.performance) g.performance = { now: () => Date.now() };
 else if (!g.performance.now) g.performance.now = () => Date.now();
 
+if (!g.Event || !g.EventTarget) {
+  class EventShim {
+    constructor(type, init = {}) {
+      this.type = String(type);
+      this.bubbles = Boolean(init.bubbles);
+      this.cancelable = Boolean(init.cancelable);
+      this.composed = Boolean(init.composed);
+      this.defaultPrevented = false;
+      this.target = null;
+      this.currentTarget = null;
+      this.timeStamp = Date.now();
+      this.isTrusted = false;
+      this._stopped = false;
+      this._immediateStopped = false;
+    }
+
+    preventDefault() {
+      if (this.cancelable) this.defaultPrevented = true;
+    }
+
+    stopPropagation() { this._stopped = true; }
+    stopImmediatePropagation() {
+      this._stopped = true;
+      this._immediateStopped = true;
+    }
+  }
+
+  class EventTargetShim {
+    constructor() {
+      this._eventListeners = new Map();
+    }
+
+    addEventListener(type, listener, options = {}) {
+      if (!listener) return;
+      const name = String(type);
+      const listeners = this._eventListeners.get(name) ?? [];
+      if (listeners.some((entry) => entry.listener === listener)) return;
+      const normalized = typeof options === "boolean" ? { capture: options } : (options ?? {});
+      listeners.push({ listener, once: Boolean(normalized.once) });
+      this._eventListeners.set(name, listeners);
+      normalized.signal?.addEventListener(
+        "abort",
+        () => this.removeEventListener(name, listener),
+        { once: true },
+      );
+    }
+
+    removeEventListener(type, listener) {
+      const name = String(type);
+      const listeners = this._eventListeners.get(name);
+      if (!listeners) return;
+      this._eventListeners.set(name, listeners.filter((entry) => entry.listener !== listener));
+    }
+
+    dispatchEvent(event) {
+      event.target = this;
+      event.currentTarget = this;
+      const listeners = [...(this._eventListeners.get(event.type) ?? [])];
+      for (const entry of listeners) {
+        if (entry.once) this.removeEventListener(event.type, entry.listener);
+        if (typeof entry.listener === "function") entry.listener.call(this, event);
+        else entry.listener.handleEvent?.(event);
+        if (event._immediateStopped) break;
+      }
+      if (!event._immediateStopped) this[`on${event.type}`]?.call(this, event);
+      event.currentTarget = null;
+      return !event.defaultPrevented;
+    }
+  }
+
+  if (!g.Event) g.Event = EventShim;
+  if (!g.EventTarget) g.EventTarget = EventTargetShim;
+}
+
 // ─── Timers ─────────────────────────────────────────────────────────
 // Swift owns the clock: it schedules on its runloop and calls back into `fireTimer`.
 
@@ -68,6 +142,28 @@ if (!g.queueMicrotask) {
   const resolved = Promise.resolve();
   g.queueMicrotask = (cb) => {
     resolved.then(cb).catch(reportUncaught);
+  };
+}
+
+// JavaScriptCore's async Wasm compiler can leave bundled llhttp initialization pending forever.
+if (g.WebAssembly?.Module && g.WebAssembly?.Instance) {
+  g.WebAssembly.compile = (bytes) => {
+    try {
+      return Promise.resolve(new g.WebAssembly.Module(bytes));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+  g.WebAssembly.instantiate = (source, imports) => {
+    try {
+      if (source instanceof g.WebAssembly.Module) {
+        return Promise.resolve(new g.WebAssembly.Instance(source, imports));
+      }
+      const module = new g.WebAssembly.Module(source);
+      return Promise.resolve({ module, instance: new g.WebAssembly.Instance(module, imports) });
+    } catch (error) {
+      return Promise.reject(error);
+    }
   };
 }
 

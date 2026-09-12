@@ -22,9 +22,9 @@ export class EventEmitter {
     return this;
   }
   once(event, listener) {
-    const wrapper = (...args) => {
+    const wrapper = function (...args) {
       this.off(event, wrapper);
-      listener(...args);
+      listener.apply(this, args);
     };
     wrapper.listener = listener;
     return this.on(event, wrapper);

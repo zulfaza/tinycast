@@ -1,7 +1,10 @@
+import OSLog
 import SwiftUI
 
 /// React owns the values; every edit dispatches back and the re-render draws it.
 struct ExtensionFormView: View {
+    private static let logger = Logger(subsystem: "com.tinycast", category: "ExtensionFocus")
+
     let screen: ExtensionScreen
     let assetsPath: String?
     /// The focused field, as the flat index the palette navigates with.
@@ -39,17 +42,34 @@ struct ExtensionFormView: View {
                 scroll, row: focusedRowID, atOrigin: selection == 0, proxy: proxy)
         }
         // A form arrives with whatever row the screen before it left behind, so it states its own.
-        .onAppear { focus(screen.autoFocusedField) }
+        .onAppear {
+            let rootID = screen.root?.id ?? 0
+            let fieldCount = screen.items.count
+            let autoField = screen.autoFocusedField
+            Self.logger.info(
+                "form appear root=\(rootID) fields=\(fieldCount) selection=\(selection) auto=\(autoField)")
+        }
+        .task(id: screen.root?.id) {
+            await Task.yield()
+            Self.logger.info("form deferred focus root=\(screen.root?.id ?? 0)")
+            focus(screen.autoFocusedField)
+        }
         .onDisappear { palette.noteEditingField(false) }
         // The palette moves the selection with ↑/↓ and ⇥; focus follows it, and a click leads it.
         .onChange(of: selection) { focus(selection) }
         .onChange(of: focused) { _, field in
+            let rootID = screen.root?.id ?? 0
+            let focusedField = field.map(String.init) ?? "nil"
+            Self.logger.info("form changed root=\(rootID) focused=\(focusedField)")
             palette.noteEditingField(field != nil)
             if let field, field != selection { onSelect(field) }
         }
     }
 
     private func focus(_ index: Int) {
+        let rootID = screen.root?.id ?? 0
+        let valid = screen.items.indices.contains(index)
+        Self.logger.info("form request root=\(rootID) index=\(index) valid=\(valid)")
         guard screen.items.indices.contains(index) else { return }
         focused = index
         if index != selection { onSelect(index) }

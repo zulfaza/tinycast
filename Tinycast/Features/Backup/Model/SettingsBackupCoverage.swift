@@ -72,6 +72,8 @@ enum SettingsBackupCoverage {
             + "something else there.",
         AppSettingsKey.extensionsEnabled.rawValue:
             "Doubles as consent to run third-party JavaScript; an import must not switch it on.",
+        AppSettingsKey.extensionDeveloperMode.rawValue:
+            "Diagnostics are local to this Mac and must not be enabled by importing a backup.",
         AppSettingsKey.palettePosition.rawValue:
             "Machine-local geometry: a point restored onto another display layout lands nowhere.",
         AppSettingsKey.autoSwitchInputSource.rawValue:

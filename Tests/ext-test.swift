@@ -23,6 +23,7 @@ struct ExtensionTests {
     final class StubHost: ExtensionHostAPI {
         var calls: [String] = []
         var toasts: [String] = []
+        var toastMessages: [String] = []
         var huds: [String] = []
         var oauthTokens: [String: String] = [:]
         private let fetcher = ExtensionFetcher()
@@ -35,7 +36,9 @@ struct ExtensionTests {
                     let args = (spec["args"]?.arrayValue ?? []).compactMap(\.stringValue)
                     print(
                         "  proc.run: \(spec["command"]?.stringValue ?? "?") \(args.joined(separator: " "))"
-                            + "  [shell=\(spec["shell"]?.boolValue ?? false) detached=\(spec["detached"]?.boolValue ?? false)]"
+                            + "  [shell=\(spec["shell"]?.boolValue ?? false)"
+                            + " detached=\(spec["detached"]?.boolValue ?? false)"
+                            + " unref=\(spec["fireAndForget"]?.boolValue ?? false)]"
                     )
                 }
                 return ExtensionRuntime.jsonString(
@@ -46,7 +49,9 @@ struct ExtensionTests {
             }
             switch "\(api).\(method)" {
             case "feedback.showToast":
-                toasts.append(arguments.first?.objectValue?["title"]?.stringValue ?? "")
+                let toast = arguments.first?.objectValue ?? [:]
+                toasts.append(toast["title"]?.stringValue ?? "")
+                toastMessages.append(toast["message"]?.stringValue ?? "")
                 return "1"
             case "feedback.showHUD":
                 huds.append(arguments.first?.stringValue ?? "")
@@ -537,6 +542,17 @@ struct ExtensionTests {
             "a destructive artwork icon keeps its own colours",
             destructiveArtwork.source == .file("/tmp/a/danger.png") && destructiveArtwork.tint == nil,
             String(describing: destructiveArtwork))
+
+        let pathLabel = RenderNode(
+            id: 4, type: "List.Item.Detail.Metadata.Label",
+            props: ["title": .string("Path"), "text": .string("/Applications/Demo.app/Contents/MacOS/Demo")])
+        let metadata = RenderNode(id: 3, type: "List.Item.Detail.Metadata", children: [pathLabel])
+        let detail = RenderNode(id: 2, type: "List.Item.Detail", props: ["metadata": .node(metadata)])
+        let process = RenderNode(id: 1, type: "List.Item", props: ["detail": .node(detail)])
+        check(
+            "an iconless process row infers its app icon",
+            ExtensionImage.listIcon(process, assetsPath: nil, isDark: true)?.source
+                == .fileIcon("/Applications/Demo.app"))
     }
 
     private final class MockTokenStore: ExtensionOAuthTokenStore, @unchecked Sendable {
@@ -1112,7 +1128,7 @@ struct ExtensionTests {
               React.useEffect(() => {
                 (async () => {
                   await chmod("\(helper.path)", "755");
-                  const child = spawn("\(helper.path)", ["pick"]);
+                  const child = spawn("\(helper.path)", ["pick"], { detached: true });
                   if (!Array.isArray(child.stdio)) throw new Error("spawn.stdio missing");
                   let spawned = false;
                   let stdinClosed = false;
@@ -1234,6 +1250,16 @@ struct ExtensionTests {
             session: "s1", code: code, file: bundle, mode: target.mode, context: context)
         await settle(settleMS)
 
+        if let query = ProcessInfo.processInfo.environment["EXT_TEST_QUERY"],
+            let tree = recorder.trees.last,
+            let handler = ExtensionScreen(tree: tree, query: "").searchTextHandler
+        {
+            await runtime.dispatch(
+                session: "s1", handler: handler,
+                payload: ExtensionRuntime.jsonString(from: [query]))
+            await settle(settleMS)
+        }
+
         for failure in recorder.failures { print("✗ \(failure)") }
         if ProcessInfo.processInfo.environment["EXT_TEST_VERBOSE"] != nil {
             for line in recorder.logs { print("  \(line)") }
@@ -1241,7 +1267,9 @@ struct ExtensionTests {
         print(
             "\(recorder.trees.count) render(s); host calls: \(Set(host.calls).sorted().joined(separator: ", "))"
         )
-        for toast in host.toasts { print("  toast: \(toast)") }
+        for (toast, message) in zip(host.toasts, host.toastMessages) {
+            print("  toast: \(toast)\(message.isEmpty ? "" : " — \(message)")")
+        }
         for hud in host.huds { print("  hud: \(hud)") }
         if let tree = recorder.trees.last {
             let screen = ExtensionScreen(tree: tree, query: "")

@@ -12,6 +12,11 @@ enum SettingsPaneScanner {
         "com.apple.HeadphoneSettings": "Headphones"
     ]
 
+    /// Panes macOS draws with a Uniform Type icon; their appex ships a generic one. Keyed likewise.
+    private static let iconOverrides: [String: String] = [
+        "com.apple.Battery-Settings.extension": "com.apple.graphic-icon.battery"
+    ]
+
     /// Panes that shouldn't appear in the launcher at all (contextual/one-shot panes).
     private static let skippedBundleIDs: Set<String> = []
 
@@ -44,7 +49,8 @@ enum SettingsPaneScanner {
             result.append(
                 AppEntry(
                     id: url.path, name: name, url: url, bundleID: bundleID,
-                    kind: .systemSettings))
+                    kind: .systemSettings,
+                    iconOverride: iconOverrides[bundleID].map { EntryIcon.contentType($0) }))
         }
         let panes = result.sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending

@@ -26,6 +26,25 @@ export function setDefaultHighWaterMark(objectMode, value) {
   else defaultHighWaterMark = value;
 }
 
+export function isDisturbed(stream) {
+  const state = stream?._readableState;
+  return Boolean(stream?.readableDidRead || state?.dataEmitted || (state?.destroyed && !state.endEmitted));
+}
+
+export function isErrored(stream) {
+  return Boolean(stream?._readableState?.errored || stream?._writableState?.errored);
+}
+
+export function isReadable(stream) {
+  const state = stream?._readableState;
+  return Boolean(state && !state.destroyed && !state.endEmitted);
+}
+
+export function isWritable(stream) {
+  const state = stream?._writableState;
+  return Boolean(state && !state.destroyed && !state.ending);
+}
+
 function sizeOf(chunk, objectMode) {
   if (objectMode) return 1;
   return typeof chunk === "string" ? chunk.length : (chunk?.length ?? 0);
@@ -51,6 +70,8 @@ export class Readable extends Stream {
       ended: false,
       endEmitted: false,
       destroyed: false,
+      dataEmitted: false,
+      errored: null,
       scheduled: false,
       waiter: null,
     };
@@ -107,6 +128,7 @@ export class Readable extends Stream {
     }
     const chunk = state.buffer.shift();
     state.length -= sizeOf(chunk, state.objectMode);
+    state.dataEmitted = true;
     this._pull();
     return chunk;
   }
@@ -160,6 +182,7 @@ export class Readable extends Stream {
     if (state.destroyed) return this;
     state.destroyed = true;
     state.readable = false;
+    state.errored = error ?? null;
     state.buffer.length = 0;
     state.length = 0;
     this._wake();
@@ -291,6 +314,7 @@ function initWritable(stream, options) {
     ended: false,
     finished: false,
     destroyed: false,
+    errored: null,
   };
   if (options.write) stream._write = options.write;
   if (options.final) stream._final = options.final;
@@ -368,6 +392,7 @@ export class Writable extends Stream {
     if (state.destroyed) return this;
     state.destroyed = true;
     state.writable = false;
+    state.errored = error ?? null;
     state.buffer.length = 0;
     const close = (reason) => {
       if (reason) this.emit("error", reason);
