@@ -1060,7 +1060,14 @@ struct ExtensionTests {
               invalid.close();
               // axios picks its Node http adapter by this tag, and inherits from streams ES5-style.
               assert.equal(Object.prototype.toString.call(process), "[object process]");
-              const { Writable } = require("stream");
+              assert(Array.isArray(process.execArgv));
+              assert.equal(require("os").constants.signals.SIGTERM, 15);
+              assert.equal(typeof require("events").setMaxListeners, "function");
+              assert.equal(typeof require("events").addAbortListener, "function");
+              assert.equal(typeof require("events").on, "function");
+              const { Writable, getDefaultHighWaterMark } = require("stream");
+              assert.equal(getDefaultHighWaterMark(false), 16 * 1024);
+              assert.equal(getDefaultHighWaterMark(true), 16);
               function Legacy() { Writable.call(this, { highWaterMark: 7 }); }
               Legacy.prototype = Object.create(Writable.prototype);
               Legacy.prototype._write = function (chunk, encoding, callback) { this.seen = chunk; callback(); };
@@ -1099,15 +1106,33 @@ struct ExtensionTests {
             const React = require("react");
             const { chmod } = require("fs/promises");
             const { spawn } = require("child_process");
+            const { on, once } = require("events");
             module.exports.default = function Command() {
               const [state, setState] = React.useState("pending");
               React.useEffect(() => {
                 (async () => {
                   await chmod("\(helper.path)", "755");
                   const child = spawn("\(helper.path)", ["pick"]);
+                  if (!Array.isArray(child.stdio)) throw new Error("spawn.stdio missing");
+                  let spawned = false;
+                  let stdinClosed = false;
+                  child.once("spawn", () => { spawned = true; });
+                  child.stdin.once("close", () => { stdinClosed = true; });
                   const out = [];
-                  child.stdout.on("data", (chunk) => out.push(chunk.toString()));
-                  child.on("exit", (code) => setState(code + ":" + JSON.parse(out.join("")).hex));
+                  const controller = new AbortController();
+                  child.stdout.once("end", () => controller.abort());
+                  const output = (async () => {
+                    try {
+                      for await (const [chunk] of on(child.stdout, "data", { signal: controller.signal })) {
+                        out.push(chunk.toString());
+                      }
+                    } catch (error) {
+                      if (error.name !== "AbortError") throw error;
+                    }
+                  })();
+                  const [code] = await once(child, "exit");
+                  await output;
+                  setState((spawned && stdinClosed ? code : "stream-error") + ":" + JSON.parse(out.join("")).hex);
                 })().catch((error) => setState("threw:" + error.message));
               }, []);
               return React.createElement(Detail, { markdown: state });
@@ -1116,7 +1141,10 @@ struct ExtensionTests {
         await runtime.start(
             session: "sSwift", code: command, file: URL(fileURLWithPath: "/tmp/swift-helper.js"),
             mode: .view, context: launchContext())
-        await settle(1200)
+        for _ in 0..<50 {
+            if recorder.trees.last?.activeRoot?.string("markdown") == "0:#FF0000" { break }
+            await settle(100)
+        }
 
         let mode = (try? FileManager.default.attributesOfItem(atPath: helper.path))
             .flatMap { $0[.posixPermissions] as? NSNumber }

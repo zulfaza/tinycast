@@ -13,6 +13,19 @@ import { ReadableStream } from "./web-streams.js";
 
 const ignore = () => {};
 
+let defaultHighWaterMark = 16 * 1024;
+let defaultObjectModeHighWaterMark = 16;
+
+export function getDefaultHighWaterMark(objectMode) {
+  return objectMode ? defaultObjectModeHighWaterMark : defaultHighWaterMark;
+}
+
+export function setDefaultHighWaterMark(objectMode, value) {
+  if (!Number.isFinite(value) || value < 0) throw new RangeError("The value of \"value\" is out of range.");
+  if (objectMode) defaultObjectModeHighWaterMark = value;
+  else defaultHighWaterMark = value;
+}
+
 function sizeOf(chunk, objectMode) {
   if (objectMode) return 1;
   return typeof chunk === "string" ? chunk.length : (chunk?.length ?? 0);
@@ -29,7 +42,7 @@ export class Readable extends Stream {
     this._readableState = {
       readable: true,
       objectMode,
-      highWaterMark: options.highWaterMark ?? (objectMode ? 16 : 16 * 1024),
+      highWaterMark: options.highWaterMark ?? getDefaultHighWaterMark(objectMode),
       buffer: [],
       length: 0,
       encoding: options.encoding ?? null,
@@ -268,7 +281,7 @@ function initWritable(stream, options) {
   stream._writableState = {
     writable: true,
     objectMode,
-    highWaterMark: options.highWaterMark ?? (objectMode ? 16 : 16 * 1024),
+    highWaterMark: options.highWaterMark ?? getDefaultHighWaterMark(objectMode),
     buffer: [],
     length: 0,
     defaultEncoding: options.defaultEncoding ?? "utf8",
@@ -312,6 +325,10 @@ export class Writable extends Stream {
 
   _final(callback) {
     callback(null);
+  }
+
+  _destroy(error, callback) {
+    callback(error);
   }
 
   write(chunk, encoding, callback) {

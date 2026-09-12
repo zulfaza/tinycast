@@ -1,7 +1,6 @@
 // Node built-ins that extension bundles keep external. Everything filesystem-, process- or
-// crypto-shaped is a synchronous host call (Swift services these on the JS thread); the
-// stream/socket-shaped modules resolve but throw on use, so a bundle that merely references them
-// still loads.
+// crypto-shaped is a synchronous host call (Swift services these on the JS thread); socket-shaped
+// modules resolve but throw on use, so a bundle that merely references them still loads.
 
 import { hostCall, hostCallSync } from "./host.js";
 import { Buffer, bufferModule } from "./buffer.js";
@@ -16,8 +15,10 @@ import {
   Writable,
   finished,
   finishedPromise,
+  getDefaultHighWaterMark,
   pipeline,
   pipelinePromise,
+  setDefaultHighWaterMark,
 } from "./streams.js";
 import { ReadableStream, TransformStream, WritableStream } from "./web-streams.js";
 import { fileURLToPath, pathToFileURL, URL, URLSearchParams } from "./url.js";
@@ -136,6 +137,7 @@ const process = {
   versions: { node: "22.0.0", v8: "12.0.0", tinycast: "1" },
   argv: ["node", "extension"],
   argv0: "node",
+  execArgv: [],
   execPath: "",
   pid: 1,
   ppid: 0,
@@ -236,7 +238,30 @@ const os = {
   networkInterfaces: () => ({}),
   endianness: () => "LE",
   devNull: "/dev/null",
-  constants: { signals: {}, errno: {} },
+  constants: {
+    signals: {
+      SIGHUP: 1,
+      SIGINT: 2,
+      SIGQUIT: 3,
+      SIGILL: 4,
+      SIGABRT: 6,
+      SIGFPE: 8,
+      SIGKILL: 9,
+      SIGSEGV: 11,
+      SIGPIPE: 13,
+      SIGALRM: 14,
+      SIGTERM: 15,
+      SIGCHLD: 20,
+      SIGCONT: 19,
+      SIGSTOP: 17,
+      SIGTSTP: 18,
+      SIGTTIN: 21,
+      SIGTTOU: 22,
+      SIGUSR1: 30,
+      SIGUSR2: 31,
+    },
+    errno: {},
+  },
 };
 
 // ─── fs ─────────────────────────────────────────────────────────────
@@ -765,27 +790,24 @@ class BufferedChildProcess extends EventEmitter {
     this.pid = 0;
     this.killed = false;
     this.exitCode = null;
+    this.signalCode = null;
     this.stdout = new PassThrough();
     this.stderr = new PassThrough();
     this._input = [];
     this._started = false;
 
     const self = this;
-    this.stdin = {
-      writable: true,
-      write(chunk) {
-        self._input.push(typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.from(chunk));
-        return true;
+    this.stdin = new Writable({
+      write(chunk, _encoding, callback) {
+        self._input.push(Buffer.from(chunk));
+        callback();
       },
-      end(chunk) {
-        if (chunk !== undefined) this.write(chunk);
+      final(callback) {
         self._start(file, args, options);
+        callback();
       },
-      destroy() {},
-      on() {},
-      once() {},
-      emit() {},
-    };
+    });
+    this.stdio = [this.stdin, this.stdout, this.stderr];
 
     // Start on a microtask, not a timer. Callers write stdin synchronously right after `spawn()`
     // (`p.stdin.write(q); p.stdin.end()`), so a microtask still collects it — but unlike a timer it is
@@ -798,6 +820,7 @@ class BufferedChildProcess extends EventEmitter {
   _start(file, args, options) {
     if (this._started) return;
     this._started = true;
+    this.emit("spawn");
     const input = this._input.length ? bytesToBase64(Buffer.concat(this._input)) : null;
     hostCall("proc", "run", [
       {
@@ -814,6 +837,8 @@ class BufferedChildProcess extends EventEmitter {
     ]).then(
       (raw) => {
         this.exitCode = raw.status;
+        this.signalCode = raw.signal ?? null;
+        this.stdin.destroy();
         this.stdout.end(Buffer.from(base64ToBytes(raw.stdout)));
         this.stderr.end(Buffer.from(base64ToBytes(raw.stderr)));
         // One host reply carries both, but a reader still expects the output before the exit code.
@@ -826,6 +851,7 @@ class BufferedChildProcess extends EventEmitter {
         // Close the streams even on failure: a consumer that awaits stdout (execa does) would
         // otherwise see `undefined` where Node guarantees an empty string.
         this.exitCode = 1;
+        this.stdin.destroy();
         this.stdout.end();
         this.stderr.end(Buffer.from(String(error?.message ?? error), "utf8"));
         this.emit("error", error);
@@ -1347,6 +1373,8 @@ const streamModule = unsupportedModule(
     ...streamClasses,
     pipeline,
     finished,
+    getDefaultHighWaterMark,
+    setDefaultHighWaterMark,
     promises: { pipeline: (...stages) => pipelinePromise(stages), finished: finishedPromise },
   }),
 );

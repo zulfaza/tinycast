@@ -79,6 +79,9 @@ enum ExtensionAsyncProcess {
         let fileManager = FileManager.default
         if command.contains("/") {
             let expanded = (command as NSString).expandingTildeInPath
+            if !fileManager.isExecutableFile(atPath: expanded), expanded.contains("/extension-support/") {
+                try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: expanded)
+            }
             return fileManager.isExecutableFile(atPath: expanded)
                 ? URL(fileURLWithPath: expanded) : nil
         }
