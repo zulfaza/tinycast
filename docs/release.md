@@ -136,15 +136,11 @@ The three macOS 26 / macOS 15 casks all install `Tinycast.app` under `com.tinyca
 
 ## Website
 
-`.github/workflows/website.yml` builds `website/` (Next.js static export + Tailwind, with Fumadocs for
-the docs section) and deploys it to GitHub Pages at `https://abue-ammar.github.io/tinycast/` on every
-push to `main` that touches `website/`. Enable it once via
-**Settings → Pages → Source = GitHub Actions**.
+`website/` is a Next.js static export with Tailwind and Fumadocs for the docs section. Preview it
+locally with:
 
 ```sh
 cd website && npm install && npm run dev     # local preview
 ```
 
-The workflow uploads `website/out` — a Next.js export lands there, not in `dist/`. `public/.nojekyll`
-must stay: GitHub Pages runs Jekyll, which ignores `_`-prefixed directories, so without it every
-asset under `_next/` 404s. See [website/README.md](../website/README.md).
+See [website/README.md](../website/README.md) for website development details.
