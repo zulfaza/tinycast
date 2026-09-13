@@ -36,7 +36,11 @@ PREVIOUS="$(gh release list --repo "$REPO" --limit 200 --json tagName,isDraft --
 NOTES_ARGS=(-f "tag_name=${TAG}" -f "target_commitish=${SHA}")
 if [ -n "$PREVIOUS" ]; then NOTES_ARGS+=(-f "previous_tag_name=${PREVIOUS}"); fi
 echo "▸ Generating notes for ${TAG}${PREVIOUS:+ since ${PREVIOUS}}"
-GENERATED="$(gh api "repos/${REPO}/releases/generate-notes" "${NOTES_ARGS[@]}" --jq .body)"
+if GENERATED="$(gh api "repos/${REPO}/releases/generate-notes" "${NOTES_ARGS[@]}" --jq .body 2>/dev/null)"; then
+    :
+else
+    GENERATED=""
+fi
 
 COMPARE_URL="$(printf '%s\n' "$GENERATED" | sed -n 's|^\*\*Full Changelog\*\*: \(.*\)$|\1|p' | tail -n1)"
 
@@ -44,7 +48,21 @@ COMPARE_URL="$(printf '%s\n' "$GENERATED" | sed -n 's|^\*\*Full Changelog\*\*: \
 CHANGELOG="$(printf '%s\n' "$GENERATED" | sed -E \
     -e '/^\*\*Full Changelog\*\*:/d' \
     -e "s|https://github\.com/${REPO}/pull/([0-9]+)|#\1|g")"
-[ -n "$(printf '%s' "$CHANGELOG" | tr -d '[:space:]')" ] || CHANGELOG="Maintenance and internal changes."
+if [ -z "$(printf '%s' "$CHANGELOG" | tr -d '[:space:]')" ] || \
+    [ "$CHANGELOG" = "Maintenance and internal changes." ]; then
+    if [ -n "$PREVIOUS" ]; then
+        CHANGELOG="$(gh api "repos/${REPO}/compare/${PREVIOUS}...${SHA}" \
+            --jq '.commits[] | "- " + (.commit.message | split("\\n")[0])')"
+    fi
+    if [ -z "$(printf '%s' "$CHANGELOG" | tr -d '[:space:]')" ]; then
+        COMMIT_SUBJECT="$(gh api "repos/${REPO}/commits/${SHA}" --jq '.commit.message' | sed -n '1p')"
+        if [ -n "$COMMIT_SUBJECT" ]; then
+            CHANGELOG="- ${COMMIT_SUBJECT}"
+        else
+            CHANGELOG="Maintenance and internal changes."
+        fi
+    fi
+fi
 
 {
     printf '%s\n\n' "$CHANGELOG"
@@ -53,14 +71,6 @@ CHANGELOG="$(printf '%s\n' "$GENERATED" | sed -E \
     printf 'Built from %s.' "$SHA"
     if [ -n "$COMPARE_URL" ]; then printf ' [Full changelog](%s)' "$COMPARE_URL"; fi
     printf '\n\n'
-    printf '%s\n' "**Recommended:** install via Homebrew — it clears the quarantine flag automatically on every install and update, so there's nothing to run by hand:"
-    printf '```sh\nbrew trust --tap abue-ammar/tinycast\nbrew install --cask abue-ammar/tinycast/%s\n```\n' "$CASK"
-    # The stable DMG is arm64-only; macOS 26 is the last release that boots on Intel.
-    if [ "$CHANNEL" = "stable" ]; then
-        printf '%s\n' "On an **Intel** Mac, install \`abue-ammar/tinycast/tinycast-universal\` instead — same app, built with both slices."
-    fi
-    printf '%s\n' "This build is self-signed. If you download the DMG directly instead of using Homebrew, macOS will refuse to open it until you clear the quarantine flag once:"
-    printf '```sh\nxattr -dr com.apple.quarantine "/Applications/%s.app"\n```\n' "$DISPLAY_NAME"
 } > "$BODY_OUT"
 
 printf '%s\n' "$CHANGELOG" | awk -v budget="$DISCORD_BUDGET" -v bullets="$DISCORD_BULLETS" '
