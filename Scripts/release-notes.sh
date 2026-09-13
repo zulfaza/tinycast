@@ -10,6 +10,7 @@ REPO="${REPO:-abue-ammar/tinycast}"
 CHANNEL="${CHANNEL:?CHANNEL is required (beta|stable)}"
 TAG="${TAG:?TAG is required, e.g. v0.9.13-beta.61}"
 SHA="${SHA:-$(git rev-parse HEAD)}"
+SOURCE_SHA="$SHA"
 VERSION="${VERSION:-${TAG#v}}"
 DISPLAY_NAME="${DISPLAY_NAME:-Tinycast}"
 BUNDLE_ID="${BUNDLE_ID:-com.tinycast.app}"
@@ -33,7 +34,10 @@ PREVIOUS="$(gh release list --repo "$REPO" --limit 200 --json tagName,isDraft --
       | select(test(\"-sequoia\") | not) | select(. != \"${TAG}\") | select(${CHANNEL_FILTER})] | first // empty")"
 
 # The tag does not exist yet — this runs before `gh release create` makes it.
-NOTES_ARGS=(-f "tag_name=${TAG}" -f "target_commitish=${SHA}")
+if ! gh api "repos/${REPO}/commits/${SOURCE_SHA}" >/dev/null 2>&1; then
+    SOURCE_SHA="$(gh api "repos/${REPO}/commits/main" --jq .sha)"
+fi
+NOTES_ARGS=(-f "tag_name=${TAG}" -f "target_commitish=${SOURCE_SHA}")
 if [ -n "$PREVIOUS" ]; then NOTES_ARGS+=(-f "previous_tag_name=${PREVIOUS}"); fi
 echo "▸ Generating notes for ${TAG}${PREVIOUS:+ since ${PREVIOUS}}"
 if GENERATED="$(gh api "repos/${REPO}/releases/generate-notes" "${NOTES_ARGS[@]}" --jq .body 2>/dev/null)"; then
@@ -51,7 +55,7 @@ CHANGELOG="$(printf '%s\n' "$GENERATED" | sed -E \
 if [ -z "$(printf '%s' "$CHANGELOG" | tr -d '[:space:]')" ] || \
     [ "$CHANGELOG" = "Maintenance and internal changes." ]; then
     if [ -n "$PREVIOUS" ]; then
-        CHANGELOG="$(gh api "repos/${REPO}/compare/${PREVIOUS}...${SHA}" \
+        CHANGELOG="$(gh api "repos/${REPO}/compare/${PREVIOUS}...${SOURCE_SHA}" \
             --jq '.commits[] | "- " + (.commit.message | split("\\n")[0])')"
     fi
     if [ -z "$(printf '%s' "$CHANGELOG" | tr -d '[:space:]')" ]; then
