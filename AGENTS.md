@@ -31,6 +31,11 @@ Carbon is a deliberate capability-gap dependency rather than inertia: nothing mo
 system-wide chord, and HIToolbox's TIS APIs remain the public input-source mechanism. Full reasoning in
 [standards.md](docs/standards.md#posture).
 
+## Repository sync
+
+When the user says **source repo**, they mean `abue-ammar/tinycast`. The local `origin` remote is the
+user fork, `zulfaza/tinycast`; sync upstream changes into that fork before releasing.
+
 ## Where things are
 
 | Folder | Holds |
