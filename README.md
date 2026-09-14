@@ -120,7 +120,7 @@ disabled, and keystrokes are matched locally, never stored and never sent anywhe
 ## Building from source
 
 See **[docs/development.md](docs/development.md)** for the toolchain, build, packaging, release and
-website development. **[docs/](docs/README.md)** indexes everything else — architecture, engineering
+website workflows. **[docs/](docs/README.md)** indexes everything else — architecture, engineering
 standards, the design system and one document per feature.
 
 ## Contributing

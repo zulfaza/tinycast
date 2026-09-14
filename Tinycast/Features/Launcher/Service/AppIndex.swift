@@ -435,8 +435,7 @@ final class AppIndex {
                     url: record.fileURL,
                     bundleID: nil,
                     kind: .snippet,
-                    matchAliases: [record.snippet.keyword].compactMap { $0 },
-                    symbolName: record.snippet.iconSymbol ?? "curlybraces")
+                    matchAliases: [record.snippet.keyword].compactMap { $0 })
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         guard entries != snippetEntries else { return }

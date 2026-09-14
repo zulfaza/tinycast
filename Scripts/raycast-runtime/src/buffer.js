@@ -89,54 +89,6 @@ function compareBytes(a, b) {
   return a.length < b.length ? -1 : 1;
 }
 
-function blobBytes(part) {
-  if (part instanceof Blob) return part._bytes;
-  if (part instanceof ArrayBuffer) return new Uint8Array(part);
-  if (ArrayBuffer.isView(part)) return new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
-  return utf8Encode(String(part));
-}
-
-export class Blob {
-  constructor(parts = [], options = {}) {
-    const bytes = parts.map(blobBytes);
-    const size = bytes.reduce((total, part) => total + part.byteLength, 0);
-    this._bytes = new Uint8Array(size);
-    let offset = 0;
-    for (const part of bytes) {
-      this._bytes.set(part, offset);
-      offset += part.byteLength;
-    }
-    const type = String(options.type ?? "");
-    this.type = /^[\x20-\x7e]*$/.test(type) ? type.toLowerCase() : "";
-  }
-
-  get size() { return this._bytes.byteLength; }
-  get [Symbol.toStringTag]() { return "Blob"; }
-
-  async arrayBuffer() {
-    return this._bytes.buffer.slice(this._bytes.byteOffset, this._bytes.byteOffset + this._bytes.byteLength);
-  }
-
-  async bytes() { return new Uint8Array(this._bytes); }
-  async text() { return utf8Decode(this._bytes); }
-
-  stream() {
-    const bytes = new Uint8Array(this._bytes);
-    return new ReadableStream({
-      start(controller) {
-        controller.enqueue(bytes);
-        controller.close();
-      },
-    });
-  }
-
-  slice(start = 0, end = this.size, type = "") {
-    const from = start < 0 ? Math.max(this.size + start, 0) : Math.min(start, this.size);
-    const to = end < 0 ? Math.max(this.size + end, 0) : Math.min(end, this.size);
-    return new Blob([this._bytes.slice(from, Math.max(from, to))], { type });
-  }
-}
-
 export class Buffer extends Uint8Array {
   static from(value, encodingOrOffset, length) {
     if (typeof value === "string") return wrap(encode(value, encodingOrOffset));
@@ -262,7 +214,6 @@ function wrap(bytes) {
 }
 
 export const bufferModule = {
-  Blob,
   Buffer,
   SlowBuffer: Buffer,
   atob: globalThis.atob,

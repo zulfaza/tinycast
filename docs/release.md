@@ -28,10 +28,15 @@ zip is produced with `ditto -c -k --keepParent --sequesterRsrc` — the only zip
 signature verifiable, which matters because the updater refuses any bundle whose signature does not
 prove it is ours.
 
+A stable release publishes two more from the `universal` job, `Tinycast-Universal-<version>.dmg` and
+`.zip`, built from the same commit at the same version and bundle id but with both slices. They are
+uploaded *after* the thin pair, which keeps the thin zip first in the asset list so builds predating
+architecture-aware selection keep choosing it.
+
 Three things a release must keep true, or the updater skips it:
 
 - **It carries a `.zip` asset this Mac can run.** A DMG-only release is not installable and is not
-  offered.
+  offered, and an Intel build is offered nothing rather than a thin arm64 zip.
 - **The tag parses as `vMAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH-beta.N`,** and agrees with the
   `prerelease` flag. `v0.9.7-sequoia` deliberately parses as neither, which is what keeps beta
   installs off the macOS 15 build.
@@ -77,7 +82,8 @@ needed. Run it from the **Actions** tab (`Release` → **Run workflow**) and pic
 - **version** — base semver, e.g. `0.2.0`.
 
 It builds on a `macos-26` runner with Xcode 26 and publishes a GitHub Release tagged
-`v<full-version>` with a versioned DMG and zip asset, marked prerelease for beta.
+`v<full-version>` with a versioned DMG and zip asset, marked prerelease for beta. On success it also
+bumps the matching cask in the tap and announces the release on Discord.
 
 A stable run then fans out to a second job, `universal`, which rebuilds the same commit with
 `ARCHS="arm64 x86_64"` and attaches `Tinycast-Universal-<version>.dmg` / `.zip` to the release the
@@ -115,13 +121,30 @@ Two details the script exists for:
 The Discord announcement carries the same changelog, truncated to fit Discord's component limit, and
 pings `@everyone`.
 
+### Homebrew tap automation
+
+Each job's final step rewrites the `version` + `sha256` of its cask (`tinycast`, `tinycast@beta` or
+`tinycast-universal`) in the [`homebrew-tinycast`](https://github.com/abue-ammar/homebrew-tinycast) tap
+and pushes. It needs a `HOMEBREW_TAP_TOKEN` repo secret — a fine-grained PAT with **Contents:
+read/write** on the tap repo. Without the secret the step logs a warning and skips; the release still
+publishes. The `sed` is anchored to `^  version` / `^  sha256`, so a cask's two-space indent on those
+lines is load-bearing.
+
+The three macOS 26 / macOS 15 casks all install `Tinycast.app` under `com.tinycast.app`, so they
+`conflicts_with` one another and Homebrew routes each Mac by `depends_on`: `tinycast` requires
+`arch: :arm64`, `tinycast-universal` takes the Intel Macs, and `tinycast-sequoia` covers macOS 15.
+
 ## Website
 
-`website/` is a Next.js static export with Tailwind and Fumadocs for the docs section. Preview it
-locally with:
+`.github/workflows/website.yml` builds `website/` (Next.js static export + Tailwind, with Fumadocs for
+the docs section) and deploys it to GitHub Pages at `https://abue-ammar.github.io/tinycast/` on every
+push to `main` that touches `website/`. Enable it once via
+**Settings → Pages → Source = GitHub Actions**.
 
 ```sh
 cd website && npm install && npm run dev     # local preview
 ```
 
-See [website/README.md](../website/README.md) for website development details.
+The workflow uploads `website/out` — a Next.js export lands there, not in `dist/`. `public/.nojekyll`
+must stay: GitHub Pages runs Jekyll, which ignores `_`-prefixed directories, so without it every
+asset under `_next/` 404s. See [website/README.md](../website/README.md).

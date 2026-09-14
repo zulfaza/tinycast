@@ -79,7 +79,7 @@ final class ClipboardCoordinator {
 
     func paste(_ item: ClipboardItem) {
         let previous = windowController.previousApp
-        paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
+        paletteCoordinator.hidePalette(restoreFocus: false)
         // A write promotes the item, so follow it and keep the moved row highlighted.
         if Paster.paste(item, store: clipboardStore, previousApp: previous) {
             selectClip(item)
@@ -121,7 +121,7 @@ final class ClipboardCoordinator {
     }
 
     func copyToClipboard(_ item: ClipboardItem) {
-        paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
+        paletteCoordinator.hidePalette(restoreFocus: false)
         if Paster.copy(item, store: clipboardStore) {
             selectClip(item)
         } else {
@@ -131,13 +131,13 @@ final class ClipboardCoordinator {
 
     /// Unmarked, so a converted colour enters history itself — it is one you meant to keep.
     func copyColor(_ color: ColorValue, as format: ColorFormat) {
-        paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
+        paletteCoordinator.hidePalette(restoreFocus: false)
         Paster.copyPlainText(format.string(for: color))
     }
 
     func revealClip(_ item: ClipboardItem) {
         guard let url = clipURL(for: item) else { return }
-        paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
+        paletteCoordinator.hidePalette(restoreFocus: false)
         AppLauncher.showInFinder(url)
     }
 
@@ -155,14 +155,14 @@ final class ClipboardCoordinator {
 
     func openClip(_ item: ClipboardItem) {
         guard let url = clipURL(for: item) else { return }
-        paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
+        paletteCoordinator.hidePalette(restoreFocus: false)
         AppLauncher.open(url)
     }
 
     /// Unmarked, so the path enters history like any other copy the reader meant to make.
     func copyClipPath(_ item: ClipboardItem) {
         guard let path = item.filePath else { return }
-        paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
+        paletteCoordinator.hidePalette(restoreFocus: false)
         Paster.copyPlainText(path)
         core.showMessage("Copied path")
     }

@@ -83,9 +83,6 @@ are reset together rather than the screen alone. A reply still streaming is the 
 asked for, and resetting would throw the answer away. Nothing is lost either way: a conversation is
 written to Chat History as soon as it has a message.
 
-An ordinary close clears the search query immediately, so a fresh ⌘Space starts blank even when the
-screen itself is still preserved inside that window.
-
 Each `PaletteMode` maps to one type conforming to `PaletteScreen`, and the protocol is what keeps the
 selection invariant honest: a screen exposes `rows` as its single source of visible order, and the
 palette indexes into it. Adding a mode means adding a conformer, not a branch in `RootPaletteView`.

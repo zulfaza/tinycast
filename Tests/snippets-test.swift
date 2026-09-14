@@ -1359,25 +1359,6 @@ struct SnippetsTests {
 
         // Raycast's snippet spelling resolves like Tinycast's.
         let child = record("/tmp/ph-child.md", Snippet(name: "Child", text: "nested"))
-        let argumentChild = record(
-            "/tmp/ph-argument-child.md",
-            Snippet(name: "Argument Child", text: "{argument name=\"Nested\"}"))
-        let argumentParent = record(
-            "/tmp/ph-argument-parent.md",
-            Snippet(name: "Argument Parent", text: "{snippet:Argument Child}|{argument name=\"Root\"}"))
-        check(
-            "declared snippet arguments include nested references",
-            SnippetTemplateEngine.declaredArguments(
-                in: argumentParent, snippets: [argumentParent, argumentChild]).map(\.name)
-                == ["Nested", "Root"])
-        let optionalChoice = record(
-            "/tmp/ph-optional-choice.md",
-            Snippet(name: "Optional Choice", text: #"{argument name="model" default="opus" options="opus, luna"}"#))
-        check(
-            "optional choice arguments retain their default for the inline field",
-            SnippetTemplateEngine.declaredArguments(
-                in: optionalChoice, snippets: [optionalChoice])
-                == [.init(name: "model", options: ["opus", "luna"], defaultValue: "opus")])
         let byName = record("/tmp/ph-name.md", Snippet(name: "ByName", text: "{snippet name=\"Child\"}"))
         let byColon = record("/tmp/ph-colon.md", Snippet(name: "ByColon", text: "{snippet:Child}"))
         let pool = [child, byName, byColon]

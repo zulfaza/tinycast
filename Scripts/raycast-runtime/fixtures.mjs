@@ -171,43 +171,11 @@ const nodeSource = `
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import { AsyncResource } from "node:async_hooks";
-import { Blob, Buffer } from "node:buffer";
-import { channel } from "node:diagnostics_channel";
-import EventEmitter from "node:events";
-import { Agent, maxHeaderSize } from "node:http";
-import { isIP, isIPv4, isIPv6 } from "node:net";
-import { PassThrough, isDisturbed, isErrored, isReadable, isWritable } from "node:stream";
+import { Buffer } from "node:buffer";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Detail } from "@raycast/api";
 
 export default function Command() {
-  class RequestResource extends AsyncResource {}
-  const request = new RequestResource("REQUEST");
-  class RequestBody extends Blob {}
-  class RequestEvent extends Event {}
-  const target = new EventTarget();
-  let events = 0;
-  target.addEventListener("ready", () => events++, { once: true });
-  target.dispatchEvent(new RequestEvent("ready"));
-  target.dispatchEvent(new RequestEvent("ready"));
-  const diagnostics = channel("fixture:request");
-  let diagnosticValue = "";
-  const subscriber = (value) => { diagnosticValue = value; };
-  diagnostics.subscribe(subscriber);
-  diagnostics.publish("observed");
-  diagnostics.unsubscribe(subscriber);
-  diagnostics.publish("ignored");
-  class RequestAgent extends Agent {}
-  const emitter = new EventEmitter();
-  let onceContext = false;
-  emitter.once("ready", function () { onceContext = this === emitter; });
-  emitter.emit("ready");
-  const stream = new PassThrough();
-  const streamBefore = [isDisturbed(stream), isErrored(stream), isReadable(stream), isWritable(stream)];
-  stream.push(Buffer.from("x"));
-  stream.read();
-  const streamAfter = [isDisturbed(stream), isErrored(stream)];
   const errorCode = (fn) => {
     try {
       fn();
@@ -233,22 +201,6 @@ export default function Command() {
     Buffer.from("hello").toString("base64"),
     Buffer.from("aGVsbG8=", "base64").toString("utf8"),
     new TextDecoder().decode(new TextEncoder().encode("héllo")),
-    request.runInAsyncScope(
-      function (value) { return this.prefix + value; },
-      { prefix: "async-" },
-      "resource",
-    ),
-    new RequestBody(["body"], { type: "TEXT/PLAIN" }).size +
-      ":" +
-      new RequestBody([], { type: "TEXT/PLAIN" }).type,
-    "events:" + events,
-    "diagnostics:" + diagnosticValue + ":" + diagnostics.hasSubscribers,
-    "agent:" + new RequestAgent({ keepAlive: true }).options.keepAlive,
-    "max-header:" + maxHeaderSize,
-    "ip:" + [isIP("127.0.0.1"), isIP("2001:db8::1"), isIP("translate.google.com"),
-      isIPv4("192.0.2.1"), isIPv6("::1")].join(":"),
-    "once-context:" + onceContext,
-    "stream-state:" + [...streamBefore, ...streamAfter].join(":"),
     fileURLToPath("file:///Applications/Tinycast%20Beta.app"),
     fileURLToPath(new URL("file:///tmp/%ED%95%9C%EA%B8%80.txt")),
     fileURLToPath("file://localhost/tmp/a?query=ignored#fragment"),
@@ -704,15 +656,6 @@ export async function runFixtures() {
       "aGVsbG8=",
       "hello",
       "héllo",
-      "async-resource",
-      "4:text/plain",
-      "events:1",
-      "diagnostics:observed:false",
-      "agent:true",
-      "max-header:16384",
-      "ip:4:6:0:true:true",
-      "once-context:true",
-      "stream-state:false:false:true:true:true:false",
       "/Applications/Tinycast Beta.app",
       "/tmp/한글.txt",
       "/tmp/a",

@@ -8,28 +8,15 @@ struct SnippetsScreen: PaletteScreen {
 
     private var metrics: InterfaceMetrics { core.settings.interfaceSize.metrics }
     let openActions: () -> Void
-    let openArgumentOptions: (String) -> Void
 
     /// A disabled snippet is off everywhere, so the browser lists exactly what the launcher does.
     var rows: [StoredSnippet] {
-        let _ = store.usageRevision
         let enabled = store.snippets.filter { $0.snippet.isEnabled }
         let query = vm.query.trimmingCharacters(in: .whitespaces)
-        let filtered = query.isEmpty ? enabled : enabled.filter { record in
+        guard !query.isEmpty else { return enabled }
+        return enabled.filter { record in
             record.snippet.name.localizedCaseInsensitiveContains(query)
                 || record.snippet.keyword?.localizedCaseInsensitiveContains(query) == true
-        }
-        return filtered.sorted { lhs, rhs in
-            let leftGroup =
-                SnippetUsageGroup.allCases.firstIndex(of: store.usage.group(for: lhs.id)) ?? 0
-            let rightGroup =
-                SnippetUsageGroup.allCases.firstIndex(of: store.usage.group(for: rhs.id)) ?? 0
-            if leftGroup != rightGroup { return leftGroup < rightGroup }
-            let leftDate = store.usage.lastUsed(for: lhs.id) ?? .distantPast
-            let rightDate = store.usage.lastUsed(for: rhs.id) ?? .distantPast
-            if leftDate != rightDate { return leftDate > rightDate }
-            return lhs.snippet.name.localizedCaseInsensitiveCompare(rhs.snippet.name)
-                == .orderedAscending
         }
     }
 
@@ -47,22 +34,10 @@ struct SnippetsScreen: PaletteScreen {
 
     func activate(at selection: Int) {
         guard let record = record(at: selection) else { return }
-        core.snippetCoordinator.expandSnippetFromPalette(
-            id: record.id,
-            userArguments: SnippetArgumentsAccessory.values(
-                for: record, coordinator: core.snippetCoordinator, vm: vm))
+        core.snippetCoordinator.expandSnippetFromPalette(id: record.id)
     }
 
     func secondary(at selection: Int) -> Bool { false }
-
-    func headerAccessory(
-        at selection: Int, focus: FocusState<String?>.Binding
-    ) -> PaletteHeaderAccessory? {
-        SnippetArgumentsAccessory.make(
-            snippet: record(at: selection), coordinator: core.snippetCoordinator, vm: vm,
-            focus: focus, onOpenOptions: openArgumentOptions,
-            onSubmit: { activate(at: selection) })
-    }
 
     func body(selection: Int, scroll: ScrollIntent) -> AnyView {
         AnyView(content(selection: selection, scroll: scroll))
@@ -77,7 +52,7 @@ struct SnippetsScreen: PaletteScreen {
             let selected = record(at: selection)
             HStack(spacing: 0) {
                 SnippetsList(
-                    results: rows, usage: store.usage, selectedID: selected?.id, scroll: scroll,
+                    results: rows, selectedID: selected?.id, scroll: scroll,
                     onSelect: { record in
                         vm.selection = rows.firstIndex(of: record) ?? 0
                     },
@@ -89,7 +64,7 @@ struct SnippetsScreen: PaletteScreen {
                 )
                 .frame(width: metrics.size.clipboardListWidth)
                 Rectangle().fill(Theme.Colors.separator).frame(width: Theme.Size.hairline)
-                SnippetPreview(record: selected, usage: store.usage)
+                SnippetPreview(record: selected)
             }
         }
     }
@@ -112,11 +87,11 @@ enum SnippetActionsMenu {
                     core.snippetCoordinator.expandSnippetFromPalette(id: record.id)
                 },
                 PopoverMenuItem(title: "Edit Snippet", systemImage: "pencil", startsSection: true) {
-                    core.paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
+                    core.paletteCoordinator.hidePalette(restoreFocus: false)
                     core.snippetCoordinator.editSnippet(record)
                 },
                 PopoverMenuItem(title: "Create Snippet", systemImage: "plus") {
-                    core.paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
+                    core.paletteCoordinator.hidePalette(restoreFocus: false)
                     core.snippetCoordinator.editSnippet(nil)
                 },
                 PopoverMenuItem(title: "Show in Finder", systemImage: "folder", startsSection: true) {

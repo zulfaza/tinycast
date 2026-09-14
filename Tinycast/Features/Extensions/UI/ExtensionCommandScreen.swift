@@ -195,9 +195,7 @@ struct ExtensionCommandScreen: PaletteScreen {
                     guard let handler = field.handler("onTinycastChange") else { return }
                     extensions.dispatch(handler: handler, arguments: [value])
                 }
-            )
-            .id(screen.root?.id)
-        )
+            ))
     }
 
     /// Matched before the palette's own handling; true when an action fired.

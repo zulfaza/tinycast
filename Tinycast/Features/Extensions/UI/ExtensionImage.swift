@@ -62,24 +62,6 @@ enum ExtensionImage {
         }
     }
 
-    static func listIcon(_ node: RenderNode, assetsPath: String?, isDark: Bool) -> Resolved? {
-        if let resolved = resolve(node.props["icon"], assetsPath: assetsPath, isDark: isDark) {
-            return resolved
-        }
-        guard let path = inferredFileIconPath(node) else { return nil }
-        return Resolved(source: .fileIcon(path))
-    }
-
-    private static func inferredFileIconPath(_ node: RenderNode) -> String? {
-        guard let metadata = node.node("detail")?.node("metadata"),
-            let path = metadata.children.first(where: {
-                $0.type == "List.Item.Detail.Metadata.Label" && $0.string("title") == "Path"
-            })?.string("text"), (path as NSString).isAbsolutePath
-        else { return nil }
-        guard let appMarker = path.range(of: ".app/", options: .caseInsensitive) else { return path }
-        return String(path[..<path.index(before: appMarker.upperBound)])
-    }
-
     /// Always resolves: a destructive action with no tint takes red, as a native menu does.
     static func actionIcon(
         _ value: RenderValue?, assetsPath: String?, isDark: Bool, isDestructive: Bool

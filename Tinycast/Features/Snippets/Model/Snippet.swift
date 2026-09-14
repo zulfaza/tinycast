@@ -2,7 +2,6 @@ import Foundation
 
 struct Snippet: Sendable, Hashable {
     var name: String
-    var iconSymbol: String?
     var text: String
     var keyword: String?
     var isEnabled: Bool
@@ -10,14 +9,12 @@ struct Snippet: Sendable, Hashable {
 
     init(
         name: String,
-        iconSymbol: String? = nil,
         text: String,
         keyword: String? = nil,
         isEnabled: Bool = true,
         showsConfirmation: Bool = false
     ) {
         self.name = name
-        self.iconSymbol = iconSymbol
         self.text = text
         self.keyword = keyword
         self.isEnabled = isEnabled

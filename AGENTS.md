@@ -31,11 +31,6 @@ Carbon is a deliberate capability-gap dependency rather than inertia: nothing mo
 system-wide chord, and HIToolbox's TIS APIs remain the public input-source mechanism. Full reasoning in
 [standards.md](docs/standards.md#posture).
 
-## Repository sync
-
-When the user says **source repo**, they mean `abue-ammar/tinycast`. The local `origin` remote is the
-user fork, `zulfaza/tinycast`; sync upstream changes into that fork before releasing.
-
 ## Where things are
 
 | Folder | Holds |
@@ -124,16 +119,6 @@ feature's doc, under its own `## Invariants`.
   persisted must stay keyed by `Bundle.main.bundleIdentifier`.
 - **XcodeGen owns the project.** `Tinycast.xcodeproj` is committed but generated from `project.yml`;
   after editing it, run `xcodegen generate` and commit both. No SwiftPM, and never `Bundle.module`.
-
-## Testing
-
-- **New test files are opt-in.** Do not create unit, integration, end-to-end, or spec files, or new
-  test-only helpers/fixtures, unless the user explicitly requests their creation or approves it first.
-  A request to implement, fix, test, or verify something does not by itself authorize new test files.
-  Assume no by default; ask only when creating them has a concrete benefit, not as a routine step.
-- **Prefer running existing tests and direct browser/runtime checks without adding test files.** Where
-  test changes are in scope, exercise observable behavior rather than asserting source-code strings,
-  implementation shapes, or that tests exist.
 
 ## Before you finish
 

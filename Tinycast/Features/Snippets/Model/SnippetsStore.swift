@@ -12,8 +12,6 @@ final class SnippetsStore {
     }
 
     private(set) var snippets: [StoredSnippet] = []
-    let usage: SnippetUsageStore
-    private(set) var usageRevision = 0
     private(set) var state: State = .idle
     private(set) var issues: [SnippetRepository.Issue] = []
     private(set) var operationError: String?
@@ -33,8 +31,6 @@ final class SnippetsStore {
     init(repository: SnippetRepository = SnippetRepository()) {
         self.repository = repository
         snippetsDirectory = repository.snippetsDirectory
-        usage = SnippetUsageStore(
-            fileURL: repository.channelDirectory.appendingPathComponent("snippet-usage.json"))
     }
 
     isolated deinit {
@@ -119,11 +115,6 @@ final class SnippetsStore {
 
     func record(id: StoredSnippet.ID) -> StoredSnippet? {
         snippets.first(where: { $0.id == id })
-    }
-
-    func recordUse(id: StoredSnippet.ID) {
-        usage.recordUse(for: id)
-        usageRevision &+= 1
     }
 
     private enum RepositoryResult<Value: Sendable>: Sendable {
