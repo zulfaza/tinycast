@@ -6,6 +6,11 @@ and an emoji picker. It also **runs Raycast extensions** natively, in JavaScript
 SwiftUI + AppKit, running as an accessory with no Dock icon (`LSUIElement`). Zero third-party
 dependencies.
 
+## Repository and pull requests
+
+- `origin` and the default PR destination are `zulfaza/tinycast`.
+- `abue-ammar/tinycast` is source-only. Never open a PR there unless explicitly asked.
+
 ## Posture: latest-only, always
 
 **Tinycast targets one macOS — the current stable release — and nothing else.** macOS 26+, the Xcode 26
