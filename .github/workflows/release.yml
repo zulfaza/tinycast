@@ -24,7 +24,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-26
-    # Consumed by the `universal` job, so the channel identity is derived in exactly one place.
+    # macOS 26-only fork; channel identity is derived in one place.
     outputs:
       full_version: ${{ steps.meta.outputs.full_version }}
       display_name: ${{ steps.meta.outputs.display_name }}
@@ -184,9 +184,7 @@ jobs:
             --notes-file "$RUNNER_TEMP/notes.md" \
             $PRERELEASE_FLAG
 
-  # macOS 26 is the last release to boot on Intel, so stable also ships a universal build under its
-  # own cask. Same tag, version, bundle id and signature — only the slices and filenames differ, so
-  # nothing here can change what the Apple silicon job above publishes.
+  # Universal/Intel packaging remains disabled; this fork ships only the macOS 26 arm64 build.
   universal:
     needs: build
     if: ${{ false }}
