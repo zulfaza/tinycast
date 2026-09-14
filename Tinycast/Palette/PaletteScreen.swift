@@ -185,12 +185,15 @@ struct PaletteHeaderAccessory {
     let firstIncompleteField: String?
     /// A field whose value is chosen rather than typed hands back its menu; nil means free text.
     let optionsMenu: (String) -> PopoverMenuContent?
+    /// Moves a focused option field; false leaves arrows to the palette's normal navigation.
+    let moveOption: (String, Int) -> Bool
     let placement: Placement
     let view: AnyView
 
     init(
         width: CGFloat, fieldNames: [String], firstIncompleteField: String?,
         optionsMenu: @escaping (String) -> PopoverMenuContent? = { _ in nil },
+        moveOption: @escaping (String, Int) -> Bool = { _, _ in false },
         placement: Placement = .afterQuery,
         view: AnyView
     ) {
@@ -198,6 +201,7 @@ struct PaletteHeaderAccessory {
         self.fieldNames = fieldNames
         self.firstIncompleteField = firstIncompleteField
         self.optionsMenu = optionsMenu
+        self.moveOption = moveOption
         self.placement = placement
         self.view = view
     }

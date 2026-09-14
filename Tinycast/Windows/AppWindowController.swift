@@ -12,6 +12,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     /// Rebuilt with the window, so a chrome's state never outlives the window it decorated.
     private var chrome: WindowChrome?
+    /// Runs only after the window actually closes; ordering it out keeps this untouched.
+    var onWindowClosed: (@MainActor () -> Void)?
 
     init(
         title: String, contentSize: CGSize, resizable: Bool = false, autosaveName: String? = nil,
@@ -67,6 +69,13 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         window?.close()
     }
 
+    /// Temporarily removes the window while retaining its mounted content and frame.
+    func hide() {
+        window?.orderOut(nil)
+    }
+
+    var isVisible: Bool { window?.isVisible == true }
+
     /// The title bar sits inside the frame but outside the layout area, so it is added back.
     func fitContent(width: CGFloat, height: CGFloat) {
         guard let window else { return }
@@ -85,9 +94,11 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard let window else { return }
+        let onWindowClosed = self.onWindowClosed
         self.window = nil
         self.chrome = nil
         activation.windowDidClose(window)
+        onWindowClosed?()
     }
 
     // MARK: - Private

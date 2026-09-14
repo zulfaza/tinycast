@@ -115,6 +115,10 @@ struct DoubleTapDetectorTests {
                 unbindable.contains($0) || $0.hotKeyAction == .command($0)
             },
             "every other command binds to its own action, so every row gets a recorder")
+        expect(
+            Set(CommandID.allCases.filter(\.keepsHotKeyWhenHidden))
+                == [.searchSnippets, .createSnippet],
+            "only snippet shortcuts survive launcher-row hiding")
 
         // Keyed on the raw value, not the position, so reordering the enum cannot move a binding.
         for id in CommandID.allCases where !unbindable.contains(id) {
