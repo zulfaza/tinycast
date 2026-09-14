@@ -86,6 +86,9 @@ written to Chat History as soon as it has a message.
 Each `PaletteMode` maps to one type conforming to `PaletteScreen`, and the protocol is what keeps the
 selection invariant honest: a screen exposes `rows` as its single source of visible order, and the
 palette indexes into it. Adding a mode means adding a conformer, not a branch in `RootPaletteView`.
+A chord aimed at the selected row — ⌃X, ⇧⌘F, ⌘Y and the rest — follows the same rule:
+`PaletteShortcut` recognises the key and carries its compact-bar and open-menu guards, and the screen
+answers through `perform(_:at:)`, so a new chord never adds a cast to the shell.
 
 | Mode | Screen | Inner list |
 | --- | --- | --- |
@@ -240,7 +243,7 @@ The panel's width and height are not constants: they come from `InterfaceMetrics
 changes them. A change re-enters through `AppCore.track` → `applyInterfaceSize()`, which **drops the
 cached anchor** and re-resolves it — one rule, the summon's. An untouched palette re-centres at the new
 width; a dragged one keeps its stored top-left unless the wider bar no longer leaves
-`paletteMinimumVisible` on any display, in which case it falls home.
+`paletteMinimumVisible` on the display it opens on, in which case it falls home.
 
 ### Drag to reposition
 
@@ -283,17 +286,19 @@ default placement, which is what a snap would then land on.
 
 ### Remembering where it was left
 
-A drop that isn't a snap writes the anchor to `AppSettings.palettePosition`, and the next summon reopens
-there — across relaunches, since it is a persisted setting. **A remembered position outranks the display
-setting below**; `PalettePlacement.restored` drops it only when no display still shows
-`Theme.Size.paletteMinimumVisible` of the compact bar, which is what a disconnected screen or a
-resolution change leaves behind. Snapping onto the guides clears the stored position, so the guides
-double as the way back to default behaviour.
+A drop that isn't a snap writes the panel's top-left to `AppSettings.palettePositions`, **one entry per
+display**, keyed by `NSScreen.displayKey` and held **relative to that display's visible top-left**. Per
+display stops a drop made on one screen pulling the palette back there when it is summoned on another;
+relative survives rearranging that display or rescaling it, so no key goes stale.
+
+**The display is chosen first, by the setting below.** `PalettePlacement.restored` drops the corner once
+that display shows less than `Theme.Size.paletteMinimumVisible` of the compact bar, and snapping onto
+the guides clears that display's entry.
 
 The position is deliberately **not** in a settings backup — it is machine-local geometry, the same
 reason the Settings window autosaves its frame instead ([backup.md](backup.md)).
 
-Which display an *unremembered* palette anchors to depends on the **Follow the cursor across displays**
+Which display the palette anchors to depends on the **Follow the cursor across displays**
 setting (`AppSettings.openOnCursorScreen`, on by default):
 
 - **On** — `NSScreen.underCursor`: the screen holding `NSEvent.mouseLocation`, i.e. the display under
@@ -457,6 +462,15 @@ editing, and AppKit tears the field editor down and selects the whole string whe
 screen opened with a carried query (the Search Files fallback) came up with that query selected. An
 IME's composition and any other focused field — the inline argument fields, an extension form — are
 left alone: the handler returns `.ignored` for them, and their own `onSubmit` still commits.
+
+## The query is one line
+
+A paste, a drop or ⌥↵ can put line breaks into the search field, which then wraps its text out of
+view. `PaletteState.collapseQueryLineBreaks()` joins the lines with a space and drops breaks at
+either end. It runs from `RootPaletteView`'s `onChange(of: vm.query)`, which returns early so the
+filtering runs once, on the rewritten query. It cannot live in `query`'s setter: measured, SwiftUI's
+field editor keeps the text it just set and ignores a rewrite made inside that same set. The rewrite
+moves the caret to the end, which only differs from a normal paste when pasting mid-query.
 
 ## Chords `onKeyPress` never sees
 

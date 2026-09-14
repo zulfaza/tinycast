@@ -6,7 +6,8 @@ produces, rendered natively into the palette. No Electron, no browser, no Node.j
 - [How it works](#how-it-works) · [The JS runtime](#the-js-runtime) ·
   [The Swift host](#the-swift-host) · [Rendering](#rendering)
 - [Turning it on](#turning-it-on) · [Installing extensions](#installing-extensions) ·
-  [Registries](#registries) · [Shortcuts](#shortcuts) · [Aliases](#aliases) · [What's supported](#whats-supported) ·
+  [Registries](#registries) · [Shortcuts](#shortcuts) · [Aliases](#aliases) · [Deeplinks](#deeplinks) ·
+  [What's supported](#whats-supported) ·
   [What isn't](#what-isnt-supported-yet) · [Working on the runtime](#working-on-the-runtime)
 
 ## Invariants
@@ -112,7 +113,7 @@ Two host-call flavours:
 | `Service/ExtensionRuntime.swift` | the `JSContext`, host-function installation, timers, exception reporting |
 | `Service/ExtensionHostBridge.swift` | main-actor host APIs (clipboard, storage, cache, window, toasts, system, oauth) |
 | `Service/ExtensionNodeShims.swift` | the synchronous `fs` / `os` / `child_process` / `crypto` / `zlib` services |
-| `Service/ExtensionFetcher.swift` | `fetch` over `URLSession`, plus the async `exec` and the shared PATH resolver |
+| `Service/ExtensionFetcher.swift` | `fetch` over `URLSession`, plus collecting async `exec` children and the shared PATH resolver |
 | `Service/ExtensionOAuthKeychain.swift` | secure OAuth token storage backed by macOS Keychain |
 | `Service/ExtensionOAuthSession.swift` | PKCE state tracking, browser launch, and callback redirect resolution |
 | `Service/ExtensionStorage.swift` | per-extension `LocalStorage`, `Cache` and preference values (one JSON file each) |
@@ -472,6 +473,19 @@ Settings › Extensions › the command › Alias is the writer; `AppIndex` alre
 pairing Settings ▸ Commands uses. It dims when the command is hidden from launcher search — the
 global Show in launcher switch, or this extension's — because the ranker never sees the entry then.
 
+## Deeplinks
+
+`raycast://extensions/<owner>/<extension>/<command>` runs an installed command from outside the app —
+a browser link, another app, a Shortcut — and `tinycast://` mirrors it so our own links never depend
+on Raycast winning the scheme. Both accept Raycast's query parameters: `arguments` as URL-encoded
+JSON, `fallbackText`, and `launchType=background`, which only a no-view command receives — a view
+command always takes over the palette, so it launches as `userInitiated`. The owner is a hint: a
+scoped install matches by `owner/extension` first and falls back to the bare slug, so short links
+keep working. Anything else on a claimed scheme just reopens the palette, and an unknown command says
+so rather than failing silently. `ExtensionDeepLink` owns the claimed schemes and the parsing,
+covered by `Tests/ext-test.swift`; an extension's own `open("raycast://…")` resolves through the same
+`ExtensionManager.resolve(_:)` instead of launching Raycast.
+
 ## Background refresh
 
 A `no-view` command declaring `interval` (`"90s"`, `"1m"`, `"12h"`, `"1d"`) re-runs headlessly on that
@@ -548,11 +562,12 @@ would launch Raycast itself.
 
 **Node built-ins** — `path`, `fs` (+ `fs/promises`, `createReadStream`/`createWriteStream`, and the
 descriptor calls `tar` unpacks through), `os`,
-`child_process` (`exec`, `execFile`, `execSync`, `execFileSync`, `spawnSync`, and a buffered `spawn`),
-`crypto` (hashes, HMAC, random, UUID), `zlib` (gzip/zlib/raw deflate, both directions), `http`/`https`
-(`request` and `get`, buffered over the same URLSession bridge as `fetch`), `stream` (`Readable`,
-`Writable`, `Duplex`, `Transform`, `PassThrough`, `pipeline`, `finished`, plus `stream/promises` and
-`stream/web`), `util`, `events`, `buffer`, `url`, `querystring`, `punycode`, `assert`,
+`child_process` (`exec`, `execFile`, `execSync`, `execFileSync`, `spawnSync`, and a buffered `spawn`,
+each async form reporting the child's real `pid` for `process.kill` — Timers pauses that way),
+`crypto` (hashes, HMAC, PBKDF2, AES-CBC/ECB, random, UUID), `zlib` (gzip/zlib/raw deflate, both
+directions), `http`/`https` (`request` and `get`, buffered over the same URLSession bridge as
+`fetch`), `stream` (`Readable`, `Writable`, `Duplex`, `Transform`, `PassThrough`, `pipeline`,
+`finished`, plus `stream/promises` and `stream/web`), `util`, `events`, `buffer`, `url`, `querystring`, `punycode`, `assert`,
 `string_decoder`, `timers`. Every other built-in resolves to a stub that throws only when used, so a
 bundle that merely references `dgram` or `http2` still loads.
 
