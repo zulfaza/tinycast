@@ -29,17 +29,9 @@ struct ExtensionTests {
 
         func perform(api: String, method: String, arguments: [RenderValue]) async throws -> String {
             calls.append("\(api).\(method)")
-            if api == "proc", method == "run" {
-                if ProcessInfo.processInfo.environment["EXT_TEST_VERBOSE"] != nil {
-                    let spec = arguments.first?.objectValue ?? [:]
-                    let args = (spec["args"]?.arrayValue ?? []).compactMap(\.stringValue)
-                    print(
-                        "  proc.run: \(spec["command"]?.stringValue ?? "?") \(args.joined(separator: " "))"
-                            + "  [shell=\(spec["shell"]?.boolValue ?? false) detached=\(spec["detached"]?.boolValue ?? false)]"
-                    )
-                }
+            if api == "proc", method == "wait" {
                 return ExtensionRuntime.jsonString(
-                    from: try await ExtensionAsyncProcess.run(arguments.first))
+                    from: try await ExtensionAsyncProcess.wait(arguments.first))
             }
             if api == "fetch" {
                 return ExtensionRuntime.jsonString(from: try await fetcher.request(arguments.first))
@@ -187,6 +179,7 @@ struct ExtensionTests {
         screenChecks()
         actionIconChecks()
         oauthUnitChecks()
+        deepLinkChecks()
         nodeShimChecks()
         await runtimeChecks()
         await searchAccessoryRuntimeChecks()
@@ -728,6 +721,81 @@ struct ExtensionTests {
             ExtensionOAuthSession.handleCallbackURL(strayURL) == .expired)
     }
 
+    static func deepLinkChecks() {
+        let canonical = ExtensionDeepLink.parse(
+            url: URL(string: "raycast://extensions/linear/linear/create-issue")!)
+        check(
+            "deeplink parses owner, extension and command",
+            canonical?.ownerOrAuthor == "linear" && canonical?.extensionName == "linear"
+                && canonical?.commandName == "create-issue",
+            String(describing: canonical))
+        check(
+            "deeplink prefers the scoped manifest name",
+            canonical?.extensionCandidates == ["linear/linear", "linear"],
+            String(describing: canonical?.extensionCandidates))
+
+        let tiny = ExtensionDeepLink.parse(
+            url: URL(string: "tinycast://extensions/linear/linear/create-issue")!)
+        check("deeplink mirrors raycast:// as tinycast://", tiny == canonical)
+
+        let bare = ExtensionDeepLink.parse(url: URL(string: "raycast://extensions/demo/search")!)
+        check(
+            "deeplink without an owner parses",
+            bare?.ownerOrAuthor == nil && bare?.extensionName == "demo"
+                && bare?.commandName == "search")
+
+        let args = ExtensionDeepLink.parse(
+            url: URL(
+                string:
+                    "raycast://extensions/linear/linear/create-issue?arguments=%7B%22title%22%3A%22Triage%22%7D"
+            )!)
+        check(
+            "deeplink decodes arguments JSON",
+            args?.arguments == ["title": "Triage"], String(describing: args?.arguments))
+
+        let coerced = ExtensionDeepLink.parseArguments(#"{"q":"","n":3,"flag":true}"#)
+        check(
+            "deeplink coerces non-string arguments",
+            coerced == ["q": "", "n": "3", "flag": "true"], String(describing: coerced))
+        check(
+            "deeplink treats malformed arguments as none",
+            ExtensionDeepLink.parseArguments("not-json") == [:])
+
+        let full = ExtensionDeepLink.parse(
+            url: URL(
+                string: "raycast://extensions/demo/search?fallbackText=hello&launchType=background"
+            )!)
+        check(
+            "deeplink reads fallback text and background launch",
+            full?.fallbackText == "hello" && full?.launchType == .background)
+
+        let legacy = ExtensionDeepLink.parse(
+            url: URL(string: "com.raycast:/extensions/demo/search")!)
+        check(
+            "deeplink reads the com.raycast path form",
+            legacy?.extensionName == "demo" && legacy?.commandName == "search")
+
+        check(
+            "deeplink rejects a non-extensions link",
+            ExtensionDeepLink.parse(url: URL(string: "raycast://confetti")!) == nil)
+        check(
+            "deeplink rejects an OAuth callback",
+            ExtensionDeepLink.parse(url: URL(string: "raycast://oauth?code=abc")!) == nil)
+        check(
+            "deeplink rejects other schemes",
+            ExtensionDeepLink.parse(url: URL(string: "https://example.com/x")!) == nil)
+
+        check(
+            "deeplink matches a scoped install by slug",
+            bare?.matches(manifestName: "owner/demo") == true)
+        check(
+            "deeplink matches a short install from a scoped link",
+            canonical?.matches(manifestName: "linear") == true)
+        check(
+            "deeplink rejects another extension",
+            canonical?.matches(manifestName: "other/other") == false)
+    }
+
     // MARK: - End-to-end through JavaScriptCore
 
     @MainActor
@@ -762,8 +830,11 @@ struct ExtensionTests {
             const h = React.createElement;
             module.exports.default = function Command() {
               const [count, setCount] = React.useState(0);
+              const [derived, setDerived] = React.useState("pending");
               React.useEffect(() => {
                 const timer = setTimeout(() => setCount(1), 20);
+                crypto.pbkdf2("foobar", "foobarbazzybaz", 1e5, 64, "sha512", (error, key) =>
+                  setDerived(error ? error.message : key.toString("hex").slice(0, 16)));
                 showToast({ style: Toast.Style.Success, title: "hello" });
                 return () => clearTimeout(timer);
               }, []);
@@ -798,6 +869,27 @@ struct ExtensionTests {
                 String(util.inspect.custom === Symbol.for("nodejs.util.inspect.custom")),
                 typeof util.aborted(AbortSignal.abort()).then,
               ].join(",");
+              // Bitwarden derives its session hash and caches the vault through exactly these calls.
+              const encrypter = crypto.createCipheriv("aes-256-cbc", "k".repeat(32), "i".repeat(16));
+              const encrypted = Buffer.concat([encrypter.update("hello tinycast"), encrypter.final()]);
+              const decrypter = crypto.createDecipheriv("aes-256-cbc", "k".repeat(32), Buffer.from("i".repeat(16)));
+              const ecb = crypto.createCipheriv("aes-128-ecb", Buffer.alloc(16, 1), null).setAutoPadding(false);
+              const cipherShim = [
+                crypto.pbkdf2Sync("password", "salt", 1000, 16, "sha512").toString("hex"),
+                crypto.pbkdf2Sync("", "", 1, 8, "SHA-256").toString("hex"),
+                crypto.createCipheriv("aes-256-cbc", "k".repeat(32), "i".repeat(16)).final("hex"),
+                encrypted.toString("hex"),
+                decrypter.update(encrypted.toString("hex"), "hex", "utf8") + decrypter.final("utf8"),
+                ecb.update(Buffer.alloc(16, 2)).toString("hex") + ecb.final("hex"),
+                errorCode(() => {
+                  const wrong = crypto.createDecipheriv("aes-256-cbc", "k".repeat(32), "i".repeat(16));
+                  wrong.update(Buffer.alloc(16));
+                  wrong.final();
+                }),
+                errorCode(() => crypto.createCipheriv("aes-256-cbc", "short", "i".repeat(16))),
+                errorCode(() => crypto.pbkdf2Sync("p", "s", 1, 8, "nope")),
+                derived,
+              ].join(",");
               return h(List, { navigationTitle: "Synthetic", isLoading: false },
                 h(List.Item, {
                   title: "count=" + count,
@@ -805,7 +897,7 @@ struct ExtensionTests {
                   icon: Icon.Circle,
                   accessories: [
                     { text: digest }, { text: abortable }, { text: filePaths },
-                    { text: cpuTimes }, { text: utilShim },
+                    { text: cpuTimes }, { text: cipherShim }, { text: utilShim },
                   ],
                   actions: h(ActionPanel, null,
                     h(Action, { title: "Bump", onAction: () => setCount((v) => v + 10) }))
@@ -860,6 +952,15 @@ struct ExtensionTests {
                 + "ERR_INVALID_FILE_URL_PATH\nERR_INVALID_FILE_URL_HOST\n"
                 + "ERR_INVALID_URL_SCHEME",
             String(describing: screen.items.first?.node.array("accessories").dropFirst(2).first))
+        check(
+            "crypto shim derives PBKDF2 keys and round-trips AES like Node",
+            ExtensionAccessoriesView_labelForTest(
+                screen.items.first?.node.array("accessories").dropFirst(4).first)
+                == "afe6c5530785b6cc6b1c6453384731bd,f7ce0b653d2d72a4,5d11c49af18b4b3e482508362bd2c857,"
+                + "eb7b227687302ff167fef6a04d9f99f3,"
+                + "hello tinycast,17d614f379a9359077e95577fd31c20a,ERR_OSSL_BAD_DECRYPT,"
+                + "ERR_CRYPTO_INVALID_KEYLEN,ERR_CRYPTO_INVALID_DIGEST,6cba6dd1d44f53a3",
+            String(describing: screen.items.first?.node.array("accessories").dropFirst(4).first))
         check(
             "util shim answers debuglog, stripVTControlCharacters, aborted and inspect.custom",
             ExtensionAccessoriesView_labelForTest(screen.items.first?.node.array("accessories").last)
@@ -1040,6 +1141,7 @@ struct ExtensionTests {
         await failing.stop(session: "s3")
 
         await swiftHelperChecks()
+        await processKillChecks()
         zlibChecks()
     }
 
@@ -1320,6 +1422,52 @@ struct ExtensionTests {
             recorder.trees.last?.activeRoot?.string("markdown") == "0:#FF0000",
             recorder.trees.last?.activeRoot?.string("markdown") ?? "no tree")
         await runtime.stop(session: "sSwift")
+    }
+
+    /// Timers pauses by storing `exec`'s pid and later `process.kill`ing the shell before it rings.
+    @MainActor
+    static func processKillChecks() async {
+        let marker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tinycast-rang-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: marker) }
+
+        let (runtime, _, recorder) = makeRuntime()
+        try? await runtime.boot(
+            config: .current(supportDirectory: FileManager.default.temporaryDirectory))
+        let command = """
+            "use strict";
+            const { Detail } = require("@raycast/api");
+            const React = require("react");
+            const { exec } = require("child_process");
+            const process = require("process");
+            const code = (run) => { try { run(); return "ok"; } catch (error) { return error.code; } };
+            module.exports.default = function Command() {
+              const [state, setState] = React.useState("pending");
+              React.useEffect(() => {
+                const child = exec("sleep 1 >/dev/null 2>&1; touch '\(marker.path)'", (error) => {
+                  setState([live, error ? "failed" : "passed", child.kill(), code(() => process.kill(0)),
+                    code(() => process.kill(2147483647, 0)), code(() => process.kill(child.pid, "SIGNOPE"))
+                  ].join(","));
+                });
+                const live = child.pid > 0 && process.kill(child.pid, 0) && process.kill(child.pid);
+              }, []);
+              return React.createElement(Detail, { markdown: state });
+            };
+            """
+        await runtime.start(
+            session: "sKill", code: command, file: URL(fileURLWithPath: "/tmp/process-kill.js"),
+            mode: .view, context: launchContext())
+        await settle(1500)
+
+        check(
+            "a killed exec child never runs the rest of its script",
+            !FileManager.default.fileExists(atPath: marker.path))
+        check(
+            "exec returns a live pid and process.kill guards Tinycast itself",
+            recorder.trees.last?.activeRoot?.string("markdown")
+                == "true,failed,false,EPERM,ESRCH,ERR_UNKNOWN_SIGNAL",
+            recorder.trees.last?.activeRoot?.string("markdown") ?? "no tree")
+        await runtime.stop(session: "sKill")
     }
 
     /// `zlib` is the one node shim with no JS-side implementation to lean on.
