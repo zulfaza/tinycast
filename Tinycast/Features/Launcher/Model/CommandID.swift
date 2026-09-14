@@ -152,6 +152,11 @@ enum CommandID: String, CaseIterable, Sendable {
         self == .openInBrowser || self == .runShellCommand
     }
 
+    /// Snippet shortcuts remain useful when their rows are hidden, but still need the feature switch.
+    var keepsHotKeyWhenHidden: Bool {
+        self == .searchSnippets || self == .createSnippet
+    }
+
     /// A chord carries no query, and none should be able to terminate the app outright.
     var hotKeyAction: HotKeyAction? {
         isQueryDriven || self == .quit ? nil : .command(self)

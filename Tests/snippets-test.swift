@@ -13,6 +13,7 @@ struct SnippetsTests {
         // The in-process delivery tier drives a real text view, which needs AppKit awake.
         _ = NSApplication.shared
         testIdentityAndRevision()
+        await testSnippetUsage()
         testRaycastImport()
         try testMarkdownCodec()
         try testRepositoryStorage()
@@ -45,6 +46,76 @@ struct SnippetsTests {
         check(
             "source revision changes with source content",
             SnippetSourceRevision(content: "same") != SnippetSourceRevision(content: "same\n"))
+    }
+
+    private static func testSnippetUsage() async {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tinycast-snippet-usage-\(UUID().uuidString)")
+        let fileURL = root.appendingPathComponent("snippet-usage.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let now = Date(timeIntervalSince1970: 1_750_000_000)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let usage = SnippetUsageStore(fileURL: fileURL, now: { now }, calendar: calendar)
+        await usage.load()
+        check(
+            "unused snippets classify into the Never Used group",
+            SnippetUsageGroup.classify(lastUsed: nil, now: now, calendar: calendar) == .neverUsed)
+        check(
+            "recent usage classifies into Today",
+            SnippetUsageGroup.classify(lastUsed: now, now: now, calendar: calendar) == .today)
+        check(
+            "usage groups cover every age in display order",
+            [
+                SnippetUsageGroup.today, .yesterday, .thisWeek, .thisMonth, .older, .neverUsed
+            ] == SnippetUsageGroup.allCases)
+        check(
+            "yesterday usage has its own group",
+            SnippetUsageGroup.classify(
+                lastUsed: calendar.date(byAdding: .day, value: -1, to: now), now: now,
+                calendar: calendar) == .yesterday)
+        check(
+            "this-week usage has its own group",
+            SnippetUsageGroup.classify(
+                lastUsed: calendar.dateInterval(of: .weekOfYear, for: now).flatMap {
+                    calendar.date(byAdding: .day, value: 2, to: $0.start)
+                }, now: now,
+                calendar: calendar) == .thisWeek)
+        check(
+            "this-month usage has its own group",
+            SnippetUsageGroup.classify(
+                lastUsed: calendar.date(byAdding: .day, value: -10, to: now), now: now,
+                calendar: calendar) == .thisMonth)
+        check(
+            "old usage has its own group",
+            SnippetUsageGroup.classify(
+                lastUsed: calendar.date(byAdding: .day, value: -45, to: now), now: now,
+                calendar: calendar) == .older)
+        usage.recordUse(for: "/tmp/usage.md")
+        usage.recordUse(for: "/tmp/usage.md")
+        check(
+            "usage count increments only for recorded expansions",
+            usage.records["/tmp/usage.md"]?.count == 2)
+        await settle(within: .milliseconds(700)) {
+            guard let data = try? Data(contentsOf: fileURL),
+                let persisted = try? JSONDecoder().decode(
+                    [StoredSnippet.ID: SnippetUsageRecord].self, from: data)
+            else { return false }
+            return persisted["/tmp/usage.md"]?.count == 2
+        }
+        let persisted = (try? Data(contentsOf: fileURL)).flatMap {
+            try? JSONDecoder().decode([StoredSnippet.ID: SnippetUsageRecord].self, from: $0)
+        }
+        check(
+            "usage records persist in the channel file",
+            persisted?["/tmp/usage.md"]?.count == 2)
+
+        let malformedURL = root.appendingPathComponent("malformed-usage.json")
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try? Data("{not-json".utf8).write(to: malformedURL)
+        let malformed = SnippetUsageStore(fileURL: malformedURL, now: { now }, calendar: calendar)
+        await malformed.load()
+        check("malformed usage data is ignored", malformed.records.isEmpty)
     }
 
     private static func testRaycastImport() {
@@ -1172,12 +1243,22 @@ struct SnippetsTests {
             "nested arguments follow final appearance order",
             argumentResult.missingArguments.map(\.name) == ["Root", "Nested", "Last"])
 
-        let cycleA = record("/tmp/cycle-a.md", Snippet(name: "A", text: "{snippet:B}"))
-        let cycleB = record("/tmp/cycle-b.md", Snippet(name: "B", text: "{snippet:A}"))
+        let cycleA = record(
+            "/tmp/cycle-a.md",
+            Snippet(name: "A", text: "{snippet:B}|{argument name=CycleA}"))
+        let cycleB = record(
+            "/tmp/cycle-b.md",
+            Snippet(name: "B", text: "{snippet:A}|{argument name=CycleB}"))
         let cycleResult = SnippetTemplateEngine.expand(cycleA, snippets: [cycleA, cycleB], context: context)
         check(
-            "cycles are detected with stable record IDs and remain visible", cycleResult.text == "{snippet:A}"
+            "cycles are detected with stable record IDs and remain visible",
+            cycleResult.text == "{snippet:A}|{argument name=CycleB}|{argument name=CycleA}"
+                && cycleResult.missingArguments.map(\.name) == ["CycleB", "CycleA"]
         )
+        check(
+            "nested declarations stop at cycles and de-duplicate names",
+            SnippetTemplateEngine.declaredArguments(
+                in: cycleA, snippets: [cycleA, cycleB]).map(\.name) == ["CycleB", "CycleA"])
 
         let depthRecords = (0...6).map { index in
             record(
@@ -1189,6 +1270,20 @@ struct SnippetsTests {
             snippets: depthRecords,
             context: context)
         check("reference depth limit leaves the unexpanded token visible", depthResult.text == "{snippet:S6}")
+        let declarationDepthRecords = (0...6).map { index in
+            record(
+                "/tmp/declaration-depth-\(index).md",
+                Snippet(
+                    name: "DS\(index)",
+                    text: index == 5
+                        ? "{argument name=Deep}|{snippet:DS6}"
+                        : index == 6 ? "{argument name=TooDeep}" : "{snippet:DS\(index + 1)}"))
+        }
+        check(
+            "nested declarations honor the expansion depth limit",
+            SnippetTemplateEngine.declaredArguments(
+                in: declarationDepthRecords[0], snippets: declarationDepthRecords).map(\.name)
+                == ["Deep"])
     }
 
     /// Every token, parameter and modifier, against injected clock, locale and UUIDs.
@@ -1359,6 +1454,29 @@ struct SnippetsTests {
 
         // Raycast's snippet spelling resolves like Tinycast's.
         let child = record("/tmp/ph-child.md", Snippet(name: "Child", text: "nested"))
+        let argumentChild = record(
+            "/tmp/ph-argument-child.md",
+            Snippet(name: "Argument Child", text: "{argument name=Nested}"))
+        let argumentParent = record(
+            "/tmp/ph-argument-parent.md",
+            Snippet(
+                name: "Argument Parent",
+                text: "{snippet:Argument Child}|{argument name=Root}"))
+        check(
+            "inline declarations include nested arguments in written order",
+            SnippetTemplateEngine.declaredArguments(
+                in: argumentParent, snippets: [argumentParent, argumentChild]).map(\.name)
+                == ["Nested", "Root"])
+        let optionalChoice = record(
+            "/tmp/ph-optional-choice.md",
+            Snippet(
+                name: "Optional Choice",
+                text: #"{argument name="model" default="opus" options="opus, luna"}"#))
+        check(
+            "inline declarations retain defaults and options",
+            SnippetTemplateEngine.declaredArguments(
+                in: optionalChoice, snippets: [optionalChoice])
+                == [.init(name: "model", options: ["opus", "luna"], defaultValue: "opus")])
         let byName = record("/tmp/ph-name.md", Snippet(name: "ByName", text: "{snippet name=\"Child\"}"))
         let byColon = record("/tmp/ph-colon.md", Snippet(name: "ByColon", text: "{snippet:Child}"))
         let pool = [child, byName, byColon]

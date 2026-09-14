@@ -61,6 +61,10 @@ import can never enable keystroke listening — which is why either importer's s
 still off when snippets land, so a dormant keyword doesn't read as a broken one. `AppCore`'s settings
 sinks re-project on every change.
 
+Expansion history is kept beside the channel's snippets in `snippet-usage.json`. A record is written
+only after delivery succeeds. The browser groups enabled snippets as Today, Yesterday, This Week,
+This Month, Older and Never Used; entries descend by last use, then name and stable ID.
+
 ## Importing from Raycast
 
 The encrypted `.rayconfig` flow in **Settings → Backup** can import Raycast's built-in snippets as
@@ -171,6 +175,8 @@ Accessibility because it begins from an explicit user action.
 `Search Snippets` and `Create Snippet` are launcher commands of their own, and either switch takes
 them out with the rows: "Show in launcher" off means the feature reaches launcher search not at all.
 The browser stays reachable by its global shortcut, and the editor from the pane.
+Their configured shortcuts remain available while the feature is enabled, even when launcher rows
+are hidden; disabling snippets disables those shortcuts too.
 
 Automatic keyword expansion comes with the feature switch: enabling snippets in
 **Settings → Snippets** first shows an explanation, then stores the flag and requests Accessibility if
@@ -215,8 +221,13 @@ a library being browsed rather than a query racing apps and commands for a rank.
 
 The preview shows the **raw template**, never an expansion. Expanding per selection would capture the
 clipboard, read the target's selected text and burn a `{uuid}` on every arrow key, and a snippet
-carrying `{argument}` would raise its prompt just to draw a pane. Beside it sits the name, keyword,
-file name and character count.
+carrying `{argument}` would raise its prompt just to draw a pane. Beside it sits the name and compact
+Content Type/Times Copied metadata, with Last Copied when available.
+
+An argument-bearing selection shows its fields beside the search field. Fields include nested
+references in first-appearance order; defaults seed optional fields and `options=` fields use a picker.
+Tab and Shift-Tab move between the query and fields, Up/Down changes a focused picker, and Enter
+submits through the normal expansion path. A missing required value focuses the first empty field.
 
 ↵ and the ⌘K menu's **Paste Snippet** both go through `SnippetCoordinator.expandSnippetFromPalette`,
 which reads `previousApp` before hiding the panel and then calls the same `expandSnippet` funnel a

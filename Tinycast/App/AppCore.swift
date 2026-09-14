@@ -262,7 +262,14 @@ final class AppCore {
             hotKeys.doubleTapMonitor.healthTicker = healthTicker
             snippetListener.healthTicker = healthTicker
 
-            hotKeys.onTogglePalette = { [weak self] in self?.paletteCoordinator.togglePalette() }
+            hotKeys.onTogglePalette = { [weak self] in
+                guard let self else { return }
+                if self.snippetCoordinator.isEditingSnippet {
+                    self.snippetCoordinator.toggleEditor()
+                } else {
+                    self.paletteCoordinator.togglePalette()
+                }
+            }
             hotKeys.onRunCommand = { [weak self] id in self?.launcherCoordinator.runCommand(id) }
             hotKeys.onRunCustomCommand = { [weak self] id in
                 self?.customCommandCoordinator.runCustomCommand(id: id)
@@ -291,8 +298,10 @@ final class AppCore {
             hotKeys.displayName = { [weak self] action in self?.hotKeyDisplayName(for: action) }
             hotKeys.allowsAction = { [weak self] action in
                 guard let self, visibility.allowsHotKey(action) else { return false }
-                // A disabled feature drops its commands from the launcher; their shortcuts go too.
                 guard case .command(let id) = action else { return true }
+                if id.keepsHotKeyWhenHidden {
+                    return settings.snippetsEnabled
+                }
                 return appIndex.isCommandEnabled(id)
             }
             KeyShortcut.displayedHyperChord = { [settings] in
