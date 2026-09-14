@@ -55,7 +55,6 @@ private struct SelectionFollowing: ViewModifier {
                 band = new
                 // The inset settles after mount and moves the resting offset, so `top` is restated.
                 if scroll.kind == .top, old.insetTop != new.insetTop { proxy.scrollToOrigin() }
-                align()
             }
             .onPreferenceChange(SelectionFrameKey.self) { frame in
                 selection = frame

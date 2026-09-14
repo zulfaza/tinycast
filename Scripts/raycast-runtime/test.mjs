@@ -27,7 +27,9 @@ const runtime = readFileSync(runtimePath, "utf8");
 export function createHarness({ onRender, onFail, verbose = false, stubs = {} } = {}) {
   const context = createContext({});
   const timers = new Map();
-  const state = { trees: [], failures: [], logs: [], finished: false, hostCalls: [] };
+  const state = {
+    trees: [], failures: [], logs: [], finished: false, hostCalls: [], processCalls: []
+  };
 
   const host = {
     log(level, message) {
@@ -66,6 +68,7 @@ export function createHarness({ onRender, onFail, verbose = false, stubs = {} } 
       const name = `${api}.${method}`;
       state.hostCalls.push(name);
       const args = JSON.parse(argsJson);
+      if (name === "proc.run") state.processCalls.push(args[0]);
       Promise.resolve()
         .then(() => (stubs[name] ? stubs[name](args) : stubHostCall(api, method, args)))
         .then(
@@ -220,7 +223,7 @@ function syncHostCall(api, method, args) {
     case "proc.run": {
       const spec = args[0];
       // Mirrors the Swift host: a detached child answers at launch, with no output.
-      if (spec.detached) return { stdout: "", stderr: "", status: 0 };
+      if (spec.detached || spec.fireAndForget) return { stdout: "", stderr: "", status: 0 };
       try {
         const stdout = spec.shell
           ? execFileSync("/bin/sh", ["-c", spec.command], { cwd: spec.cwd })
@@ -415,6 +418,14 @@ async function runExtension(dir, commandName) {
   harness.start("s1", readFileSync(file, "utf8"), file, dir, target.mode === "view" ? "view" : "no-view", {});
 
   await new Promise((resolve) => setTimeout(resolve, 1500));
+  const query = process.env.EXT_TEST_QUERY;
+  const searchHandler = harness.state.trees.at(-1)?.children
+    ?.find((node) => node.type === "__screen" && node.props?.active)
+    ?.children?.[0]?.props?.onSearchTextChange?.$fn;
+  if (query !== undefined && searchHandler) {
+    harness.dispatch("s1", searchHandler, [query]);
+    await new Promise((resolve) => setTimeout(resolve, Number(process.env.EXT_TEST_SETTLE_MS ?? 1500)));
+  }
   if (harness.state.failures.length) {
     console.log("\n✗ failures:");
     for (const failure of harness.state.failures) console.log(failure);

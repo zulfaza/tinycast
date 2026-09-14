@@ -91,6 +91,7 @@ extension SettingsAnchor {
     static let extensionsInstalled = Self(tab: .extensions, title: "Installed")
     static let extensionsInstall = Self(tab: .extensions, title: "Install")
     static let extensionsStorage = Self(tab: .extensions, title: "Storage")
+    static let extensionsDeveloper = Self(tab: .extensions, title: "Developer")
 
     static let permissionsAccessibility = Self(tab: .permissions, title: "Accessibility")
     static let permissionsCalendars = Self(tab: .permissions, title: "Calendars")

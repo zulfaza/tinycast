@@ -1,7 +1,9 @@
 // A Buffer subset over Uint8Array — enough for the encode/decode work extension bundles do.
 // Anything stream-shaped is deliberately absent; see docs/extensions.md for the supported surface.
 
-import { base64ToBytes, bytesToBase64, utf8Decode, utf8Encode } from "./polyfills.js";
+import { base64ToBytes, bytesToBase64, TinycastBlob, utf8Decode, utf8Encode } from "./polyfills.js";
+
+export const Blob = TinycastBlob;
 
 function hexToBytes(text) {
   const clean = String(text).replace(/[^0-9a-fA-F]/g, "");
@@ -214,6 +216,7 @@ function wrap(bytes) {
 }
 
 export const bufferModule = {
+  Blob,
   Buffer,
   SlowBuffer: Buffer,
   atob: globalThis.atob,

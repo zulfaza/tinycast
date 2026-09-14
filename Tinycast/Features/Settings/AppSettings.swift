@@ -327,6 +327,10 @@ final class AppSettings {
         }
     }
 
+    var extensionDeveloperMode: Bool {
+        didSet { defaults.set(extensionDeveloperMode, forKey: Key.extensionDeveloperMode.rawValue) }
+    }
+
     /// Only a source registry needs one — the store serves extensions already built.
     var extensionPackageManager: ExtensionPackageManager {
         didSet {
@@ -571,6 +575,7 @@ final class AppSettings {
         extensionsShowInLauncher =
             defaults.object(forKey: Key.extensionsShowInLauncher.rawValue) == nil
             || defaults.bool(forKey: Key.extensionsShowInLauncher.rawValue)
+        extensionDeveloperMode = defaults.bool(forKey: Key.extensionDeveloperMode.rawValue)
         extensionPackageManager =
             defaults.string(forKey: Key.extensionPackageManager.rawValue)
             .flatMap(ExtensionPackageManager.init(rawValue:)) ?? .automatic

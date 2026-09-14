@@ -1,7 +1,5 @@
-// Node built-ins that extension bundles keep external. Everything filesystem-, process- or
-// crypto-shaped is a synchronous host call (Swift services these on the JS thread); the
-// stream/socket-shaped modules resolve but throw on use, so a bundle that merely references them
-// still loads.
+// Node built-ins that extension bundles keep external. Filesystem-, process- and HTTP-shaped calls
+// cross the host; arbitrary socket protocols remain unsupported.
 
 import { hostCall, hostCallSync } from "./host.js";
 import { Buffer, bufferModule } from "./buffer.js";
@@ -16,8 +14,14 @@ import {
   Writable,
   finished,
   finishedPromise,
+  getDefaultHighWaterMark,
+  isDisturbed,
+  isErrored,
+  isReadable,
+  isWritable,
   pipeline,
   pipelinePromise,
+  setDefaultHighWaterMark,
 } from "./streams.js";
 import { ReadableStream, TransformStream, WritableStream } from "./web-streams.js";
 import { fileURLToPath, pathToFileURL, URL, URLSearchParams } from "./url.js";
@@ -771,6 +775,7 @@ class BufferedChildProcess extends EventEmitter {
     this.stderr = new PassThrough();
     this._input = [];
     this._started = false;
+    this._unrefed = false;
 
     const self = this;
     this.stdin = new EventEmitter();
@@ -801,8 +806,10 @@ class BufferedChildProcess extends EventEmitter {
         env: options.env,
         timeout: options.timeout,
         input,
-        // `detached` only makes a process group; only an unread child may answer before it exits.
-        detached: !!options.detached && (Array.isArray(options.stdio) ? options.stdio[1] : options.stdio) === "ignore",
+        // `detached` preserves the Node process-group contract only for ignored output.
+        detached: !!options.detached
+          && (Array.isArray(options.stdio) ? options.stdio[1] : options.stdio) === "ignore",
+        fireAndForget: this._unrefed,
       },
     ]).then(
       (raw) => {
@@ -838,9 +845,11 @@ class BufferedChildProcess extends EventEmitter {
   // Node uses these to detach a child from the event loop. Nothing here keeps the runtime alive, so
   // they only need to exist and chain — `spawn(...).unref()` is a common one-liner.
   unref() {
+    this._unrefed = true;
     return this;
   }
   ref() {
+    this._unrefed = false;
     return this;
   }
 }
@@ -1068,6 +1077,20 @@ function httpRequest(input, options, callback) {
 
 function httpGet(input, options, callback) {
   return httpRequest(input, options, callback).end();
+}
+
+class Agent extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    this.options = { ...options };
+    this.keepAlive = Boolean(options.keepAlive);
+    this.keepAliveMsecs = options.keepAliveMsecs ?? 1000;
+    this.maxSockets = options.maxSockets ?? Infinity;
+    this.maxFreeSockets = options.maxFreeSockets ?? 256;
+    this.scheduling = options.scheduling ?? "lifo";
+  }
+
+  destroy() {}
 }
 
 // ─── util ───────────────────────────────────────────────────────────
@@ -1315,7 +1338,9 @@ const httpLike = (name) =>
     validateHeaderValue,
     IncomingMessage,
     ClientRequest,
-    globalAgent: {},
+    Agent,
+    globalAgent: new Agent(),
+    maxHeaderSize: 16 * 1024,
     STATUS_CODES: {},
     METHODS: [],
   });
@@ -1341,7 +1366,12 @@ const streamModule = unsupportedModule(
   "stream",
   Object.assign(streamClasses.Stream, {
     ...streamClasses,
-    getDefaultHighWaterMark: (objectMode) => (objectMode ? 16 : 16 * 1024),
+    getDefaultHighWaterMark,
+    setDefaultHighWaterMark,
+    isDisturbed,
+    isErrored,
+    isReadable,
+    isWritable,
     pipeline,
     finished,
     promises: { pipeline: (...stages) => pipelinePromise(stages), finished: finishedPromise },
@@ -1349,6 +1379,300 @@ const streamModule = unsupportedModule(
 );
 
 const webStreamModule = { ReadableStream, WritableStream, TransformStream };
+
+class AsyncResource {
+  runInAsyncScope(fn, thisArg, ...args) { return Reflect.apply(fn, thisArg, args); }
+  emitDestroy() { return this; }
+  asyncId() { return 0; }
+  triggerAsyncId() { return 0; }
+}
+
+const diagnosticChannels = new Map();
+
+class DiagnosticChannel {
+  constructor(name) {
+    this.name = String(name);
+    this._subscribers = new Set();
+  }
+  get hasSubscribers() { return this._subscribers.size > 0; }
+  subscribe(subscriber) { this._subscribers.add(subscriber); }
+  unsubscribe(subscriber) { return this._subscribers.delete(subscriber); }
+  publish(message) {
+    for (const subscriber of this._subscribers) subscriber(message, this.name);
+  }
+}
+
+function diagnosticChannel(name) {
+  const key = String(name);
+  if (!diagnosticChannels.has(key)) diagnosticChannels.set(key, new DiagnosticChannel(key));
+  return diagnosticChannels.get(key);
+}
+
+function isIPv4(input) {
+  const parts = String(input).split(".");
+  return parts.length === 4 && parts.every((part) =>
+    /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255);
+}
+
+function isIPv6(input) {
+  const address = String(input).split("%")[0];
+  if (!address || address.split("::").length > 2) return false;
+  const [head, tail] = address.split("::");
+  const groups = [...(head ? head.split(":") : []), ...(tail ? tail.split(":") : [])];
+  if (groups.some((group) => !/^[\da-f]{1,4}$/i.test(group) && !isIPv4(group))) return false;
+  const count = groups.reduce((total, group) => total + (isIPv4(group) ? 2 : 1), 0);
+  return address.includes("::") ? count < 8 : count === 8;
+}
+
+function isIP(input) {
+  if (isIPv4(input)) return 4;
+  return isIPv6(input) ? 6 : 0;
+}
+
+// The bridge is intentionally bounded: URLSession already owns the network body in Swift.
+const SOCKET_MAX_HEADER_BYTES = 16 * 1024;
+const SOCKET_MAX_BODY_BYTES = 8 * 1024 * 1024;
+const SOCKET_MAX_REQUEST_BYTES = SOCKET_MAX_HEADER_BYTES + SOCKET_MAX_BODY_BYTES + 64 * 1024;
+
+function chunkedBody(body) {
+  const text = body.toString("latin1");
+  let offset = 0;
+  let total = 0;
+  const chunks = [];
+  for (;;) {
+    const lineEnd = text.indexOf("\r\n", offset);
+    if (lineEnd < 0) return { incomplete: true };
+    const sizeText = body.subarray(offset, lineEnd).toString("latin1").split(";", 1)[0].trim();
+    if (!/^[\da-f]+$/i.test(sizeText)) return { error: "invalid chunk size" };
+    const size = Number.parseInt(sizeText, 16);
+    if (!Number.isSafeInteger(size) || size > SOCKET_MAX_BODY_BYTES - total) {
+      return { error: "chunked body exceeds limit" };
+    }
+    offset = lineEnd + 2;
+    if (body.length < offset + size + 2) return { incomplete: true };
+    chunks.push(body.subarray(offset, offset + size));
+    total += size;
+    offset += size;
+    if (body.subarray(offset, offset + 2).toString("latin1") !== "\r\n") {
+      return { error: "invalid chunk terminator" };
+    }
+    offset += 2;
+    if (size !== 0) continue;
+    if (offset === body.length) return { body: Buffer.concat(chunks), consumed: offset };
+    const trailersEnd = text.indexOf("\r\n\r\n", offset);
+    if (trailersEnd < 0) return { incomplete: true };
+    if (trailersEnd - offset > SOCKET_MAX_HEADER_BYTES) return { error: "trailers exceed limit" };
+    if (trailersEnd + 4 !== body.length) return { error: "extra bytes after chunks" };
+    return { body: Buffer.concat(chunks), consumed: body.length };
+  }
+}
+
+/// HTTP-shaped socket bridge for bundled Undici; arbitrary socket protocols remain unsupported.
+class BridgeSocket extends Duplex {
+  constructor(options = {}, secure = false) {
+    super({
+      highWaterMark: options.highWaterMark,
+      write(chunk, encoding, callback) {
+        const bytes = Buffer.from(chunk, encoding);
+        if (this._sending) {
+          const error = new Error("socket request overlap is unsupported");
+          callback(error);
+          this._fail(error);
+          return;
+        }
+        if (this._requestSize + bytes.length > SOCKET_MAX_REQUEST_BYTES) {
+          const error = new Error("socket request exceeds buffer limit");
+          callback(error);
+          this._fail(error);
+          return;
+        }
+        this._requestBytes.push(bytes);
+        this._requestSize += bytes.length;
+        this.bytesWritten += bytes.length;
+        this._sendIfComplete();
+        callback(null);
+      },
+    });
+    this._requestBytes = [];
+    this._requestSize = 0;
+    this._sending = false;
+    this._failed = false;
+    this._secure = secure;
+    this._host = options.host ?? options.hostname ?? "localhost";
+    this._port = Number(options.port ?? (secure ? 443 : 80));
+    this.bytesRead = 0;
+    this.bytesWritten = 0;
+    this.connecting = true;
+    this.encrypted = secure;
+    this.authorized = secure;
+    this.alpnProtocol = secure ? "http/1.1" : null;
+    this.servername = options.servername ?? null;
+    this.localAddress = "127.0.0.1";
+    this.localPort = 0;
+    this.remoteAddress = this._host;
+    this.remotePort = this._port;
+    this.remoteFamily = isIPv6(this._host) ? "IPv6" : "IPv4";
+    this.timeout = 0;
+    queueMicrotask(() => {
+      if (this.destroyed) return;
+      this.connecting = false;
+      this.emit(secure ? "secureConnect" : "connect");
+    });
+  }
+
+  setKeepAlive() { return this; }
+  setNoDelay() { return this; }
+  ref() { return this; }
+  unref() { return this; }
+
+  setTimeout(milliseconds, callback) {
+    this.timeout = Number(milliseconds) || 0;
+    if (callback) this.once("timeout", callback);
+    return this;
+  }
+
+  address() {
+    return { address: this.localAddress, port: this.localPort, family: "IPv4" };
+  }
+
+  _fail(error) {
+    if (this._failed || this.destroyed) return;
+    this._failed = true;
+    this.destroy(error);
+  }
+
+  _sendIfComplete() {
+    if (this._sending || this._failed) return;
+    const request = Buffer.concat(this._requestBytes);
+    const marker = request.toString("latin1").indexOf("\r\n\r\n");
+    if (marker < 0) {
+      if (request.length > SOCKET_MAX_HEADER_BYTES) {
+        this._fail(new Error("socket request headers exceed maxHeaderSize"));
+      }
+      return;
+    }
+    if (marker + 4 > SOCKET_MAX_HEADER_BYTES) {
+      this._fail(new Error("socket request headers exceed maxHeaderSize"));
+      return;
+    }
+    const head = request.subarray(0, marker).toString("latin1");
+    const [requestLine, ...headerLines] = head.split("\r\n");
+    const requestParts = /^([!#$%&'*+\-.^_`|~0-9A-Za-z]+) ([^\s]+) HTTP\/1\.1$/.exec(requestLine);
+    if (!requestParts || !requestParts[2].startsWith("/")) {
+      this._fail(new Error("socket request line is invalid"));
+      return;
+    }
+    const method = requestParts[1];
+    const path = requestParts[2];
+    const headers = {};
+    for (const line of headerLines) {
+      const separator = line.indexOf(":");
+      if (separator > 0) headers[line.slice(0, separator).toLowerCase()] = line.slice(separator + 1).trim();
+    }
+    const transferEncoding = headers["transfer-encoding"]?.toLowerCase();
+    const contentLengthText = headers["content-length"];
+    if (transferEncoding?.includes("chunked") && contentLengthText !== undefined) {
+      this._fail(new Error("socket request has conflicting transfer headers"));
+      return;
+    }
+    let body = request.subarray(marker + 4);
+    if (transferEncoding?.includes("chunked")) {
+      const decoded = chunkedBody(body);
+      if (decoded.error) {
+        this._fail(new Error(`socket request ${decoded.error}`));
+        return;
+      }
+      if (decoded.incomplete) return;
+      if (decoded.consumed !== body.length) {
+        this._fail(new Error("socket request contains extra bytes"));
+        return;
+      }
+      body = decoded.body;
+      delete headers["transfer-encoding"];
+      headers["content-length"] = String(body.length);
+    } else {
+      if (contentLengthText !== undefined && !/^\d+$/.test(contentLengthText)) {
+        this._fail(new Error("socket request has invalid content-length"));
+        return;
+      }
+      const contentLength = contentLengthText === undefined ? 0 : Number(contentLengthText);
+      if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
+        this._fail(new Error("socket request has invalid content-length"));
+        return;
+      }
+      if (contentLength > SOCKET_MAX_BODY_BYTES) {
+        this._fail(new Error("socket request body exceeds limit"));
+        return;
+      }
+      if (body.length < contentLength) return;
+      if (body.length !== contentLength) {
+        this._fail(new Error("socket request contains extra bytes"));
+        return;
+      }
+      body = body.subarray(0, contentLength);
+    }
+    if (body.length > SOCKET_MAX_BODY_BYTES) {
+      this._fail(new Error("socket request body exceeds limit"));
+      return;
+    }
+    this._sending = true;
+    const authority = headers.host ?? `${this._host}:${this._port}`;
+    const url = `${this._secure ? "https" : "http"}://${authority}${path}`;
+    hostCall("fetch", "request", [{
+      url,
+      method,
+      headers,
+      bodyBase64: body.length ? body.toString("base64") : null,
+    }]).then(
+      (response) => this._receiveResponse(response),
+      (error) => this.destroy(error instanceof Error ? error : new Error(String(error))),
+    );
+  }
+
+  _receiveResponse(response) {
+    if (this.destroyed) return;
+    const body = Buffer.from(response.bodyBase64 ?? "", "base64");
+    if (body.length > SOCKET_MAX_BODY_BYTES) {
+      this._fail(new Error("socket response body exceeds limit"));
+      return;
+    }
+    const headers = { ...(response.headers ?? {}) };
+    delete headers["content-encoding"];
+    delete headers["transfer-encoding"];
+    headers["content-length"] = String(body.length);
+    headers.connection = "keep-alive";
+    const lines = Object.entries(headers).map(([name, value]) => `${name}: ${value}`);
+    const rawHead = `HTTP/1.1 ${response.status} ${response.statusText ?? ""}\r\n${lines.join("\r\n")}\r\n\r\n`;
+    const raw = Buffer.concat([Buffer.from(rawHead, "latin1"), body]);
+    if (Buffer.byteLength(rawHead, "latin1") > SOCKET_MAX_HEADER_BYTES) {
+      this._fail(new Error("socket response headers exceed maxHeaderSize"));
+      return;
+    }
+    if (raw.length > SOCKET_MAX_REQUEST_BYTES) {
+      this._fail(new Error("socket response exceeds buffer limit"));
+      return;
+    }
+    this._requestBytes = [];
+    this._requestSize = 0;
+    this._sending = false;
+    this.bytesRead += raw.length;
+    this.push(raw);
+  }
+}
+
+function connect(options, listener) {
+  if (typeof options === "number") options = { port: options, host: arguments[1] };
+  const socket = new BridgeSocket(options ?? {}, false);
+  const callback = typeof listener === "function" ? listener : arguments[2];
+  if (callback) socket.once("connect", callback);
+  return socket;
+}
+
+function tlsConnect(options, listener) {
+  const socket = new BridgeSocket(options ?? {}, true);
+  if (listener) socket.once("secureConnect", listener);
+  return socket;
+}
 
 // ─── Registry ───────────────────────────────────────────────────────
 
@@ -1375,8 +1699,8 @@ export const nodeModules = {
   perf_hooks: { performance: globalThis.performance },
   http: httpLike("http"),
   https: httpLike("https"),
-  net: unsupportedModule("net"),
-  tls: unsupportedModule("tls"),
+  net: unsupportedModule("net", { connect, createConnection: connect, isIP, isIPv4, isIPv6 }),
+  tls: unsupportedModule("tls", { connect: tlsConnect, createConnection: tlsConnect }),
   dns: unsupportedModule("dns"),
   stream: streamModule,
   "stream/web": webStreamModule,
@@ -1390,7 +1714,16 @@ export const nodeModules = {
   cluster: { isPrimary: true, isMaster: true },
   inspector: {},
   v8: {},
-  async_hooks: { AsyncLocalStorage: class { run(_store, fn) { return fn(); } getStore() { return undefined; } } },
+  async_hooks: {
+    AsyncLocalStorage: class { run(_store, fn) { return fn(); } getStore() { return undefined; } },
+    AsyncResource,
+  },
+  diagnostics_channel: {
+    channel: diagnosticChannel,
+    hasSubscribers: (name) => diagnosticChannel(name).hasSubscribers,
+    subscribe: (name, subscriber) => diagnosticChannel(name).subscribe(subscriber),
+    unsubscribe: (name, subscriber) => diagnosticChannel(name).unsubscribe(subscriber),
+  },
 };
 
 function requireStub(name) {

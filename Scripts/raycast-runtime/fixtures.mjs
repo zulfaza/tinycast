@@ -171,11 +171,43 @@ const nodeSource = `
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import { Buffer } from "node:buffer";
+import { AsyncResource } from "node:async_hooks";
+import { Blob, Buffer } from "node:buffer";
+import { channel } from "node:diagnostics_channel";
+import EventEmitter from "node:events";
+import { Agent, maxHeaderSize } from "node:http";
+import { isIP, isIPv4, isIPv6 } from "node:net";
+import { PassThrough, isDisturbed, isErrored, isReadable, isWritable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Detail } from "@raycast/api";
 
 export default function Command() {
+  class RequestResource extends AsyncResource {}
+  const request = new RequestResource("REQUEST");
+  class RequestBody extends Blob {}
+  class RequestEvent extends Event {}
+  const target = new EventTarget();
+  let events = 0;
+  target.addEventListener("ready", () => events++, { once: true });
+  target.dispatchEvent(new RequestEvent("ready"));
+  target.dispatchEvent(new RequestEvent("ready"));
+  const diagnostics = channel("fixture:request");
+  let diagnosticValue = "";
+  const subscriber = (value) => { diagnosticValue = value; };
+  diagnostics.subscribe(subscriber);
+  diagnostics.publish("observed");
+  diagnostics.unsubscribe(subscriber);
+  diagnostics.publish("ignored");
+  class RequestAgent extends Agent {}
+  const emitter = new EventEmitter();
+  let onceContext = false;
+  emitter.once("ready", function () { onceContext = this === emitter; });
+  emitter.emit("ready");
+  const stream = new PassThrough();
+  const streamBefore = [isDisturbed(stream), isErrored(stream), isReadable(stream), isWritable(stream)];
+  stream.push(Buffer.from("x"));
+  stream.read();
+  const streamAfter = [isDisturbed(stream), isErrored(stream)];
   const errorCode = (fn) => {
     try {
       fn();
@@ -201,6 +233,15 @@ export default function Command() {
     Buffer.from("hello").toString("base64"),
     Buffer.from("aGVsbG8=", "base64").toString("utf8"),
     new TextDecoder().decode(new TextEncoder().encode("héllo")),
+    request.runInAsyncScope(function (value) { return this.prefix + value; }, { prefix: "async-" }, "resource"),
+    new RequestBody(["body"], { type: "TEXT/PLAIN" }).size + ":" + new RequestBody([], { type: "TEXT/PLAIN" }).type,
+    "events:" + events,
+    "diagnostics:" + diagnosticValue + ":" + diagnostics.hasSubscribers,
+    "agent:" + new RequestAgent({ keepAlive: true }).options.keepAlive,
+    "max-header:" + maxHeaderSize,
+    "ip:" + [isIP("127.0.0.1"), isIP("2001:db8::1"), isIP("translate.google.com"), isIPv4("192.0.2.1"), isIPv6("::1")].join(":"),
+    "once-context:" + onceContext,
+    "stream-state:" + [...streamBefore, ...streamAfter].join(":"),
     fileURLToPath("file:///Applications/Tinycast%20Beta.app"),
     fileURLToPath(new URL("file:///tmp/%ED%95%9C%EA%B8%80.txt")),
     fileURLToPath("file://localhost/tmp/a?query=ignored#fragment"),
@@ -347,7 +388,17 @@ export default async function Command() {
     child.on("close", () => resolve(chunks.join("")));
   });
 
-  globalThis.__spawn = { iterated: iterated.join(""), late, grouped };
+  const detached = await new Promise((resolve) => {
+    const child = spawn("/bin/echo", ["detached"], { detached: true, stdio: ["ignore", "ignore", "ignore"] });
+    child.on("close", () => resolve(true));
+  });
+  const fireAndForget = await new Promise((resolve) => {
+    const child = spawn("/bin/echo", ["unref"]);
+    child.unref();
+    child.on("close", () => resolve(true));
+  });
+
+  globalThis.__spawn = { iterated: iterated.join(""), late, grouped, detached, fireAndForget };
 }
 `;
 
@@ -379,6 +430,53 @@ export default async function Command() {
     request.on("error", reject);
     request.end("ping");
   });
+}
+`;
+
+const socketSource = `
+import { connect } from "node:net";
+
+export default async function Command() {
+  const chunkedResponse = await new Promise((resolve, reject) => {
+    const socket = connect({ host: "example.test", port: 80 });
+    let response = "";
+    socket.on("data", (chunk) => { response += chunk.toString("latin1"); resolve(response); });
+    socket.on("error", reject);
+    socket.write("POST /chunk HTTP/1.1\\r\\nHost: example.test\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n");
+    socket.write("4\\r\\nping\\r\\n0\\r\\n\\r\\n");
+  });
+  const oversized = await new Promise((resolve) => {
+    const socket = connect({ host: "example.test", port: 80 });
+    socket.on("error", (error) => resolve(error.message));
+    socket.write("GET / HTTP/1.1\\r\\nX-Too-Large: " + "a".repeat(17000) + "\\r\\n\\r\\n");
+  });
+  const oversizedBody = await new Promise((resolve) => {
+    const socket = connect({ host: "example.test", port: 80 });
+    socket.on("error", (error) => resolve(error.message));
+    socket.write("POST / HTTP/1.1\\r\\nContent-Length: 8388609\\r\\n\\r\\n");
+  });
+  const overlap = await new Promise((resolve) => {
+    const socket = connect({ host: "example.test", port: 80 });
+    socket.on("error", (error) => resolve(error.message));
+    socket.write("GET /one HTTP/1.1\\r\\nHost: example.test\\r\\n\\r\\n");
+    socket.write("GET /two HTTP/1.1\\r\\nHost: example.test\\r\\n\\r\\n");
+  });
+  const badMethod = await new Promise((resolve) => {
+    const socket = connect({ host: "example.test", port: 80 });
+    socket.on("error", (error) => resolve(error.message));
+    socket.write("BAD METHOD / HTTP/1.1\\r\\nHost: example.test\\r\\n\\r\\n");
+  });
+  const badPath = await new Promise((resolve) => {
+    const socket = connect({ host: "example.test", port: 80 });
+    socket.on("error", (error) => resolve(error.message));
+    socket.write("GET relative HTTP/1.1\\r\\nHost: example.test\\r\\n\\r\\n");
+  });
+  const badLength = await new Promise((resolve) => {
+    const socket = connect({ host: "example.test", port: 80 });
+    socket.on("error", (error) => resolve(error.message));
+    socket.write("POST / HTTP/1.1\\r\\nContent-Length: 1.5\\r\\n\\r\\n");
+  });
+  globalThis.__socket = { chunkedResponse, oversized, oversizedBody, overlap, badMethod, badPath, badLength };
 }
 `;
 
@@ -656,6 +754,15 @@ export async function runFixtures() {
       "aGVsbG8=",
       "hello",
       "héllo",
+      "async-resource",
+      "4:text/plain",
+      "events:1",
+      "diagnostics:observed:false",
+      "agent:true",
+      "max-header:16384",
+      "ip:4:6:0:true:true",
+      "once-context:true",
+      "stream-state:false:false:true:true:true:false",
       "/Applications/Tinycast Beta.app",
       "/tmp/한글.txt",
       "/tmp/a",
@@ -772,9 +879,13 @@ export async function runFixtures() {
 
   await run("spawn's stdout survives a late reader", spawnSource, "no-view", async (harness) => {
     const result = harness.call("globalThis.__spawn");
+    const detached = harness.state.processCalls.find((spec) => spec.args?.[0] === "detached");
+    const fireAndForget = harness.state.processCalls.find((spec) => spec.args?.[0] === "unref");
     check("async iteration collects stdout", result?.iterated === "hello\n", JSON.stringify(result?.iterated));
     check("a listener attached after exit still gets it", result?.late === "world\n", JSON.stringify(result?.late));
     check("a detached child that pipes stdout is still awaited", result?.grouped === "group\n", JSON.stringify(result?.grouped));
+    check("detached is forwarded independently", detached?.detached === true && detached?.fireAndForget === false, JSON.stringify(detached));
+    check("unref uses fire-and-forget without detached", fireAndForget?.detached === false && fireAndForget?.fireAndForget === true, JSON.stringify(fireAndForget));
   });
 
   const httpSpecs = [];
@@ -807,6 +918,35 @@ export async function runFixtures() {
             url: "https://example.test/data",
             bodyBase64: Buffer.from('{"ok":true}').toString("base64"),
           };
+        },
+      },
+    },
+  );
+
+  const socketSpecs = [];
+  await run(
+    "the HTTP socket bridge decodes bounded chunked requests",
+    socketSource,
+    "no-view",
+    async (harness) => {
+      const result = harness.call("globalThis.__socket");
+      const spec = socketSpecs[0] ?? {};
+      check("decodes chunked request body", Buffer.from(spec.bodyBase64 ?? "", "base64").toString() === "ping", JSON.stringify(spec));
+      check("bridges the chunked request as HTTP", spec.url === "http://example.test/chunk" && spec.method === "POST", JSON.stringify(spec));
+      check("normalizes decoded transfer headers", spec.headers?.["transfer-encoding"] === undefined && spec.headers?.["content-length"] === "4", JSON.stringify(spec.headers));
+      check("rejects oversized headers deterministically", result?.oversized === "socket request headers exceed maxHeaderSize", JSON.stringify(result));
+      check("rejects oversized bodies deterministically", result?.oversizedBody === "socket request body exceeds limit", JSON.stringify(result));
+      check("rejects overlapping writes deterministically", result?.overlap === "socket request overlap is unsupported", JSON.stringify(result));
+      check("rejects malformed methods", result?.badMethod === "socket request line is invalid", JSON.stringify(result));
+      check("rejects relative paths", result?.badPath === "socket request line is invalid", JSON.stringify(result));
+      check("rejects non-decimal content-length", result?.badLength === "socket request has invalid content-length", JSON.stringify(result));
+      check("returns the bridged response", result?.chunkedResponse?.startsWith("HTTP/1.1 200"), String(result?.chunkedResponse));
+    },
+    {
+      stubs: {
+        "fetch.request": (args) => {
+          socketSpecs.push(args[0]);
+          return { status: 200, statusText: "OK", headers: {}, url: "http://example.test/chunk", bodyBase64: "" };
         },
       },
     },

@@ -285,6 +285,7 @@ run entry-icon-test        Tinycast/Platform/Appearance.swift \
                            Tinycast/Platform/Images/FileIconStamp.swift
 run ext-icon-test          Tinycast/Platform/Appearance.swift \
                            Tinycast/Platform/Images/IconCache.swift \
+                           Tinycast/Platform/AppPaths.swift \
                            Tinycast/Platform/Compression/Zlib.swift \
                            Tinycast/DesignSystem/Theme.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
@@ -299,6 +300,7 @@ run ext-icon-test          Tinycast/Platform/Appearance.swift \
                            Tinycast/Features/Extensions/Service/ExtensionNodeShims.swift \
                            Tinycast/Features/Extensions/Service/ExtensionOAuthKeychain.swift \
                            Tinycast/Features/Extensions/Service/ExtensionOAuthSession.swift \
+                           Tinycast/Features/Extensions/Service/ExtensionTrace.swift \
                            Tinycast/Features/Extensions/Service/ExtensionRuntime.swift \
                            Tinycast/Features/Extensions/Service/ExtensionIconCache.swift \
                            Tinycast/Features/Extensions/UI/ExtensionAnimatedImage.swift \
@@ -396,6 +398,7 @@ run ext-accessory-test     $E/Model/RenderNode.swift \
 run slow ext-test          -parse-as-library \
                            Tinycast/Platform/Appearance.swift \
                            Tinycast/Platform/Images/IconCache.swift \
+                           Tinycast/Platform/AppPaths.swift \
                            Tinycast/DesignSystem/Theme.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
                            $E/Model/ExtensionBootConfig.swift \
@@ -414,6 +417,7 @@ run slow ext-test          -parse-as-library \
                            $E/Service/ExtensionNodeShims.swift \
                            $E/Service/ExtensionOAuthKeychain.swift \
                            $E/Service/ExtensionOAuthSession.swift \
+                           $E/Service/ExtensionTrace.swift \
                            $E/Service/ExtensionRuntime.swift \
                            $E/UI/ExtensionAnimatedImage.swift \
                            $E/UI/ExtensionImage.swift \
