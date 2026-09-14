@@ -31,6 +31,13 @@ Carbon is a deliberate capability-gap dependency rather than inertia: nothing mo
 system-wide chord, and HIToolbox's TIS APIs remain the public input-source mechanism. Full reasoning in
 [standards.md](docs/standards.md#posture).
 
+## Repository sync
+
+“Source repo” means `abue-ammar/tinycast`; `origin` is `zulfaza/tinycast`. Sync is additive only:
+never reset, force-checkout, or overwrite fork-only work. Create a safety ref and inspect overlap
+before merging. If both repos changed a file, stop and ask Zul which hunks to keep; never auto-resolve
+by choosing ours or theirs. Release only after overlap decisions are explicit.
+
 ## Where things are
 
 | Folder | Holds |
