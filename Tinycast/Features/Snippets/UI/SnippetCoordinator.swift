@@ -1,6 +1,6 @@
 import AppKit
 
-/// Owns the snippet flow: listener, browser, editor, delivery, presence.
+/// Owns the snippet flow: listener, browser, editor handoff, delivery, presence.
 @MainActor
 final class SnippetCoordinator {
     private let store: SnippetsStore
@@ -11,10 +11,10 @@ final class SnippetCoordinator {
     private let settings: AppSettings
     private let windowController: PaletteWindowController
     private let paletteCoordinator: PaletteCoordinator
-    private let snippetWindowController: SnippetWindowController
+    private let settingsCoordinator: SettingsCoordinator
     /// Routed out so `MessageHUDController` stays owned by `AppCore`.
     private let showMessage: @MainActor (String) -> Void
-    /// The consent dialog and the editor panel are coordinated here.
+    /// The consent dialog and the `pendingSnippetEdit` handoff to the Settings pane.
     private unowned let core: AppCore
 
     init(
@@ -26,7 +26,7 @@ final class SnippetCoordinator {
         settings: AppSettings,
         windowController: PaletteWindowController,
         paletteCoordinator: PaletteCoordinator,
-        snippetWindowController: SnippetWindowController,
+        settingsCoordinator: SettingsCoordinator,
         showMessage: @escaping @MainActor (String) -> Void,
         core: AppCore
     ) {
@@ -38,7 +38,7 @@ final class SnippetCoordinator {
         self.settings = settings
         self.windowController = windowController
         self.paletteCoordinator = paletteCoordinator
-        self.snippetWindowController = snippetWindowController
+        self.settingsCoordinator = settingsCoordinator
         self.showMessage = showMessage
         self.core = core
     }
@@ -106,19 +106,14 @@ final class SnippetCoordinator {
         paletteCoordinator.togglePalette(mode: .snippets)
     }
 
-    /// Opens the standalone snippet editor showing `record`; nil is a new snippet.
+    /// Opens the Snippets pane with the editor showing `record`; nil is a new snippet.
     func editSnippet(_ record: StoredSnippet?) {
-        snippetWindowController.show(record: record)
-    }
-
-    var isEditingSnippet: Bool { snippetWindowController.isVisible }
-
-    func toggleEditor() {
-        snippetWindowController.toggle()
+        core.pendingSnippetEdit = SnippetEditRequest(record: record)
+        settingsCoordinator.showSettings(tab: .snippets)
     }
 
     func showSnippetInFinder(_ record: StoredSnippet) {
-        paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
+        paletteCoordinator.hidePalette(restoreFocus: false)
         AppLauncher.showInFinder(record.fileURL)
     }
 
@@ -131,14 +126,13 @@ final class SnippetCoordinator {
         // `beginAutomaticExpansion` is the gate, so this callback doesn't re-check anything.
         listener.start(
             onUserActivity: { [weak self] in self?.injector.cancelAutomaticExpansion() },
-            onMatch: { [weak self] id, keyword, keywordLength, targetApp in
+            onMatch: { [weak self] id, keyword, keywordLength, target in
                 guard let self,
-                    let generation = self.injector.beginAutomaticExpansion(
-                        targetApp: targetApp)
+                    let generation = self.injector.beginAutomaticExpansion(target: target)
                 else { return }
                 self.expandSnippet(
                     id: id,
-                    targetApp: targetApp,
+                    target: target,
                     expectedKeyword: keyword,
                     keywordLength: keywordLength,
                     automaticGeneration: generation)
@@ -159,61 +153,55 @@ final class SnippetCoordinator {
     }
 
     /// The browser's ↵. The target has to be read before the panel hides, as the launcher's does.
-    func expandSnippetFromPalette(
-        id: StoredSnippet.ID, userArguments: [String: String] = [:]
-    ) {
-        let target = windowController.previousApp
-        paletteCoordinator.hidePaletteToRoot(restoreFocus: false)
-        expandSnippet(id: id, targetApp: target, userArguments: userArguments)
-    }
-
-    func promptedArguments(for record: StoredSnippet) -> [SnippetTemplateEngine.MissingArgument] {
-        SnippetTemplateEngine.declaredArguments(in: record, snippets: store.snippets)
+    func expandSnippetFromPalette(id: StoredSnippet.ID) {
+        let target = windowController.previousTarget
+        // One of our own editors is only reachable again once the palette hands key back to it.
+        paletteCoordinator.hidePalette(restoreFocus: target?.ownEditor != nil)
+        expandSnippet(id: id, target: target)
     }
 
     func expandSnippet(
         id: StoredSnippet.ID,
-        targetApp: NSRunningApplication?,
+        target: InjectionTarget?,
         expectedKeyword: String? = nil,
         keywordLength: Int = 0,
-        automaticGeneration: UInt? = nil,
-        userArguments: [String: String] = [:]
+        automaticGeneration: UInt? = nil
     ) {
         let records = store.snippets
         guard let record = records.first(where: { $0.id == id }) else {
             injector.cancelArgumentPrompt(
                 automaticGeneration: automaticGeneration,
-                targetApp: targetApp)
+                target: target)
             return
         }
         // Only the interactive path needs this: it must fail before the prompt, not after.
         if automaticGeneration == nil {
-            guard injector.prepareInteractiveExpansion(targetApp: targetApp) else { return }
+            guard injector.prepareInteractiveExpansion(target: target) else { return }
         }
         let confirmation = record.snippet.showsConfirmation ? "Inserted \(record.snippet.name)" : nil
         let context = injector.captureExpansionContext(
-            targetApp: targetApp,
+            target: target,
             clipboardHistory: clipboardHistoryForExpansion())
         let result = SnippetTemplateEngine.expand(
             record,
-            snippets: records, context: context, userArguments: userArguments)
+            snippets: records,
+            context: context)
         if !result.missingArguments.isEmpty {
             promptSnippetArguments(
                 record: record,
                 records: records,
                 context: context,
                 missingArgs: result.missingArguments,
-                targetApp: targetApp,
+                target: target,
                 expectedKeyword: expectedKeyword,
                 keywordLength: keywordLength,
-                automaticGeneration: automaticGeneration, confirmation: confirmation,
-                userArguments: userArguments)
+                automaticGeneration: automaticGeneration,
+                confirmation: confirmation)
             return
         }
         completeSnippetExpansion(
             result,
-            recordID: record.id,
-            targetApp: targetApp,
+            target: target,
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
             automaticGeneration: automaticGeneration,
@@ -225,31 +213,32 @@ final class SnippetCoordinator {
         records: [StoredSnippet],
         context: SnippetTemplateEngine.ExpansionContext,
         missingArgs: [SnippetTemplateEngine.MissingArgument],
-        targetApp: NSRunningApplication?,
+        target: InjectionTarget?,
         expectedKeyword: String?,
         keywordLength: Int,
         automaticGeneration: UInt?,
-        confirmation: String?,
-        userArguments: [String: String]
+        confirmation: String?
     ) {
         guard
             let arguments = SnippetArgumentsPrompt.run(
                 snippetName: record.snippet.name,
-                arguments: missingArgs)
+                arguments: missingArgs,
+                metrics: settings.interfaceSize.metrics)
         else {
             injector.cancelArgumentPrompt(
                 automaticGeneration: automaticGeneration,
-                targetApp: targetApp)
+                target: target)
             return
         }
 
         let result = SnippetTemplateEngine.expand(
-            record, snippets: records, context: context,
-            userArguments: userArguments.merging(arguments) { _, prompted in prompted })
+            record,
+            snippets: records,
+            context: context,
+            userArguments: arguments)
         completeSnippetExpansion(
             result,
-            recordID: record.id,
-            targetApp: targetApp,
+            target: target,
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
             automaticGeneration: automaticGeneration,
@@ -258,8 +247,7 @@ final class SnippetCoordinator {
 
     private func completeSnippetExpansion(
         _ result: SnippetTemplateEngine.ExpansionResult,
-        recordID: StoredSnippet.ID,
-        targetApp: NSRunningApplication?,
+        target: InjectionTarget?,
         expectedKeyword: String?,
         keywordLength: Int,
         automaticGeneration: UInt?,
@@ -267,12 +255,11 @@ final class SnippetCoordinator {
     ) {
         injector.deliver(
             InjectedText(result.text, cursorOffsetFromEnd: result.cursorOffsetFromEnd),
-            targetApp: targetApp,
+            target: target,
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
             automaticGeneration: automaticGeneration,
             onDelivered: { [weak self] in
-                self?.store.recordUse(id: recordID)
                 guard let self, let confirmation else { return }
                 self.showMessage(confirmation)
             })

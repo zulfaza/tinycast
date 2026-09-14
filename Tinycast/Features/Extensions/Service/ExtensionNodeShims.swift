@@ -51,10 +51,78 @@ final class ExtensionNodeShims: @unchecked Sendable {
     private func dispatch(api: String, method: String, arguments: [Any]) throws -> Any? {
         switch api {
         case "fs": return try filesystem(method: method, arguments: arguments)
+        case "os": return try operatingSystem(method: method)
         case "proc": return try process(method: method, arguments: arguments)
         case "crypto": return try crypto(method: method, arguments: arguments)
         case "zlib": return try compression(method: method, arguments: arguments)
         default: throw ShimError.failed("Unknown host module '\(api)'.", "ENOSYS")
+        }
+    }
+
+    // MARK: - os
+
+    private func operatingSystem(method: String) throws -> Any {
+        if method == "uptime" { return ProcessInfo.processInfo.systemUptime }
+        if method == "loadavg" {
+            var averages = [Double](repeating: 0, count: 3)
+            let count = averages.withUnsafeMutableBufferPointer {
+                getloadavg($0.baseAddress, Int32($0.count))
+            }
+            guard count == Int32(averages.count) else {
+                throw ShimError.failed("Could not read system load averages.")
+            }
+            return averages
+        }
+        if method == "freemem" {
+            var statistics = vm_statistics64_data_t()
+            var count = mach_msg_type_number_t(
+                MemoryLayout<vm_statistics64_data_t>.stride / MemoryLayout<integer_t>.stride)
+            let result = withUnsafeMutablePointer(to: &statistics) { pointer in
+                pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+                }
+            }
+            guard result == KERN_SUCCESS else {
+                throw ShimError.failed("Could not read free memory (Mach error \(result)).")
+            }
+            return Double(statistics.free_count) * Double(getpagesize())
+        }
+        guard method == "cpus" else {
+            throw ShimError.failed("os.\(method) is not supported.", "ENOSYS")
+        }
+
+        var processorCount: natural_t = 0
+        var processorInfo: processor_info_array_t?
+        var processorInfoCount: mach_msg_type_number_t = 0
+        let result = host_processor_info(
+            mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &processorCount,
+            &processorInfo, &processorInfoCount)
+        guard result == KERN_SUCCESS, let processorInfo else {
+            throw ShimError.failed("Could not read CPU load (Mach error \(result)).")
+        }
+        defer {
+            _ = vm_deallocate(
+                mach_task_self_, vm_address_t(UInt(bitPattern: processorInfo)),
+                vm_size_t(processorInfoCount) * vm_size_t(MemoryLayout<integer_t>.stride))
+        }
+
+        let millisecondsPerTick = 1_000 / Double(CLK_TCK)
+        return (0..<Int(processorCount)).map { processor -> [String: Any] in
+            let offset = processor * Int(CPU_STATE_MAX)
+            func milliseconds(_ state: Int32) -> Double {
+                Double(processorInfo[offset + Int(state)]) * millisecondsPerTick
+            }
+            return [
+                "model": "Apple Silicon",
+                "speed": 0,
+                "times": [
+                    "user": milliseconds(CPU_STATE_USER),
+                    "nice": milliseconds(CPU_STATE_NICE),
+                    "sys": milliseconds(CPU_STATE_SYSTEM),
+                    "idle": milliseconds(CPU_STATE_IDLE),
+                    "irq": 0
+                ]
+            ]
         }
     }
 

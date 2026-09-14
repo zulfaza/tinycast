@@ -91,7 +91,7 @@ struct WindowCommandTests {
 
     static func testCatalog() {
         let commands = WindowCommandCatalog.all
-        expect(commands.count == 34, "catalog contains all 34 agreed commands")
+        expect(commands.count == 35, "catalog contains all 35 agreed commands")
         expect(commands.map(\.id) == WindowCommand.ID.allCases, "catalog covers every ID once")
         expect(
             Set(commands.map { $0.name.lowercased() }).count == commands.count, "names are unique")
@@ -153,7 +153,7 @@ struct WindowCommandTests {
         expect(grouped.first { $0.group == .quarters }?.commands.count == 4, "four quarters")
         expect(grouped.first { $0.group == .fourths }?.commands.count == 2, "two fourths")
         expect(grouped.first { $0.group == .thirds }?.commands.count == 5, "five thirds")
-        expect(grouped.first { $0.group == .sizing }?.commands.count == 10, "ten sizing commands")
+        expect(grouped.first { $0.group == .sizing }?.commands.count == 11, "eleven sizing commands")
         expect(grouped.first { $0.group == .moving }?.commands.count == 6, "six moving commands")
         expect(grouped.first { $0.group == .spaces }?.commands.count == 2, "two space commands")
 
@@ -529,6 +529,9 @@ struct WindowCommandTests {
         expectRect(
             frame(.centerHalf)!, CGRect(x: 360, y: 0, width: 720, height: 900),
             "center half is half the screen's area")
+        expectRect(
+            frame(.centerTwoThirds)!, CGRect(x: 240, y: 0, width: 960, height: 900),
+            "center two thirds is two thirds of the width, centred")
     }
 
     // MARK: - Make Larger / Make Smaller

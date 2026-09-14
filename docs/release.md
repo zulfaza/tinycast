@@ -25,8 +25,8 @@ details in [signing.md](signing.md).
 Every release publishes two assets from one build: `Tinycast-<version>.dmg`, which people download by
 hand and which the cask installs, and `Tinycast-<version>.zip`, which the in-app updater installs. The
 zip is produced with `ditto -c -k --keepParent --sequesterRsrc` — the only zip that leaves the code
-signature verifiable, which matters because the updater refuses any bundle whose leaf certificate does
-not match the running app's.
+signature verifiable, which matters because the updater refuses any bundle whose signature does not
+prove it is ours.
 
 Three things a release must keep true, or the updater skips it:
 

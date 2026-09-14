@@ -14,6 +14,8 @@ final class LauncherCoordinator {
     private let windowLayoutCoordinator: WindowLayoutCoordinator
     private let snippetCoordinator: SnippetCoordinator
     private let fileSearchCoordinator: FileSearchCoordinator
+    private let menuSearchCoordinator: MenuSearchCoordinator
+    private let windowSwitchCoordinator: WindowSwitchCoordinator
     private let notesCoordinator: NotesCoordinator
     private let extensionCoordinator: ExtensionCoordinator
     private let calendarCoordinator: CalendarCoordinator
@@ -32,6 +34,8 @@ final class LauncherCoordinator {
         windowLayoutCoordinator: WindowLayoutCoordinator,
         snippetCoordinator: SnippetCoordinator,
         fileSearchCoordinator: FileSearchCoordinator,
+        menuSearchCoordinator: MenuSearchCoordinator,
+        windowSwitchCoordinator: WindowSwitchCoordinator,
         notesCoordinator: NotesCoordinator,
         extensionCoordinator: ExtensionCoordinator,
         calendarCoordinator: CalendarCoordinator,
@@ -48,6 +52,8 @@ final class LauncherCoordinator {
         self.windowLayoutCoordinator = windowLayoutCoordinator
         self.snippetCoordinator = snippetCoordinator
         self.fileSearchCoordinator = fileSearchCoordinator
+        self.menuSearchCoordinator = menuSearchCoordinator
+        self.windowSwitchCoordinator = windowSwitchCoordinator
         self.notesCoordinator = notesCoordinator
         self.extensionCoordinator = extensionCoordinator
         self.calendarCoordinator = calendarCoordinator
@@ -123,7 +129,7 @@ final class LauncherCoordinator {
             quicklinkCoordinator.openQuicklink(id: id, values: arguments)
             return
         }
-        let previous = windowController.previousApp
+        let previous = windowController.previousTarget
         paletteCoordinator.hidePalette(restoreFocus: false)
         switch app.kind {
         case .application:
@@ -133,7 +139,7 @@ final class LauncherCoordinator {
             AppLauncher.openSettingsPane(bundleID: bundleID)
         case .snippet:
             let snippetID = String(app.id.dropFirst("snippet:".count))
-            snippetCoordinator.expandSnippet(id: snippetID, targetApp: previous)
+            snippetCoordinator.expandSnippet(id: snippetID, target: previous)
         case .command, .quickAction, .customCommand, .systemAction, .windowCommand, .windowLayout,
             .quicklink, .extensionCommand, .meeting:
             break  // handled above
@@ -161,6 +167,10 @@ final class LauncherCoordinator {
             paletteCoordinator.togglePalette(mode: .emoji)
         case .searchFiles:
             fileSearchCoordinator.show()
+        case .searchMenuItems:
+            menuSearchCoordinator.show()
+        case .switchWindows:
+            windowSwitchCoordinator.show()
         case .openCamera:
             dismissPalette()
             Task { await core.cameraCoordinator.show() }

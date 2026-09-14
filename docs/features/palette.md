@@ -140,8 +140,10 @@ top, which would throw away the very selection being restored.
 leaves: an extension screen exits itself first (it keeps a stack the palette cannot see), then a
 pushed screen pops, and a root hides the palette. A focused inline argument field is a rung above the
 query, so Escape hands focus back to the search field first — the query that found the command is
-still there to be cleared by the next press. A bare backspace in an empty field takes the same step,
-and ⌘⎋ skips the whole stack for a fresh root search without closing the window.
+still there to be cleared by the next press. A bare backspace in an empty field takes the same step
+**but never closes**: on a root screen summoned by its own hotkey it falls to the root search, which
+is the step Escape would have taken had that screen been reached by typing its name. ⌘⎋ skips the
+whole stack for that same root search from any depth.
 
 `EscapeKeyBehavior` (General settings) can trade the walk back for the old behavior: under
 `closeAndPopToRoot` an empty field closes the window and resets it immediately, whatever Pop to Root
@@ -237,14 +239,22 @@ anchor is dropped on hide, so the next summon re-resolves for wherever the user 
 All of the arithmetic lives in `PalettePlacement`, which is CoreGraphics-only and takes every screen
 fact as a parameter, so `palette-placement-test` drives the shipped rules rather than a copy of them.
 
+The panel's width and height are not constants: they come from `InterfaceMetrics`, so Interface Size
+changes them. A change re-enters through `AppCore.track` → `applyInterfaceSize()`, which **drops the
+cached anchor** and re-resolves it — one rule, the summon's. An untouched palette re-centres at the new
+width; a dragged one keeps its stored top-left unless the wider bar no longer leaves
+`paletteMinimumVisible` on any display, in which case it falls home.
+
 ### Drag to reposition
 
 **Drag to reposition** (`AppSettings.paletteDraggable`, off by default) is the only thing that moves a
 panel already on screen. `WindowDragHandle` claims mouse-down on the top strip and on the header's
 margins and inter-item gaps (`RootPaletteView.headerGutter`) — everywhere in the header no control
-occupies. The search field is a handle too, but only past its visible text:
-`TextTrailingDragHandle` measures the query in `Theme.Typography.searchFieldNSFont` and claims the
-hit-test only beyond it, so clicking or dragging the text still edits and selects, matching Spotlight.
+occupies. The search field is a handle too, but **only while it is empty**: `EmptyFieldDragHandle`
+declines the hit-test outright the moment there is text to select, or marked text being composed.
+Measuring the query and claiming the run past it was the older rule, and it cost the thing a search
+field is for — a selection almost always starts or ends past the last glyph, so every such press moved
+the window instead. A field with a caret in it is being edited; nothing in it is a handle.
 
 AppKit moves the frame without going through the controller, so `windowDidMove` writes the new top-left
 back into the anchor — otherwise the next compact↔expanded resize would snap the panel back to the
@@ -255,9 +265,11 @@ the anchor and its own `setFrame` round-trips the same values.
 drag to the window server and returns immediately, so it can say when a drag *starts* but never when it
 ends — the mouse-up arrives long after it has returned. `DragView.mouseDown` instead runs
 `trackEvents(matching:timeout:mode:)` over `.leftMouseDragged` / `.leftMouseUp`, moving the window by
-the `NSEvent.mouseLocation` delta, which puts the whole gesture inside one call. It brackets that with
-`PaletteCoordinator.beginPaletteDrag()` / `endPaletteDrag()`, and the controller holds a `DragSession`
-for exactly that span. **Only a move inside a session is a user drag**; without that flag every
+the `NSEvent.mouseLocation` delta, which puts the whole gesture inside one call. **A press only becomes
+a drag once it passes `DragView.dragSlop`**, and one that never does is reported as a click instead:
+without that, a handle over the empty search field swallowed the click that was meant to put the caret
+back in it. It brackets a real drag with `PaletteCoordinator.beginPaletteDrag()` / `endPaletteDrag()`,
+and the controller holds a `DragSession` for exactly that span. **Only a move inside a session is a user drag**; without that flag every
 programmatic resize would be recorded as one.
 
 ### The drop guides
@@ -388,11 +400,16 @@ and states where the highlight starts: the first row, except the pop-up-shaped m
 filter, the AI model and effort menus, an extension's search-bar dropdown — which open on the choice
 they already hold.
 
+**The click-away catcher answers either mouse button.** A left press arrives as a `DragGesture`, so a
+drifting press still dismisses the way a native menu's does; a right press arrives through
+`onRightClick`, whose `NSView` sits above the row catchers beneath it, so a right click on a row
+closes the open menu rather than reopening it on that row.
+
 Every row closes the menu behind it — `activateMenuItem` is the one path, and a row that reorders the
 list under itself (Move Favorite Up/Down) is no exception, so no row ever runs against a rebuilt menu.
 
-`PopoverMenuItem.startsSection` draws a separator in the existing gap above a row. It takes no
-layout space or selection index, so the menu keeps its row positions, dimensions, and navigation.
+`PopoverMenuItem.startsSection` draws a separator with 6pt above and below it. That height joins the
+menu's exact sizing, but the separator takes no selection index, so navigation still walks only rows.
 Built-in action menus mark boundaries between opening or copying, managing the item, settings, and
 deletion. Menus offering one kind of action, such as calculator copies, color formats, or emoji
 transfers, keep their rows in one group.
@@ -412,11 +429,13 @@ The panel is a second SwiftUI hierarchy, so it observes nothing of `RootPaletteV
 `paletteEnvironment` injects the same stores into both hierarchies so they cannot drift.
 `WindowReader` reports the palette's `NSWindow`, which the menu's frame is placed against.
 
-`PaletteMenuContent` opts into `clipsToMenuCorners` when wrapping a native `PopoverMenu`. Its hosting
-view's backing layer uses the continuous `menuPanel` corner with edge antialiasing. AppKit draws the
-window shadow from that outline, refreshed after layout and display on show and resize. Custom
-extension panels keep their original hosting setup. Switching between native and custom content
-replaces the hosting view so layer styling stays with the menu that requested it.
+`PaletteMenuContent` may supply its own host-layer clip path and motion.
+The hosting layer scales inside a canvas sized for the largest frame, anchored to the button or
+header control that opened it, so neither the surface nor its shadow is cropped. AppKit refreshes
+the shadow after layout and display. Native `PopoverMenu` content reads its motion from
+`Theme.MenuMotion`; extension menus supply values owned by `Features/Extensions`, so launcher
+changes cannot silently alter an extension surface. Each extension menu also supplies its own clip
+path; the controller applies it as an opaque value and never reconstructs extension geometry.
 
 ## Menu-open input freeze
 
@@ -497,6 +516,19 @@ translates without it, since only Command is remapped. A non-ASCII input source 
 cannot turn ⌘K into a different logical key, while Dvorak and other ASCII layouts keep their own
 letter positions. No replacement event is synthesized, and unmodified typing stays on the active
 input source and follows the normal composition path.
+
+## The keyboard belongs to the search field
+
+`PalettePanel.makeFirstResponder` declines any responder whose subtree is marked
+`KeyboardFocusRefusing`. That mark exists for one shape of problem: a preview that embeds AppKit
+controls of its own. Clicking play on an `AVPlayerView` makes `AVDesktopButton` — a private control
+inside its transport — the window's first responder, and the search field silently stops receiving
+keystrokes with nothing on screen to say so. Refusing costs the transport nothing, since a button
+performs its action from the click, not from focus; both preview players are marked, and the field
+keeps the caret through a click on play.
+
+The mark sits on the player view and the check walks up from the responder, because the control that
+claims focus is private and several levels down — there is nothing to override on it.
 
 ## Focus restoration (load-bearing)
 

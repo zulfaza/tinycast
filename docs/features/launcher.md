@@ -13,8 +13,9 @@ earliest scope wins).
   `orderedResults` *and* `HotKeyManager.perform`, so `Enable Applications` off stops the per-app chords
   as well as the rows — the guard sits in the one dispatch funnel, the way each feature switch already
   guards its own. The per-item checkbox beside it is the narrow tool: it hides one row and leaves that
-  row's shortcut firing. A new category must be wired into `VisibilityStore.allowsHotKey`, or its
-  chords keep running while its pane reads off.
+  row's shortcut firing, and **Hide from Search** in the ⌘K menu ticks that same checkbox off for the
+  kinds whose pane can tick it back on. A new category must be wired into
+  `VisibilityStore.allowsHotKey`, or its chords keep running while its pane reads off.
 - **One command, one pane, one switch.** `SettingsTab.ownedCommands` is the whole table of which pane
   lists a command's shortcut, alias and launcher checkbox. A feature that names its commands there
   already decides whether they exist, so `Enable Commands` neither lists nor gates them — two switches
@@ -167,7 +168,20 @@ ICU entirely on a fast scalar check.
 all 65 of them read English on every Mac, whatever language it is set to.
 
 The user's own language wins the **display name**, so a row reads the way Finder reads it. The rest,
-English included, ride along as `.translation`. `AppDisplayName.inInfo` reads the `-macos` variant of
+English included, ride along as `.translation`.
+
+**A bundle ships no table for the language it is already written in, so `CFBundleDevelopmentRegion`
+places its untranslated name — an app's file name, a pane's `Info.plist` — in the walk at that
+language's own position.** Apple omits a loctable's `en` key exactly when the base name already says
+it in English: `Tips.app`, `Calculator.app` and `AppleIDSettings.appex` all do, and without this the
+walk fell straight past English into whatever *second* language the Mac listed, so an English Mac
+with Russian under it labelled them `Советы` and `Аккаунт Apple`. The base name still loses to a real
+table for that same language — `VoiceMemos.app` does ship `en`, and `Voice Memos` beats the file name
+it was written for. Reading the `en_GB` those bundles *do* carry is the wrong repair: it relabels
+`Print Center` as `Print Centre`. Below the development region the walk carries on, so every language
+under it stays indexed as a `.translation`. The region is canonicalized before it is matched, because
+`CFBundleDevelopmentRegion` still ships its pre-BCP-47 spelling — Safari's and Terminal's read
+`English`. `AppDisplayName.inInfo` reads the `-macos` variant of
 each key before the bare one, the way `CFBundle` does: Image Playground's loctable spells the bare
 `CFBundleDisplayName` `Playground` and only the suffixed key `Image Playground`. A non-English user finds their app by the name they
 see *and* by the English name the vendor advertises.
@@ -245,8 +259,8 @@ entry is an ordinary `.command`, so `VisibilityStore` still gates it — Command
 and its `url` carries the destination instead of the catalog's `tinycast://` placeholder. Nothing
 learns from it and nothing pins it: `LauncherCoordinator.launch` skips `LauncherRankingStore` for a
 contextual row, the way it already skips a category listing, since a pasted URL is not a term any
-row should rank under; and ⇧⌘F is refused, because a favorite the empty query can never resolve is
-dead state a backup would then carry.
+row should rank under; and ⇧⌘F and ⇧⌘H are both refused, because a favorite — or a hidden-item key —
+the empty query can never resolve is dead state a backup would then carry.
 
 The row prints `AppEntry.subtitle` beside its name — the one field for an entry whose name alone
 can't say what it acts on.
@@ -316,8 +330,10 @@ alias in as a `.userAlias` at rank time, keying its memos on the store's revisio
 A launcher row shows its entry's alias as a small chip after the name, so what a badge-bearing
 result will answer to is visible without opening anything.
 
-Editing lives in Settings only — an alias is one-time configuration like a shortcut or a
-visibility checkbox, not a per-invocation action, so the ⌘K menu stays out of it. Every pane built
+Editing lives in Settings only — an alias is one-time configuration like a shortcut, not a
+per-invocation action, so the ⌘K menu stays out of it. Visibility is the one exception, and only in
+one direction: an unwanted result is noticed while searching, so ⌘K can hide a row, but putting it
+back is still the pane's checkbox. Every pane built
 on `LauncherItemsSection` puts an `AliasField` on each row, dressed like the `ShortcutRecorder`
 beside it; edits store as typed and trim when the field loses focus, and a blank means none. That
 list filters by **membership only**, keeping the index's name order — re-ranking it per keystroke
@@ -371,8 +387,9 @@ reruns on every launcher open — so `BundleNameCache` memoizes **both** per bun
 only when the bundle's modification date moves. Caching one and not the other leaves most of a warm
 pass uncached. Each pass is seeded from the last and keeps only what it looked at, so uninstalled apps
 fall out instead of accumulating; a changed system language drops the whole table, because the names
-in it are in the old one. `.appex` Settings panes carry no alternate names, so `SettingsPaneScanner`
-doesn't ask.
+in it are in the old one. `.appex` Settings panes carry no Spotlight alternates, so `SettingsPaneScanner`
+doesn't ask — it runs the same `BundleLocalization` walk for its own names, and retires its cache
+when either the extensions folder or the language list moves.
 
 Selecting a launcher result records **one row for the submitted query** — `submittedQuery`, named
 so because a table written when the field held one row per *prefix* cannot decode here, which is the
@@ -546,14 +563,22 @@ and three places read it: `FeatureCommandsSection` draws the pane's rows from it
 category gate for it in both `isVisible` and `allowsHotKey`. Stamping the entry rather than sniffing its
 id is what keeps "which pane owns this" out of the entry-ID namespace.
 
-Ten panes own commands today — AI, Quick Actions, File Search, Notes, Snippets, Window Management,
-Clipboard, Emoji, Calendar and Quicklinks. What is left in Settings › Commands is the set no feature
-switch governs: Calculator History, Open Camera, the three backup commands, Check for Updates,
-Settings, About, Support and Quit.
+Eleven panes own commands today — AI, Quick Actions, File Search, Notes, Snippets, Navigation,
+Window Management, Clipboard, Emoji, Calendar and Quicklinks. What is left in Settings › Commands is
+the set no feature switch governs: Calculator History, Open Camera, the three backup commands, Check
+for Updates, Settings, About, Support and Quit.
 
 A pane's list is also its display order, so `CommandID`'s declaration order is grouped by owner.
 Nothing keys on that order — `CommandCatalog.all` sorts by name and every preference keys on the raw
 value — so a command may be moved between owners without migrating anything.
+
+## Navigation commands
+
+`CommandID.switchWindows` opens every running app's windows as a palette screen, and
+`CommandID.searchMenuItems` does the same for the front app's menu bar. Both are plain command
+entries — no new `AppEntry.Kind` and no `VisibilityStore` category — owned by Settings › Navigation
+through `SettingsTab.ownedCommands`, so `navigationEnabled` is their switch. Their invariants and
+internals live in [navigation.md](navigation.md) and [menu-search.md](menu-search.md).
 
 > **Invariant:** `Tests/fuzz-test.swift` compiles the real `Tinycast/Features/Launcher/Model/SearchRelevance.swift`, so
 > that file must stay Foundation-only and pure. There is no copy of the scorer to keep in sync.
@@ -561,8 +586,16 @@ value — so a command may be moved between owners without migrating anything.
 The ranking harness covers prefix learning, frequency/recency scoring, persistence, and both reset
 paths; see the command in `development.md`.
 
-Launcher icons use a persistent 32 MB cost-capped `NSCache`. Fitted file-row icons use a separate
-transient 8 MB cache that is purged when its palette list disappears (`IconCache`).
+Launcher rows and compact favorites ask for the point size they actually draw at, scaled by the
+view's `displayScale`: 24/26/29pt becomes 48/52/58px at 2×. `IconCache` still rasterizes through its
+96px canvas first — AppKit picks the representation and the drop shadow from that size — and then
+keeps only the row-sized bitmap, in an 8 MB cost-capped row cache separate from the 32 MB one.
+
+That cache holds **one size per path and stamp**: switching interface size replaces each entry
+rather than accumulating all three. A lookup carrying a different size is a miss, so a row can never
+paint a bitmap meant for another layout. Everything else — settings, symbols, artwork — keeps the
+96px path and the persistent 32 MB cache. Fitted file-row icons keep their own transient 8 MB cache,
+purged when its palette list disappears.
 
 A file-icon key carries a `FileIconStamp` as well as the path — the bundle's own modification and
 attribute dates plus its `Icon\r` — because pasting a custom icon in Finder leaves the bundle's
@@ -622,6 +655,31 @@ it any higher would attach it to `RootPaletteView`'s body and rebuild the whole 
 press, where a row-level read re-runs only the handful of rows the `LazyVStack` has realized. The
 digit each row shows is carried on its `Row` case from the section build, so no row searches for its
 own position.
+
+## Hiding one result
+
+**Hide from Search**, on a result's ⌘K menu and on **⇧⌘H**, writes exactly what the checkbox in
+Settings writes — `VisibilityStore.setItemVisible(false,…)` against the entry's `preferenceKey` — so
+the row leaves
+every search until that checkbox is ticked again. Nothing else moves: the app stays installed, its
+favorite, alias and learned ranking survive the round trip, and its shortcut keeps firing, because
+`allowsHotKey` gates by category and never by item.
+
+The row is offered only where Settings can undo it, and `KindDescriptor.canHideFromSearch` is that
+rule — per kind, and a new `Kind` case has to answer it to compile. Applications, System Settings,
+Commands, Quick Actions, System Actions, Window Commands, Window Layouts and extension commands each
+draw a per-row checkbox in their pane, so they carry it. Custom commands, quicklinks and snippets do
+not: their panes list a record with its own switches, not a launcher checkbox — a hide nothing in
+Settings can visibly undo is a trap, not a shortcut.
+`AppActionsMenu` adds the query-driven guard the favorites row already uses: a typed URL lives only
+for its query and has no preference to write.
+
+Hiding shrinks the list under the action that ran it, so `LauncherScreen.hideFromSearch(at:)`
+re-reads the order and drops the highlight into the index the row vacated, clamped to what is left —
+the move `selectFavorite` already makes. The palette stays open on the same query, with focus
+untouched. One function answers both the menu row and the chord, and it re-tests eligibility rather
+than trusting the caller, so ⇧⌘H falls through to whatever else wants the press on a row that offers
+no such menu item.
 
 ## Reveal in Finder
 

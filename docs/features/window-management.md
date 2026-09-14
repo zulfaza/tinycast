@@ -2,7 +2,7 @@
 
 Rectangle-style window actions — halves, quarters, fourths, thirds, sizing, nudging, display moves,
 native fullscreen and Space switching — searchable in the palette and bindable to global shortcuts.
-34 commands, no new dependencies and no new permission: they reuse the Accessibility grant clipboard
+35 commands, no new dependencies and no new permission: they reuse the Accessibility grant clipboard
 paste already needs.
 
 Ships **off**. Settings › Window Management is the switch, and while it is off there are no launcher
@@ -20,8 +20,9 @@ entries and a still-registered shortcut moves nothing.
   stay Foundation + CoreGraphics and pure** — no AX, no `NSScreen`, no clock (`WindowActionMemory`
   takes `now` as a parameter, `SpaceGesture` takes `timestamp`). Every `AXUIElement` call and the
   Cocoa↔AX flip live in `Service/`; every `CGEvent` call lives in `SpaceSwitcher.swift`.
-- **`AXWindowAccess` is the one AX layer**, shared by the mover and the layout runner. Its `write` is
-  the size → position → size sequence: two copies of it would land a stubborn app two ways.
+- **`AXWindowAccess` is the one AX layer**, shared by the mover, the layout runner and
+  [Navigation](navigation.md)'s window switcher. Its `write` is the size → position → size sequence:
+  two copies of it would land a stubborn app two ways.
 - **A Space command never reaches `WindowMover`.** `WindowPlacementEngine.placement` answers only for
   `.geometry` and `.restore`, and `WindowCommandCoordinator` branches on `SpaceDirection` first — the
   mover requires a target app and a resolvable AX window, and a Space switch has neither.
@@ -52,7 +53,7 @@ overlay rather than in Foundation.
 
 Adding a command is four edits in `WindowCommand.swift` (a case in `ID`, plus `name`, `symbol` and
 `group` arms), an arm in `WindowPlacementEngine.placement` or `tileFractions`, and bumping
-`commands.count == 34` and its group count in the harness. A command opening a new family also needs
+`commands.count == 35` and its group count in the harness. A command opening a new family also needs
 a `Group` case and its `title` arm; `ID.allCases` stays in group order.
 
 ## Coordinate space
@@ -99,7 +100,7 @@ display-independent — a laptop gets the fraction, a 4K or 5K display gets a mo
 a 2304×1296 one. It ignores the window's current size entirely, so it is idempotent.
 
 **Center Half** is half the screen's _area_: half width, full height, horizontally centred — the family
-sibling of Center Third.
+sibling of Center Third. **Center Two Thirds** is the same shape at two thirds of the width.
 
 An oversized or off-screen window is always clamped back onto the display; `clamped` pins the leading
 edge rather than shoving the window off the far side. Maximize Height and Maximize Width keep the

@@ -110,8 +110,8 @@ enum SettingsSearchCatalog {
     static let entries: [SettingsSearchEntry] =
         general + applications + systemSettings
         + systemActions + commands + quicklinks + fallbacks + ai + quickActions + fileSearch + notes
-        + snippets + windowManagement + clipboard + emoji + calendar + extensions + permissions
-        + backup + about
+        + snippets + navigation + windowManagement + clipboard + emoji + calendar
+        + extensions + permissions + backup + about
 
     private static let general: [SettingsSearchEntry] = [
         .init(pane: .general, keywords: ["preferences", "settings"]),
@@ -133,6 +133,9 @@ enum SettingsSearchCatalog {
         .init(
             .generalAppearance, "Theme",
             keywords: ["dark", "light", "mode", "appearance"]),
+        .init(
+            .generalAppearance, "Interface size",
+            keywords: ["text size", "font size", "scale", "zoom", "bigger", "larger", "legible"]),
         .init(
             .generalAppearance, "Background transparency",
             keywords: ["glass", "opacity", "blur", "translucency", "reset"]),
@@ -258,7 +261,7 @@ enum SettingsSearchCatalog {
                 "base url", "openai", "anthropic", "ollama"
             ]),
         .init(.aiDefault, "Default model", keywords: ["llm", "gpt", "claude"]),
-        .init(.aiDefault, "Reasoning effort", keywords: ["thinking", "effort"]),
+        .init(.aiDefault, "Reasoning effort", keywords: ["thinking", "effort", "deepseek"]),
         .init(.aiChat, "Web search", keywords: ["browse", "internet"]),
         .init(
             .aiConversations, "Opens to",
@@ -348,6 +351,24 @@ enum SettingsSearchCatalog {
         .init(
             .snippetsLibrary, "Snippets Folder",
             keywords: ["reveal", "finder", "markdown", "files"])
+    ]
+
+    private static let navigation: [SettingsSearchEntry] = [
+        .init(
+            pane: .navigation,
+            keywords: ["window", "switch", "menu bar", "focus", "raise"]),
+        .init(
+            .navigationNavigation, "Enable navigation",
+            keywords: ["window switcher", "menu bar", "accessibility"]),
+        .init(
+            group: .navigationCommands, "Navigation commands",
+            keywords: ["shortcut", "hotkey", "alias", "launcher"]),
+        .init(
+            .navigationMenuSearch, "Show Apple menu items",
+            keywords: ["apple menu", "about this mac", "recent items", "sleep", "logo"]),
+        .init(
+            .navigationMenuSearch, "Disabled Applications",
+            keywords: ["exclude", "password manager", "ignore", "privacy", "menu bar"])
     ]
 
     private static let windowManagement: [SettingsSearchEntry] = [

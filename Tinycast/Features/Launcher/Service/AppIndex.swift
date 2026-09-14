@@ -20,61 +20,75 @@ struct AppEntry: Identifiable, Hashable, Sendable {
             case .application:
                 return KindDescriptor(
                     label: "Application", sectionTitle: "Applications",
-                    openVerb: "Open Application", canRevealInFinder: true, isSymbolIcon: false)
+                    openVerb: "Open Application", canHideFromSearch: true,
+                    canRevealInFinder: true, isSymbolIcon: false)
             case .systemSettings:
                 return KindDescriptor(
                     label: "System Setting", sectionTitle: "System Settings",
-                    openVerb: "Open System Setting", canRevealInFinder: true, isSymbolIcon: false)
+                    openVerb: "Open System Setting", canHideFromSearch: true,
+                    canRevealInFinder: true, isSymbolIcon: false)
             case .command:
                 return KindDescriptor(
                     label: "Command", sectionTitle: "Commands",
-                    openVerb: "Run Command", canRevealInFinder: false, isSymbolIcon: true)
+                    openVerb: "Run Command", canHideFromSearch: true,
+                    canRevealInFinder: false, isSymbolIcon: true)
             case .quickAction:
                 return KindDescriptor(
                     label: "Quick Action", sectionTitle: "Quick Actions",
-                    openVerb: "Run Quick Action", canRevealInFinder: false, isSymbolIcon: true)
+                    openVerb: "Run Quick Action", canHideFromSearch: true,
+                    canRevealInFinder: false, isSymbolIcon: true)
             case .customCommand:
                 return KindDescriptor(
                     label: "Custom Command", sectionTitle: "Custom Commands",
-                    openVerb: "Run Custom Command", canRevealInFinder: false, isSymbolIcon: true)
+                    openVerb: "Run Custom Command", canHideFromSearch: false,
+                    canRevealInFinder: false, isSymbolIcon: true)
             case .snippet:
                 return KindDescriptor(
                     label: "Snippet", sectionTitle: "Snippets",
-                    openVerb: "Paste Snippet", canRevealInFinder: true, isSymbolIcon: true)
+                    openVerb: "Paste Snippet", canHideFromSearch: false,
+                    canRevealInFinder: true, isSymbolIcon: true)
             case .systemAction:
                 return KindDescriptor(
                     label: "System Action", sectionTitle: "System Actions",
-                    openVerb: "Run System Action", canRevealInFinder: false, isSymbolIcon: true)
+                    openVerb: "Run System Action", canHideFromSearch: true,
+                    canRevealInFinder: false, isSymbolIcon: true)
             case .windowCommand:
                 return KindDescriptor(
                     label: "Window Command", sectionTitle: "Window Management",
-                    openVerb: "Move Window", canRevealInFinder: false, isSymbolIcon: true)
+                    openVerb: "Move Window", canHideFromSearch: true,
+                    canRevealInFinder: false, isSymbolIcon: true)
             case .windowLayout:
                 return KindDescriptor(
                     label: "Window Layout", sectionTitle: "Window Layouts",
-                    openVerb: "Arrange Windows", canRevealInFinder: false, isSymbolIcon: true)
+                    openVerb: "Arrange Windows", canHideFromSearch: true,
+                    canRevealInFinder: false, isSymbolIcon: true)
             case .quicklink:
                 return KindDescriptor(
                     label: "Quicklink", sectionTitle: "Quicklinks",
-                    openVerb: "Open Quicklink", canRevealInFinder: false, isSymbolIcon: true)
+                    openVerb: "Open Quicklink", canHideFromSearch: false,
+                    canRevealInFinder: false, isSymbolIcon: true)
             case .extensionCommand:
                 // The label is per-entry, the owning extension's title; this is the fallback.
                 return KindDescriptor(
                     label: "Extension", sectionTitle: "Extensions",
-                    openVerb: "Run Command", canRevealInFinder: false, isSymbolIcon: true)
+                    openVerb: "Run Command", canHideFromSearch: true,
+                    canRevealInFinder: false, isSymbolIcon: true)
             case .meeting:
                 return KindDescriptor(
                     label: "Meeting", sectionTitle: "Meetings",
-                    openVerb: "Join Meeting", canRevealInFinder: false, isSymbolIcon: true)
+                    openVerb: "Join Meeting", canHideFromSearch: false,
+                    canRevealInFinder: false, isSymbolIcon: true)
             }
         }
     }
 
-    /// Everything that is fixed per kind. A new `Kind` case fails to build until it names all five.
+    /// Everything that is fixed per kind. A new `Kind` case fails to build until it names all six.
     struct KindDescriptor: Sendable {
         let label: String
         let sectionTitle: String
         let openVerb: String
+        /// Only where Settings lists a per-item checkbox to put it back: a hide is never one-way.
+        let canHideFromSearch: Bool
         let canRevealInFinder: Bool
         let isSymbolIcon: Bool
     }
@@ -166,6 +180,8 @@ struct AppEntry: Identifiable, Hashable, Sendable {
 
     /// Synthetic entries have no file to reveal; a destination is its record's own action.
     var canRevealInFinder: Bool { kind.descriptor.canRevealInFinder }
+
+    var canHideFromSearch: Bool { kind.descriptor.canHideFromSearch }
 
     /// What this row draws, and the only thing any icon path needs to ask.
     var iconSource: EntryIcon { iconOverride ?? defaultIcon }
@@ -462,7 +478,8 @@ final class AppIndex {
             let languages = BundleLocalization.indexedLanguages(Locale.preferredLanguages)
             let reusing = BundleNameCache(reusing: nameCache, languages: languages)
             let (found, cache, panes) = await Task.detached(priority: .utility) {
-                AppIndex.scan(scopes: scopes, cache: reusing, paneCache: reusingPanes)
+                AppIndex.scan(
+                    scopes: scopes, languages: languages, cache: reusing, paneCache: reusingPanes)
             }.value
             nameCache = cache
             paneCache = panes
@@ -473,7 +490,8 @@ final class AppIndex {
     }
 
     nonisolated private static func scan(
-        scopes: [String], cache: BundleNameCache, paneCache: SettingsPaneScanner.Cache?
+        scopes: [String], languages: [String], cache: BundleNameCache,
+        paneCache: SettingsPaneScanner.Cache?
     ) -> ([AppEntry], BundleNameCache, SettingsPaneScanner.Cache?) {
         Signposts.interval("AppIndex.scan") {
             var cache = cache
@@ -489,8 +507,9 @@ final class AppIndex {
                     continue
                 }
 
-                let names = cache.names(for: url)
                 // Finder's rule: LaunchServices ignores a display name the file name contradicts.
+                let names = cache.names(
+                    for: url, base: fileName, developmentRegion: bundle?.developmentLocalization)
                 let name = names.localized.first ?? fileName
                 let executable =
                     bundle?.object(forInfoDictionaryKey: "CFBundleExecutable") as? String
@@ -510,7 +529,7 @@ final class AppIndex {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
             // Settings panes are `.appex` bundles, which carry no Spotlight alternate names.
-            let (panes, panesCache) = SettingsPaneScanner.scan(cache: paneCache)
+            let (panes, panesCache) = SettingsPaneScanner.scan(languages: languages, cache: paneCache)
             // Named here, not at publish: romanizing a CJK index is ~50 ms of main-actor time.
             return (AppIndex.named(apps + panes), cache, panesCache)
         }

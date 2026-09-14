@@ -191,6 +191,11 @@ final class AppSettings {
         didSet { defaults.set(appearance.rawValue, forKey: Key.appearance.rawValue) }
     }
 
+    /// Scales the palette and its floating siblings only. Read through `InterfaceSize.metrics`.
+    var interfaceSize: InterfaceSize {
+        didSet { defaults.set(interfaceSize.rawValue, forKey: Key.interfaceSize.rawValue) }
+    }
+
     var paletteTransparency: Int {
         didSet { defaults.set(paletteTransparency, forKey: Key.paletteTransparency.rawValue) }
     }
@@ -293,6 +298,22 @@ final class AppSettings {
 
     var snippetsShowInLauncher: Bool {
         didSet { defaults.set(snippetsShowInLauncher, forKey: Key.snippetsShowInLauncher.rawValue) }
+    }
+
+    var navigationEnabled: Bool {
+        didSet { defaults.set(navigationEnabled, forKey: Key.navigationEnabled.rawValue) }
+    }
+
+    /// Bundle IDs whose menu bar Search Menu Bar Items refuses to read at all.
+    var menuSearchDisabledApps: [String] {
+        didSet { defaults.set(menuSearchDisabledApps, forKey: Key.menuSearchDisabledApps.rawValue) }
+    }
+
+    /// Off: the Apple menu is the same on every app, so it would only pad every snapshot.
+    var menuSearchShowsAppleMenu: Bool {
+        didSet {
+            defaults.set(menuSearchShowsAppleMenu, forKey: Key.menuSearchShowsAppleMenu.rawValue)
+        }
     }
 
     /// Consent to run third-party JavaScript: it confirms, defaults off, rides no backup.
@@ -509,6 +530,9 @@ final class AppSettings {
             ?? .navigateBackOrClose
         appearance =
             defaults.string(forKey: Key.appearance.rawValue).flatMap(AppAppearance.init) ?? .system
+        interfaceSize =
+            defaults.string(forKey: Key.interfaceSize.rawValue).flatMap(InterfaceSize.init)
+            ?? .standard
         paletteTransparency = max(-100, min(100, defaults.integer(forKey: Key.paletteTransparency.rawValue)))
         compactMode = defaults.bool(forKey: Key.compactMode.rawValue)
         // Defaults to true, so absence must be distinguished from a stored `false`.
@@ -594,6 +618,10 @@ final class AppSettings {
             defaults.object(forKey: Key.hideCurrentEvent.rawValue)
             .flatMap { $0 as? Int }
             .flatMap(HideCurrentEvent.init(rawValue:)) ?? .dontHide
+        navigationEnabled = defaults.bool(forKey: Key.navigationEnabled.rawValue)
+        menuSearchDisabledApps =
+            defaults.stringArray(forKey: Key.menuSearchDisabledApps.rawValue) ?? []
+        menuSearchShowsAppleMenu = defaults.bool(forKey: Key.menuSearchShowsAppleMenu.rawValue)
         windowManagementEnabled = defaults.bool(forKey: Key.windowManagementEnabled.rawValue)
         windowManagementShowInLauncher =
             defaults.object(forKey: Key.windowManagementShowInLauncher.rawValue) == nil

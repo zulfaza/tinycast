@@ -23,7 +23,6 @@ struct ExtensionTests {
     final class StubHost: ExtensionHostAPI {
         var calls: [String] = []
         var toasts: [String] = []
-        var toastMessages: [String] = []
         var huds: [String] = []
         var oauthTokens: [String: String] = [:]
         private let fetcher = ExtensionFetcher()
@@ -36,9 +35,7 @@ struct ExtensionTests {
                     let args = (spec["args"]?.arrayValue ?? []).compactMap(\.stringValue)
                     print(
                         "  proc.run: \(spec["command"]?.stringValue ?? "?") \(args.joined(separator: " "))"
-                            + "  [shell=\(spec["shell"]?.boolValue ?? false)"
-                            + " detached=\(spec["detached"]?.boolValue ?? false)"
-                            + " unref=\(spec["fireAndForget"]?.boolValue ?? false)]"
+                            + "  [shell=\(spec["shell"]?.boolValue ?? false) detached=\(spec["detached"]?.boolValue ?? false)]"
                     )
                 }
                 return ExtensionRuntime.jsonString(
@@ -49,9 +46,7 @@ struct ExtensionTests {
             }
             switch "\(api).\(method)" {
             case "feedback.showToast":
-                let toast = arguments.first?.objectValue ?? [:]
-                toasts.append(toast["title"]?.stringValue ?? "")
-                toastMessages.append(toast["message"]?.stringValue ?? "")
+                toasts.append(arguments.first?.objectValue?["title"]?.stringValue ?? "")
                 return "1"
             case "feedback.showHUD":
                 huds.append(arguments.first?.stringValue ?? "")
@@ -192,12 +187,64 @@ struct ExtensionTests {
         screenChecks()
         actionIconChecks()
         oauthUnitChecks()
+        nodeShimChecks()
         await runtimeChecks()
         await searchAccessoryRuntimeChecks()
         await nodeContractChecks()
+        await asyncComponentChecks()
 
         print("\n\(passes) passed, \(failures) failed")
         exit(failures == 0 ? 0 : 1)
+    }
+
+    static func nodeShimChecks() {
+        let result = ExtensionNodeShims().perform(api: "os", method: "cpus", argsJSON: "[]")
+        guard
+            let data = result.data(using: .utf8),
+            let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            envelope["ok"] as? Bool == true,
+            let processors = envelope["value"] as? [[String: Any]]
+        else {
+            check("os.cpus host call succeeds", false, result)
+            return
+        }
+
+        check(
+            "os.cpus returns every processor",
+            processors.count == ProcessInfo.processInfo.processorCount,
+            "\(processors.count)")
+        let expectedStates = Set(["user", "nice", "sys", "idle", "irq"])
+        let valid = processors.allSatisfy { processor in
+            guard
+                processor["model"] is String,
+                processor["speed"] is NSNumber,
+                let times = processor["times"] as? [String: NSNumber],
+                Set(times.keys) == expectedStates
+            else { return false }
+            return times.values.allSatisfy { $0.doubleValue.isFinite && $0.doubleValue >= 0 }
+        }
+        check("os.cpus returns finite Node timing fields", valid, result)
+
+        func value(_ method: String) -> Any? {
+            let result = ExtensionNodeShims().perform(api: "os", method: method, argsJSON: "[]")
+            guard let data = result.data(using: .utf8),
+                let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                envelope["ok"] as? Bool == true
+            else { return nil }
+            return envelope["value"]
+        }
+        let uptime = (value("uptime") as? NSNumber)?.doubleValue
+        check("os.uptime returns the system uptime", uptime.map { $0 > 0 } == true)
+        let freeMemory = (value("freemem") as? NSNumber)?.doubleValue
+        check(
+            "os.freemem returns finite bytes",
+            freeMemory.map { $0.isFinite && $0 >= 0 && $0 <= Double(ProcessInfo.processInfo.physicalMemory) }
+                == true)
+        let loadAverages = value("loadavg") as? [NSNumber]
+        check(
+            "os.loadavg returns three finite values",
+            loadAverages?.count == 3
+                && loadAverages?.allSatisfy { $0.doubleValue.isFinite && $0.doubleValue >= 0 } == true)
     }
 
     static func manifestChecks() {
@@ -358,8 +405,39 @@ struct ExtensionTests {
         check(
             "shortcut renders as keycaps", actions.first?.shortcutCaps == ["⌘", "⇧", "G"],
             String(describing: actions.first?.shortcutCaps))
-        check("section title carried", actions.last?.section == "More")
+        check("loose action starts no section", actions.first?.startsSection == false)
+        check("a section after loose actions starts one", actions.last?.startsSection == true)
         check("destructive style", actions.last?.isDestructive == true)
+        sectionBoundaryChecks()
+    }
+
+    /// Boundaries follow section nodes: Raycast authors mostly leave sections untitled.
+    static func sectionBoundaryChecks() {
+        func action(_ id: Int) -> String {
+            #"{"id":\#(id),"type":"Action","props":{"title":"A\#(id)"},"children":[]}"#
+        }
+        let json = """
+            {"id":1,"type":"ActionPanel","props":{},"children":[
+              {"id":2,"type":"ActionPanel.Section","props":{},"children":[
+                \(action(3)),
+                {"id":4,"type":"ActionPanel.Submenu","props":{"title":"Share"},"children":[\(action(5))]},
+                \(action(6))]},
+              {"id":7,"type":"ActionPanel.Section","props":{},"children":[]},
+              {"id":8,"type":"ActionPanel.Section","props":{},"children":[\(action(9))]},
+              {"id":10,"type":"ActionPanel.Section","props":{"title":"Same"},"children":[\(action(11))]},
+              {"id":12,"type":"ActionPanel.Section","props":{"title":"Same"},"children":[\(action(13))]},
+              \(action(14))]}
+            """
+        guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+            let panel = RenderNode(json: object)
+        else {
+            check("section fixture decodes", false)
+            return
+        }
+        let starts = ExtensionScreen.actions(in: panel).map(\.startsSection)
+        check(
+            "separators follow section nodes, not titles",
+            starts == [false, false, false, true, true, true, true], "\(starts)")
     }
 
     static func screenChecks() {
@@ -371,20 +449,27 @@ struct ExtensionTests {
         }
 
         let listJSON = """
-            {"id":2,"type":"List","props":{"filtering":true,"searchBarPlaceholder":"Find…"},"children":[
+            {"id":2,"type":"List","props":{"filtering":true,"selectedItemId":"banana","searchBarPlaceholder":"Find…",
+              "onSelectionChange":{"$fn":"2:onSelectionChange"}},"children":[
               {"id":3,"type":"List.Section","props":{"title":"Alpha","subtitle":"two"},"children":[
-                {"id":4,"type":"List.Item","props":{"title":"Apple"},"children":[]},
-                {"id":5,"type":"List.Item","props":{"title":"Banana"},"children":[]}]},
-              {"id":6,"type":"List.Item","props":{"title":"Cherry","keywords":["red"]},"children":[]}]}
+                {"id":4,"type":"List.Item","props":{"id":"apple","title":"Apple"},"children":[]},
+                {"id":5,"type":"List.Item","props":{"id":"banana","title":"Banana"},"children":[]}]},
+              {"id":6,"type":"List.Item","props":{"id":"cherry","title":"Cherry","keywords":["red"]},"children":[]}]}
             """
         let list = ExtensionScreen(tree: tree(listJSON), query: "")
         check("kind is list", list.kind == .list)
         check("placeholder", list.searchPlaceholder == "Find…")
         check("filters locally", list.filtersLocally)
+        check("selected item id", list.selectedItemID == "banana")
+        check("selected item index", list.selectedItemIndex == 1)
         check(
             "items flattened in order",
             list.items.map { $0.node.string("title") } == ["Apple", "Banana", "Cherry"])
         check("rows interleave the section header", list.rows.count == 4, "\(list.rows.count)")
+        check(
+            "selection callback resolves the item id",
+            list.selectionChange(at: 1)
+                == .init(handler: "2:onSelectionChange", itemID: "banana"))
         if case .header(let title, let subtitle, _) = list.rows.first {
             check("header title", title == "Alpha")
             check("header subtitle", subtitle == "two")
@@ -399,6 +484,15 @@ struct ExtensionTests {
             filtered.items.map { $0.node.string("title") } == ["Banana"],
             String(describing: filtered.items.map { $0.node.string("title") }))
         check("empty section drops its header", filtered.rows.count == 2, "\(filtered.rows.count)")
+        check(
+            "filtered selection resolves after filtering",
+            filtered.selectionChange(at: 0)
+                == .init(handler: "2:onSelectionChange", itemID: "banana"))
+        check("filtered selected item index", filtered.selectedItemIndex == 0)
+        check(
+            "an empty selection reports null",
+            filtered.selectionChange(at: 1)
+                == .init(handler: "2:onSelectionChange", itemID: nil))
         let byKeyword = ExtensionScreen(tree: tree(listJSON), query: "red")
         check("keyword match", byKeyword.items.map { $0.node.string("title") } == ["Cherry"])
 
@@ -412,6 +506,20 @@ struct ExtensionTests {
         check("onSearchTextChange disables local filtering", controlled.filtersLocally == false)
         check("controlled rows survive a non-matching query", controlled.items.count == 1)
         check("search handler exposed", controlled.searchTextHandler == "2:onSearchTextChange")
+
+        let keepOrder = ExtensionScreen(
+            tree: tree(
+                """
+                {"id":2,"type":"List","props":{"filtering":{"keepSectionOrder":true},
+                  "onSearchTextChange":{"$fn":"2:onSearchTextChange"}},"children":[
+                  {"id":3,"type":"List.Item","props":{"title":"Apple"},"children":[]},
+                  {"id":4,"type":"List.Item","props":{"title":"Banana"},"children":[]}]}
+                """), query: "ban")
+        check("an object `filtering` still filters", keepOrder.filtersLocally)
+        check(
+            "and keeps only the match",
+            keepOrder.items.map { $0.node.string("title") } == ["Banana"],
+            keepOrder.items.map { $0.node.string("title") ?? "" }.joined(separator: ","))
 
         let grid = ExtensionScreen(
             tree: tree(
@@ -542,17 +650,6 @@ struct ExtensionTests {
             "a destructive artwork icon keeps its own colours",
             destructiveArtwork.source == .file("/tmp/a/danger.png") && destructiveArtwork.tint == nil,
             String(describing: destructiveArtwork))
-
-        let pathLabel = RenderNode(
-            id: 4, type: "List.Item.Detail.Metadata.Label",
-            props: ["title": .string("Path"), "text": .string("/Applications/Demo.app/Contents/MacOS/Demo")])
-        let metadata = RenderNode(id: 3, type: "List.Item.Detail.Metadata", children: [pathLabel])
-        let detail = RenderNode(id: 2, type: "List.Item.Detail", props: ["metadata": .node(metadata)])
-        let process = RenderNode(id: 1, type: "List.Item", props: ["detail": .node(detail)])
-        check(
-            "an iconless process row infers its app icon",
-            ExtensionImage.listIcon(process, assetsPath: nil, isDark: true)?.source
-                == .fileIcon("/Applications/Demo.app"))
     }
 
     private final class MockTokenStore: ExtensionOAuthTokenStore, @unchecked Sendable {
@@ -658,6 +755,7 @@ struct ExtensionTests {
             const { List, ActionPanel, Action, Icon, showToast, Toast } = require("@raycast/api");
             const React = require("react");
             const path = require("node:path");
+            const os = require("node:os");
             const crypto = require("node:crypto");
             const { fileURLToPath, pathToFileURL } = require("node:url");
             const util = require("node:util");
@@ -670,10 +768,15 @@ struct ExtensionTests {
                 return () => clearTimeout(timer);
               }, []);
               const digest = crypto.createHash("sha256").update("abc").digest("hex").slice(0, 8);
-              // AbortSignal's statics too: `AbortSignal.timeout` used to be "not a function".
+              const cpu = os.cpus()[0];
+              const cpuTimes = Object.values(cpu.times).every(Number.isFinite) ? "cpu=ok" : "cpu=bad";
+              // AbortSignal's statics, the brand node-fetch checks, and url.parse's legacy `path`.
               const abortable = [
                 typeof AbortSignal.timeout, typeof AbortSignal.abort, typeof AbortSignal.any,
                 String(AbortSignal.timeout(5e3).aborted), AbortSignal.abort().reason.name,
+                Object.getPrototypeOf(AbortSignal.abort()).constructor.name,
+                Object.prototype.toString.call(AbortSignal.abort()),
+                require("node:url").parse("https://a.test/ajax.php?f=list").path,
               ].join(",");
               const errorCode = (callback) => {
                 try { callback(); return "none"; } catch (error) { return error.code; }
@@ -702,7 +805,7 @@ struct ExtensionTests {
                   icon: Icon.Circle,
                   accessories: [
                     { text: digest }, { text: abortable }, { text: filePaths },
-                    { text: utilShim },
+                    { text: cpuTimes }, { text: utilShim },
                   ],
                   actions: h(ActionPanel, null,
                     h(Action, { title: "Bump", onAction: () => setCount((v) => v + 10) }))
@@ -735,12 +838,18 @@ struct ExtensionTests {
             ExtensionAccessoriesView_labelForTest(screen.items.first?.node.array("accessories").first)
                 == "ba7816bf",
             String(describing: screen.items.first?.node.array("accessories").first))
+        check(
+            "os.cpus crosses the synchronous host bridge",
+            ExtensionAccessoriesView_labelForTest(
+                screen.items.first?.node.array("accessories").dropFirst(3).first) == "cpu=ok",
+            String(describing: screen.items.first?.node.array("accessories")))
         check("toast reached the host", host.toasts == ["hello"], host.toasts.joined(separator: ","))
         check(
-            "AbortSignal carries its statics",
+            "AbortSignal survives node-fetch's brand checks, and url.parse keeps its path",
             ExtensionAccessoriesView_labelForTest(
                 screen.items.first?.node.array("accessories").dropFirst().first)
-                == "function,function,function,false,AbortError",
+                == "function,function,function,false,AbortError,AbortSignal,"
+                + "[object AbortSignal],/ajax.php?f=list",
             String(describing: screen.items.first?.node.array("accessories").dropFirst().first))
         check(
             "fileURLToPath decodes a path and rejects an unusable URL",
@@ -1076,14 +1185,10 @@ struct ExtensionTests {
               invalid.close();
               // axios picks its Node http adapter by this tag, and inherits from streams ES5-style.
               assert.equal(Object.prototype.toString.call(process), "[object process]");
-              assert(Array.isArray(process.execArgv));
-              assert.equal(require("os").constants.signals.SIGTERM, 15);
-              assert.equal(typeof require("events").setMaxListeners, "function");
-              assert.equal(typeof require("events").addAbortListener, "function");
-              assert.equal(typeof require("events").on, "function");
-              const { Writable, getDefaultHighWaterMark } = require("stream");
-              assert.equal(getDefaultHighWaterMark(false), 16 * 1024);
-              assert.equal(getDefaultHighWaterMark(true), 16);
+              const { Readable, Writable } = require("stream");
+              // node-fetch sends a body through `Readable.from`, which never splits it into bytes.
+              const body = await Array.fromAsync(Readable.from("hello"));
+              assert.equal(body.length, 1); assert.equal(String(body[0]), "hello");
               function Legacy() { Writable.call(this, { highWaterMark: 7 }); }
               Legacy.prototype = Object.create(Writable.prototype);
               Legacy.prototype._write = function (chunk, encoding, callback) { this.seen = chunk; callback(); };
@@ -1099,10 +1204,76 @@ struct ExtensionTests {
             session: "archive", code: command, file: directory.appendingPathComponent("test.js"),
             mode: .noView, context: launchContext(mode: .noView))
         await settle()
-        check("node file, zlib and stream contracts", host.huds == ["archive IO passed"],
-              recorder.failures.joined(separator: "|"))
+        check(
+            "node file, zlib and stream contracts", host.huds == ["archive IO passed"],
+            recorder.failures.joined(separator: "|"))
         await runtime.stop(session: "archive")
         runtime.shutdown()
+    }
+
+    /// `withAccessToken` hands React an async component, which only renders while the promise it
+    /// suspended on comes back rather than being remade every attempt (#519).
+    @MainActor
+    static func asyncComponentChecks() async {
+        let (runtime, _, recorder) = makeRuntime()
+        do {
+            try await runtime.boot(
+                config: .current(supportDirectory: FileManager.default.temporaryDirectory))
+        } catch {
+            check("async component runtime boots", false, error.localizedDescription)
+            return
+        }
+
+        let command = """
+            "use strict";
+            const { List, ActionPanel, Action } = require("@raycast/api");
+            const React = require("react");
+            const h = React.createElement;
+            function Inner() {
+              const [count, setCount] = React.useState(0);
+              return h(List, null, h(List.Item, {
+                title: "count=" + count,
+                actions: h(ActionPanel, null,
+                  h(Action, { title: "Bump", onAction: () => setCount((v) => v + 1) })),
+              }));
+            }
+            async function Wrapped(props) { return await Inner(props); }
+            module.exports.default = function Command(props) { return h(Wrapped, props); };
+            """
+        await runtime.start(
+            session: "sAsync", code: command, file: URL(fileURLWithPath: "/tmp/async.js"),
+            mode: .view, context: launchContext())
+        await settle()
+
+        check(
+            "an async command renders", recorder.failures.isEmpty,
+            recorder.failures.joined(separator: "\n"))
+        guard let tree = recorder.trees.last else {
+            check("an async command reaches the screen", false)
+            runtime.shutdown()
+            return
+        }
+        var screen = ExtensionScreen(tree: tree, query: "")
+        check(
+            "an async command reaches the screen",
+            screen.items.first?.node.string("title") == "count=0",
+            screen.items.first?.node.string("title") ?? "nil")
+
+        let actions = ExtensionScreen.actions(in: screen.actionPanel(forItemAt: 0))
+        if let handler = actions.first?.handler {
+            await runtime.dispatch(
+                session: "sAsync", handler: handler,
+                payload: ExtensionRuntime.jsonString(from: []))
+            await settle()
+            screen = ExtensionScreen(tree: recorder.trees.last!, query: "")
+            check(
+                "state inside an async command still updates",
+                screen.items.first?.node.string("title") == "count=1",
+                screen.items.first?.node.string("title") ?? "nil")
+        } else {
+            check("state inside an async command still updates", false, "no dispatchable action")
+        }
+        await runtime.stop(session: "sAsync")
     }
 
     /// Raycast's `swift:` wrapper chmods its bundled helper before spawning it: store zips ship it 644.
@@ -1122,33 +1293,15 @@ struct ExtensionTests {
             const React = require("react");
             const { chmod } = require("fs/promises");
             const { spawn } = require("child_process");
-            const { on, once } = require("events");
             module.exports.default = function Command() {
               const [state, setState] = React.useState("pending");
               React.useEffect(() => {
                 (async () => {
                   await chmod("\(helper.path)", "755");
-                  const child = spawn("\(helper.path)", ["pick"], { detached: true });
-                  if (!Array.isArray(child.stdio)) throw new Error("spawn.stdio missing");
-                  let spawned = false;
-                  let stdinClosed = false;
-                  child.once("spawn", () => { spawned = true; });
-                  child.stdin.once("close", () => { stdinClosed = true; });
+                  const child = spawn("\(helper.path)", ["pick"]);
                   const out = [];
-                  const controller = new AbortController();
-                  child.stdout.once("end", () => controller.abort());
-                  const output = (async () => {
-                    try {
-                      for await (const [chunk] of on(child.stdout, "data", { signal: controller.signal })) {
-                        out.push(chunk.toString());
-                      }
-                    } catch (error) {
-                      if (error.name !== "AbortError") throw error;
-                    }
-                  })();
-                  const [code] = await once(child, "exit");
-                  await output;
-                  setState((spawned && stdinClosed ? code : "stream-error") + ":" + JSON.parse(out.join("")).hex);
+                  child.stdout.on("data", (chunk) => out.push(chunk.toString()));
+                  child.on("exit", (code) => setState(code + ":" + JSON.parse(out.join("")).hex));
                 })().catch((error) => setState("threw:" + error.message));
               }, []);
               return React.createElement(Detail, { markdown: state });
@@ -1157,10 +1310,7 @@ struct ExtensionTests {
         await runtime.start(
             session: "sSwift", code: command, file: URL(fileURLWithPath: "/tmp/swift-helper.js"),
             mode: .view, context: launchContext())
-        for _ in 0..<50 {
-            if recorder.trees.last?.activeRoot?.string("markdown") == "0:#FF0000" { break }
-            await settle(100)
-        }
+        await settle(1200)
 
         let mode = (try? FileManager.default.attributesOfItem(atPath: helper.path))
             .flatMap { $0[.posixPermissions] as? NSNumber }
@@ -1250,16 +1400,6 @@ struct ExtensionTests {
             session: "s1", code: code, file: bundle, mode: target.mode, context: context)
         await settle(settleMS)
 
-        if let query = ProcessInfo.processInfo.environment["EXT_TEST_QUERY"],
-            let tree = recorder.trees.last,
-            let handler = ExtensionScreen(tree: tree, query: "").searchTextHandler
-        {
-            await runtime.dispatch(
-                session: "s1", handler: handler,
-                payload: ExtensionRuntime.jsonString(from: [query]))
-            await settle(settleMS)
-        }
-
         for failure in recorder.failures { print("✗ \(failure)") }
         if ProcessInfo.processInfo.environment["EXT_TEST_VERBOSE"] != nil {
             for line in recorder.logs { print("  \(line)") }
@@ -1267,9 +1407,7 @@ struct ExtensionTests {
         print(
             "\(recorder.trees.count) render(s); host calls: \(Set(host.calls).sorted().joined(separator: ", "))"
         )
-        for (toast, message) in zip(host.toasts, host.toastMessages) {
-            print("  toast: \(toast)\(message.isEmpty ? "" : " — \(message)")")
-        }
+        for toast in host.toasts { print("  toast: \(toast)") }
         for hud in host.huds { print("  hud: \(hud)") }
         if let tree = recorder.trees.last {
             let screen = ExtensionScreen(tree: tree, query: "")

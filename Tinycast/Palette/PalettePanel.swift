@@ -1,12 +1,9 @@
 import AppKit
 import Carbon.HIToolbox
-import OSLog
 import SwiftUI
 
 /// Borderless floating panel that hosts the SwiftUI command palette.
 final class PalettePanel: NSPanel {
-    private static let logger = Logger(subsystem: "com.tinycast", category: "ExtensionFocus")
-
     enum HeaderFieldBoundary {
         case leading
         case trailing
@@ -14,16 +11,14 @@ final class PalettePanel: NSPanel {
 
     /// Bare backspace, which the field editor swallows before `onKeyPress` could see it.
     var onBareBackspace: (() -> Bool)?
+    /// Escape, which an `AVPlayerView` in the preview answers before `onKeyPress` could see it.
+    var onEscape: (() -> Bool)?
     /// Command chords the field editor swallows, plus the ones no main menu handles.
     var onCommandShortcut: ((NSEvent) -> Bool)?
     /// The palette's typing context, handed over each time a field takes focus.
     var onFieldEditorFocused: ((NSTextInputContext) -> Void)?
     /// Inline argument fields use arrows at their text boundaries to continue their focus ring.
     var onHeaderFieldBoundaryArrow: ((HeaderFieldBoundary) -> Bool)?
-    /// The field editor can consume Tab before SwiftUI sees it, so the palette routes it here.
-    var onTab: ((Bool) -> Bool)?
-    /// Focused option controls need arrows before the palette's row navigation sees them.
-    var onHeaderOptionArrow: ((Int) -> Bool)?
     /// Arms hover from `sendEvent`, the one place both event streams pass through.
     weak var paletteState: PaletteState? {
         didSet {
@@ -36,6 +31,10 @@ final class PalettePanel: NSPanel {
 
     /// SwiftUI's text fields all edit through the window's one shared field editor.
     private var fieldEditor: NSTextView? { firstResponder as? NSTextView }
+
+    func selectAllFieldEditorText() {
+        fieldEditor?.selectAll(nil)
+    }
 
     /// Nil while a selection can still collapse normally, or when the caret is not at an edge.
     private func headerFieldBoundary(for event: NSEvent) -> HeaderFieldBoundary? {
@@ -54,11 +53,9 @@ final class PalettePanel: NSPanel {
     private var compositionObserver: NotificationToken?
 
     override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
-        let result = super.makeFirstResponder(responder)
-        let actual = String(describing: self.firstResponder)
-        let requested = String(describing: responder)
-        Self.logger.info("panel responder request=\(requested) result=\(result) actual=\(actual)")
-        guard result else { return false }
+        // A transport's button is a first responder like any other; the search field outranks it.
+        if let view = responder as? NSView, view.refusesKeyboardFocus { return false }
+        guard super.makeFirstResponder(responder) else { return false }
         trackComposition()
         if let context = fieldEditorContext { onFieldEditorFocused?(context) }
         return true
@@ -180,6 +177,13 @@ final class PalettePanel: NSPanel {
             return
         }
         if event.type == .keyDown,
+            Int(event.keyCode) == kVK_Escape,
+            event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]),
+            onEscape?() == true
+        {
+            return
+        }
+        if event.type == .keyDown,
             Int(event.keyCode) == kVK_Delete,
             event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]),
             onBareBackspace?() == true
@@ -190,19 +194,6 @@ final class PalettePanel: NSPanel {
             onHeaderFieldBoundaryArrow?(boundary) == true
         {
             return
-        }
-        if event.type == .keyDown, Int(event.keyCode) == kVK_Tab {
-            let backwards = event.modifierFlags.contains(.shift)
-            if onTab?(backwards) == true { return }
-        }
-        if event.type == .keyDown {
-            switch Int(event.keyCode) {
-            case kVK_UpArrow where event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]):
-                if onHeaderOptionArrow?(-1) == true { return }
-            case kVK_DownArrow where event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]):
-                if onHeaderOptionArrow?(1) == true { return }
-            default: break
-            }
         }
         // The controller owns the chords the field editor or a missing main menu would eat.
         if event.type == .keyDown,
@@ -215,7 +206,8 @@ final class PalettePanel: NSPanel {
     }
     init<Content: View>(rootView: Content) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 750, height: 475),
+            contentRect: NSRect(
+                x: 0, y: 0, width: Theme.Size.panelWidth, height: Theme.Size.panelHeight),
             styleMask: [.borderless, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false

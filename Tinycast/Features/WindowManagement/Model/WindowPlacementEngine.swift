@@ -411,6 +411,10 @@ enum WindowPlacementEngine {
             return Fractions(
                 x0: 0.25, x1: 0.75, y0: 0, y1: 1,
                 anchor: Anchor(horizontal: .center, vertical: .min))
+        case .centerTwoThirds:
+            return Fractions(
+                x0: oneThird / 2, x1: 1 - oneThird / 2, y0: 0, y1: 1,
+                anchor: Anchor(horizontal: .center, vertical: .min))
 
         default:
             return nil
