@@ -32,7 +32,8 @@ struct EntryIconTests {
             .tintedSymbol(name: "bolt", tint: red),
             .artwork(path: "/tmp/a.png", extent: 0.76),
             .artwork(path: "/tmp/a.png", extent: 0.83),
-            .artwork(path: "/tmp/b.png", extent: 0.76)
+            .artwork(path: "/tmp/b.png", extent: 0.76),
+            .contentType("com.apple.graphic-icon.battery")
         ]
         let printed = Set(icons.map { "\($0)" })
         expect(printed.count == icons.count, "each icon prints uniquely: \(printed.count)/\(icons.count)")
@@ -59,6 +60,10 @@ struct EntryIconTests {
         expect(
             Set([EntryIcon.file(stamp: 0), .symbol("star"), .file(stamp: 0)]).count == 2,
             "hashing collapses only equal values")
+        expect(
+            EntryIcon.contentType("com.apple.graphic-icon.battery")
+                != EntryIcon.contentType("public.folder"),
+            "content-type identifiers separate")
     }
 
     // MARK: - Drawing
@@ -69,7 +74,8 @@ struct EntryIconTests {
         let cases: [(String, EntryIcon)] = [
             ("file", .file(stamp: 0)),
             ("symbol", .symbol("star")),
-            ("tintedSymbol", .tintedSymbol(name: "star", tint: red))
+            ("tintedSymbol", .tintedSymbol(name: "star", tint: red)),
+            ("contentType", .contentType("com.apple.graphic-icon.battery"))
         ]
         for (label, icon) in cases {
             let image = IconCache.icon(for: icon, fileURL: url)

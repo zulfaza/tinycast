@@ -42,6 +42,7 @@ struct ExtensionsSettingsView: View {
 
             // Outside the enabled group: leftovers are on disk whether or not extensions are on.
             storage
+            developer
         }
         .formStyle(.grouped)
         .settingsScrollTarget(.extensions)
@@ -246,6 +247,27 @@ struct ExtensionsSettingsView: View {
         } header: {
             SettingsSectionHeader(.extensionsStorage)
         }
+    }
+
+    private var developer: some View {
+        Section {
+            Toggle(isOn: settingsBinding(\.extensionDeveloperMode)) {
+                SettingsRowTitle(.extensionsDeveloper, "Developer mode")
+            }
+            Text("Writes extension runtime diagnostics to the Extensions log.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            SettingsSectionHeader(.extensionsDeveloper)
+        }
+    }
+
+    private func settingsBinding(
+        _ keyPath: ReferenceWritableKeyPath<AppSettings, Bool>
+    ) -> Binding<Bool> {
+        Binding(
+            get: { core.settings[keyPath: keyPath] },
+            set: { core.settings[keyPath: keyPath] = $0 })
     }
 
     private var reclaimableSubtitle: String {

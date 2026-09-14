@@ -1,5 +1,6 @@
 import AppKit
 import Synchronization
+import UniformTypeIdentifiers
 
 struct IconCacheGeneration {
     private(set) var value = 0
@@ -48,6 +49,7 @@ enum EntryIcon: Hashable, Sendable {
     case symbol(String)
     case tintedSymbol(name: String, tint: SymbolTint)
     case artwork(path: String, extent: CGFloat)
+    case contentType(String)
 }
 
 struct IconSize: Hashable, Sendable {
@@ -107,6 +109,9 @@ enum IconCache {
     }
     static func cachedSymbol(named name: String, tint: SymbolTint? = nil) -> NSImage? {
         cache.object(forKey: symbolKey(name, tint))
+    }
+    static func cached(forContentType identifier: String) -> NSImage? {
+        cache.object(forKey: contentTypeKey(identifier))
     }
 
     /// Tiles rasterize off-main, where a dynamic `NSColor` resolves wrong, so carry the surface.
@@ -194,6 +199,22 @@ enum IconCache {
         return await Task.detached(priority: .userInitiated) {
             Decoded(image: symbolIcon(named: name, tint: tint))
         }.value.image
+    }
+
+    static func loadAsync(forContentType identifier: String) async -> NSImage? {
+        if let cached = cached(forContentType: identifier) { return cached }
+        return await Task.detached(priority: .userInitiated) {
+            Decoded(image: icon(forContentType: identifier))
+        }.value.image
+    }
+
+    static func icon(forContentType identifier: String) -> NSImage {
+        let key = contentTypeKey(identifier)
+        if let cached = cache.object(forKey: key) { return cached }
+        let type = UTType(identifier) ?? .item
+        let (icon, cost) = downsampled(NSWorkspace.shared.icon(for: type))
+        cache.setObject(icon, forKey: key, cost: cost)
+        return icon
     }
 
     static func icon(forFile path: String, stamp: Int = 0, size: IconSize? = nil) -> NSImage {
@@ -333,6 +354,7 @@ enum IconCache {
         case .symbol(let name): return symbolIcon(named: name)
         case .tintedSymbol(let name, let tint): return symbolIcon(named: name, tint: tint)
         case .artwork(let path, let extent): return artwork(atPath: path, extent: extent)
+        case .contentType(let identifier): return icon(forContentType: identifier)
         }
     }
 
@@ -342,6 +364,7 @@ enum IconCache {
         case .symbol(let name): return cachedSymbol(named: name)
         case .tintedSymbol(let name, let tint): return cachedSymbol(named: name, tint: tint)
         case .artwork(let path, let extent): return cachedArtwork(atPath: path, extent: extent)
+        case .contentType(let identifier): return cached(forContentType: identifier)
         }
     }
 
@@ -352,6 +375,7 @@ enum IconCache {
         case .tintedSymbol(let name, let tint): return await loadSymbolAsync(named: name, tint: tint)
         case .artwork(let path, let extent):
             return await loadArtworkAsync(atPath: path, extent: extent)
+        case .contentType(let identifier): return await loadAsync(forContentType: identifier)
         }
     }
 
@@ -391,6 +415,9 @@ enum IconCache {
         key("file:\(stamp):\(path)")
     }
     private static func fittedKey(_ path: String) -> NSString { key("fit:" + path) }
+    private static func contentTypeKey(_ identifier: String) -> NSString {
+        key("type:" + identifier)
+    }
 
     private static func fittedIcon(forFile path: String) -> Decoded {
         let (icon, cost) = fittedToArtwork(NSWorkspace.shared.icon(forFile: path))

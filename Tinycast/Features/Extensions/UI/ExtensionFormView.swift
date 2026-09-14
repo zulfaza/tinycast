@@ -46,7 +46,11 @@ struct ExtensionFormView: View {
                 scroll, row: focusedRowID, atOrigin: selection == 0, proxy: proxy)
         }
         // A form arrives with whatever row the screen before it left behind, so it states its own.
-        .onAppear { focus(screen.autoFocusedField) }
+        .task(id: screen.root?.id) {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            focus(screen.autoFocusedField)
+        }
         .onDisappear { palette.noteEditingField(false) }
         // The palette moves the selection with ↑/↓ and ⇥; focus follows it, and a click leads it.
         .onChange(of: selection) { focus(selection) }
