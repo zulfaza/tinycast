@@ -100,6 +100,17 @@ final class SnippetCoordinator {
         applySnippetsLauncherPresence()
     }
 
+    func applySnippetPolicy() {
+        listener.updateTrigger(
+            SnippetExpansionTrigger(
+                mode: settings.snippetsTriggerMode,
+                delimiter: settings.snippetsDelimiter,
+                retainsDelimiter: settings.snippetsRetainsDelimiter))
+        listener.updateExcludedBundleIDs(settings.snippetsExcludedApps)
+        let directories = settings.snippetsSharedLibraries.map { URL(fileURLWithPath: $0) }
+        store.setSharedLibraryDirectories(directories)
+    }
+
     // MARK: - Browsing and editing
 
     /// The switch gates the browser, the way Search Files re-checks its own before opening.
@@ -110,6 +121,7 @@ final class SnippetCoordinator {
 
     /// Opens the Snippets pane with the editor showing `record`; nil is a new snippet.
     func editSnippet(_ record: StoredSnippet?) {
+        guard record.map(store.isWritable) ?? true else { return }
         core.pendingSnippetEdit = SnippetEditRequest(record: record)
         settingsCoordinator.showSettings(tab: .snippets)
     }
@@ -189,7 +201,10 @@ final class SnippetCoordinator {
         expectedKeyword: String? = nil,
         keywordLength: Int = 0,
         automaticGeneration: UInt? = nil,
-        userArguments: [String: String] = [:]
+        userArguments: [String: String] = [:],
+        output: SnippetExpansionOutput? = nil,
+        injectionDelay: Duration? = nil,
+        showsCompletionFeedback: Bool? = nil
     ) {
         let records = store.snippets
         guard let record = records.first(where: { $0.id == id }) else {
@@ -202,7 +217,11 @@ final class SnippetCoordinator {
         if automaticGeneration == nil {
             guard injector.prepareInteractiveExpansion(target: target) else { return }
         }
-        let confirmation = record.snippet.showsConfirmation ? "Inserted \(record.snippet.name)" : nil
+        let expansionOutput = output ?? settings.snippetsOutput
+        let expansionDelay = injectionDelay ?? settings.snippetsInjectionDelay.duration
+        let shouldShowFeedback =
+            showsCompletionFeedback ?? (record.snippet.showsConfirmation || settings.snippetsCompletionFeedback)
+        let confirmation = shouldShowFeedback ? "Inserted \(record.snippet.name)" : nil
         let context = injector.captureExpansionContext(
             target: target,
             clipboardHistory: clipboardHistoryForExpansion())
@@ -210,7 +229,8 @@ final class SnippetCoordinator {
             record,
             snippets: records,
             context: context,
-            userArguments: userArguments)
+            userArguments: userArguments,
+            output: expansionOutput)
         if !result.missingArguments.isEmpty {
             promptSnippetArguments(
                 record: record,
@@ -222,7 +242,9 @@ final class SnippetCoordinator {
                 keywordLength: keywordLength,
                 automaticGeneration: automaticGeneration,
                 confirmation: confirmation,
-                userArguments: userArguments)
+                userArguments: userArguments,
+                output: expansionOutput,
+                injectionDelay: expansionDelay)
             return
         }
         completeSnippetExpansion(
@@ -232,7 +254,9 @@ final class SnippetCoordinator {
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
             automaticGeneration: automaticGeneration,
-            confirmation: confirmation)
+            confirmation: confirmation,
+            injectionDelay: expansionDelay,
+            output: expansionOutput)
     }
 
     private func promptSnippetArguments(
@@ -245,7 +269,9 @@ final class SnippetCoordinator {
         keywordLength: Int,
         automaticGeneration: UInt?,
         confirmation: String?,
-        userArguments: [String: String]
+        userArguments: [String: String],
+        output: SnippetExpansionOutput,
+        injectionDelay: Duration
     ) {
         listener.isPromptingForArguments = true
         defer { listener.isPromptingForArguments = false }
@@ -265,7 +291,8 @@ final class SnippetCoordinator {
             record,
             snippets: records,
             context: context,
-            userArguments: userArguments.merging(arguments) { _, prompted in prompted })
+            userArguments: userArguments.merging(arguments) { _, prompted in prompted },
+            output: output)
         completeSnippetExpansion(
             result,
             recordID: record.id,
@@ -273,7 +300,9 @@ final class SnippetCoordinator {
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
             automaticGeneration: automaticGeneration,
-            confirmation: confirmation)
+            confirmation: confirmation,
+            injectionDelay: injectionDelay,
+            output: output)
     }
 
     private func completeSnippetExpansion(
@@ -283,14 +312,27 @@ final class SnippetCoordinator {
         expectedKeyword: String?,
         keywordLength: Int,
         automaticGeneration: UInt?,
-        confirmation: String?
+        confirmation: String?,
+        injectionDelay: Duration,
+        output: SnippetExpansionOutput
     ) {
+        let injected: InjectedText
+        switch output {
+        case .markdown:
+            injected = InjectedText(
+                markdown: result.text,
+                plainText: SnippetMarkdownSerializer.plainText(from: result.text),
+                cursorOffsetFromEnd: result.cursorOffsetFromEnd)
+        case .plainText:
+            injected = InjectedText(result.text, cursorOffsetFromEnd: result.cursorOffsetFromEnd)
+        }
         injector.deliver(
-            InjectedText(result.text, cursorOffsetFromEnd: result.cursorOffsetFromEnd),
+            injected,
             target: target,
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
             automaticGeneration: automaticGeneration,
+            injectionDelay: injectionDelay,
             onDelivered: { [weak self] in
                 guard let self else { return }
                 self.store.recordUse(id: recordID)

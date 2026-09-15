@@ -246,7 +246,7 @@ struct AIConnectionEditorSheet: View {
             Button {
                 removeModel(model)
             } label: {
-                Image(systemName: "minus.circle").foregroundStyle(.red)
+                Image(systemName: "minus.circle").foregroundStyle(Theme.Colors.destructive)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove \(model)")

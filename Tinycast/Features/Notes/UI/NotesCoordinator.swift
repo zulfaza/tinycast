@@ -13,6 +13,9 @@ final class NotesCoordinator {
     private let store: NotesStore
     private let settings: AppSettings
     private let appIndex: AppIndex
+    private let emojiIndex: EmojiIndex
+    private let emojiKeywords: EmojiKeywordStore
+    private let frequentEmoji: FrequentEmojiStore
     private unowned let core: AppCore
     @ObservationIgnored private lazy var windowController = NotesWindowController(coordinator: self)
     @ObservationIgnored private lazy var switcherController = NoteSwitcherWindowController(
@@ -35,11 +38,17 @@ final class NotesCoordinator {
         store: NotesStore,
         settings: AppSettings,
         appIndex: AppIndex,
+        emojiIndex: EmojiIndex,
+        emojiKeywords: EmojiKeywordStore,
+        frequentEmoji: FrequentEmojiStore,
         core: AppCore
     ) {
         self.store = store
         self.settings = settings
         self.appIndex = appIndex
+        self.emojiIndex = emojiIndex
+        self.emojiKeywords = emojiKeywords
+        self.frequentEmoji = frequentEmoji
         self.core = core
         store.onIssue = { [weak self] issue in self?.present(issue) }
     }
@@ -298,6 +307,20 @@ final class NotesCoordinator {
 
     func editorReady(_ textView: NoteTextView) {
         windowController.editorReady(textView)
+    }
+
+    func inlineCompletion(
+        _ text: String, _ caretUTF16Offset: Int, _ selectedLength: Int
+    ) -> NoteInlineCompletion? {
+        guard let token = EmojiCompletionToken.precedingCaret(
+            in: text, caretUTF16Offset: caretUTF16Offset, selectedLength: selectedLength),
+            let suggestion = EmojiCompletionIndex.suggestions(
+                for: token, index: emojiIndex, frequent: frequentEmoji,
+                customKeywords: emojiKeywords.records).first
+        else { return nil }
+        return NoteInlineCompletion(
+            text: suggestion.entry.display(tone: settings.emojiSkinTone),
+            replacementRange: suggestion.replacementRange)
     }
 
     private func request(_ presentation: Presentation) {

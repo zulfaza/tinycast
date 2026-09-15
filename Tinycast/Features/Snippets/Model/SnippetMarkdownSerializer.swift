@@ -24,6 +24,7 @@ struct SnippetMarkdownSerializer {
 
         var name: String?
         var keyword: String?
+        var tags: [String] = []
         var isEnabled = true
         var showsConfirmation = false
         var seenKeys = Set<String>()
@@ -53,12 +54,15 @@ struct SnippetMarkdownSerializer {
                 name = decoded.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : decoded
             case "keyword":
                 keyword = try decodeScalar(rawValue, fileURL: fileURL, line: lineNumber)
+            case "tags":
+                tags = try decodeTags(rawValue, fileURL: fileURL, line: lineNumber)
             case "enabled":
                 isEnabled = try decodeBoolean(rawValue, fileURL: fileURL, line: lineNumber)
             case "show_confirmation":
                 showsConfirmation = try decodeBoolean(rawValue, fileURL: fileURL, line: lineNumber)
             default:
-                preconditionFailure("Canonical keys are exhaustively handled")
+                throw parseError(
+                    fileURL, line: lineNumber, "Unsupported frontmatter key '\(rawKey)'")
             }
         }
 
@@ -67,6 +71,7 @@ struct SnippetMarkdownSerializer {
             name: name ?? defaultName(for: fileURL),
             text: String(content[bodyStart...]),
             keyword: keyword,
+            tags: tags,
             isEnabled: isEnabled,
             showsConfirmation: showsConfirmation
         )
@@ -80,10 +85,38 @@ struct SnippetMarkdownSerializer {
         if let keyword = snippet.keyword {
             lines.append("keyword: \(encodeScalar(keyword))")
         }
+        if !snippet.tags.isEmpty {
+            let tags = snippet.tags.map(encodeScalar).joined(separator: ", ")
+            lines.append("tags: [\(tags)]")
+        }
         lines.append("enabled: \(snippet.isEnabled)")
         lines.append("show_confirmation: \(snippet.showsConfirmation)")
         lines.append("---")
         return lines.joined(separator: "\n") + "\n" + snippet.text
+    }
+
+    /// Deterministic subset: fenced code, links, images, HTML, blocks, and emphasis.
+    static func plainText(from markdown: String) -> String {
+        var text = markdown
+        text = text.replacingOccurrences(
+            of: "(?m)\\n(?:```|~~~)[ \\t]*(?:\\n|$)", with: "",
+            options: .regularExpression)
+        text = text.replacingOccurrences(
+            of: "(?m)^(?:```|~~~)[^\\n]*(?:\\n|$)", with: "",
+            options: .regularExpression)
+        text = text.replacingOccurrences(
+            of: "!\\[([^\\]]*)\\]\\([^\\)]*\\)", with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(
+            of: "\\[([^\\]]+)\\]\\([^\\)]*\\)", with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        text = text.replacingOccurrences(
+            of: "(?m)^\\s{0,3}(?:#{1,6}\\s+|[-*+] |\\d+[.)] )", with: "",
+            options: .regularExpression)
+        text = text.replacingOccurrences(of: "`([^`]*)`", with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: "(?<!\\w)[*_~]", with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: "[*_~](?!\\w)", with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: "(?m)^\\s*>\\s?", with: "", options: .regularExpression)
+        return text
     }
 
     static func slug(for name: String) -> String {
@@ -131,7 +164,7 @@ struct SnippetMarkdownSerializer {
     private static func canonicalKey(for rawKey: String) -> String? {
         let key = rawKey.lowercased()
         switch key {
-        case "name", "keyword", "enabled", "show_confirmation":
+        case "name", "keyword", "tags", "enabled", "show_confirmation":
             return key
         default:
             return nil
@@ -188,6 +221,52 @@ struct SnippetMarkdownSerializer {
         default:
             throw parseError(fileURL, line: line, "Boolean values must be exactly 'true' or 'false'")
         }
+    }
+
+    private static func decodeTags(_ value: String, fileURL: URL, line: Int) throws -> [String] {
+        guard value.first == "[", value.last == "]" else {
+            throw parseError(fileURL, line: line, "Tags must be a quoted array")
+        }
+        let body = String(value.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+        guard !body.isEmpty else { return [] }
+
+        var tags: [String] = []
+        var remainder = Substring(body)
+        while !remainder.isEmpty {
+            remainder = remainder.drop(while: { $0 == " " || $0 == "\t" })
+            guard remainder.first == "\"" else {
+                throw parseError(fileURL, line: line, "Tags must contain quoted strings")
+            }
+            var index = remainder.index(after: remainder.startIndex)
+            var escaped = false
+            var closing: Substring.Index?
+            while index < remainder.endIndex {
+                let character = remainder[index]
+                if character == "\"" && !escaped {
+                    closing = index
+                    break
+                }
+                escaped = character == "\\" ? !escaped : false
+                index = remainder.index(after: index)
+            }
+            guard let closing else {
+                throw parseError(fileURL, line: line, "Unterminated tag")
+            }
+            let rawTag = String(remainder[..<remainder.index(after: closing)])
+            tags.append(try decodeScalar(rawTag, fileURL: fileURL, line: line))
+            remainder = remainder[remainder.index(after: closing)...]
+            remainder = remainder.drop(while: { $0 == " " || $0 == "\t" })
+            if remainder.isEmpty { break }
+            guard remainder.first == "," else {
+                throw parseError(fileURL, line: line, "Expected ',' between tags")
+            }
+            remainder = remainder.dropFirst()
+            remainder = remainder.drop(while: { $0 == " " || $0 == "\t" })
+            guard !remainder.isEmpty else {
+                throw parseError(fileURL, line: line, "Trailing commas are not allowed")
+            }
+        }
+        return tags
     }
 
     private static func encodeScalar(_ value: String) -> String {

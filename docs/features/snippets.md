@@ -4,6 +4,11 @@ Snippets are reusable plain-text templates stored as Markdown. They can be expan
 results, from the dedicated browser below, or automatically when an enabled keyword is typed in
 another app.
 
+The browser also accepts `#tag` terms. Tags are optional Markdown frontmatter (`tags: ["work"]`)
+and remain local metadata: they do not change launcher ranking or expansion output. Selected shared
+library folders are read-only sources alongside the channel's own `Snippets` folder; saves and new
+snippets always stay in the channel folder.
+
 ## Invariants
 
 - **Snippets are channel-isolated and path-identified.** They persist under
@@ -60,6 +65,8 @@ of the launcher together; keyword expansion and the browser's shortcut keep work
 import can never enable keystroke listening — which is why either importer's summary says the switch is
 still off when snippets land, so a dormant keyword doesn't read as a broken one. `AppCore`'s settings
 sinks re-project on every change.
+Expansion options and shared-library selection remain configurable while the feature is off; the
+library itself stays inactive until snippets are enabled.
 
 Expansion history is kept beside the channel's snippets in `snippet-usage.json`. A record is written
 only after delivery succeeds. The browser groups enabled snippets as Today, Yesterday, This Week,
@@ -88,6 +95,7 @@ Canonical output uses this order:
 ---
 name: "Meeting Notes"
 keyword: "!notes"
+tags: ["work"]
 enabled: true
 show_confirmation: false
 ---
@@ -105,6 +113,18 @@ there are no aliases, so a key Tinycast does not know names itself in the error.
 
 Everything after the closing delimiter's line terminator is the body. Leading and trailing blank
 lines, CR/LF choices, Unicode, and later lines containing `---` are preserved exactly when parsing.
+
+Markdown remains the source of truth for rich snippet bodies. Expansion defaults to that source text;
+callers that request plain output receive the body with Markdown decoration removed while placeholders
+and nested references are expanded first. Plain output deterministically removes fenced code markers,
+headings, list and quote prefixes, link and image destinations, HTML tags, inline code markers, and
+emphasis markers; all other characters and line breaks remain unchanged.
+
+Automatic expansion supports immediate matching (the default) and delimiter-triggered matching. The
+delimiter mode uses whitespace or a configured literal delimiter and can retain it after replacement.
+The listener can exclude bundle IDs before matching, so sensitive or incompatible apps never consume
+the keyword buffer. Delivery delay and completion feedback are caller settings; they do not alter the
+template engine or the pasteboard safety gates.
 
 ## Template tokens
 
@@ -220,8 +240,8 @@ cycle and exits with Escape or a bare backspace, and like the clipboard it split
 preview.
 
 The list is every **enabled** snippet — a disabled one is absent here exactly as it is absent from the
-launcher — filtered by name *or* keyword. Substring matching, not the launcher's fuzzy scorer: this is
-a library being browsed rather than a query racing apps and commands for a rank.
+launcher — filtered by name, keyword, or every `#tag` term. Substring matching, not the launcher's fuzzy
+scorer: this is a library being browsed rather than a query racing apps and commands for a rank.
 
 The preview shows the **raw template**, never an expansion. Expanding per selection would capture the
 clipboard, read the target's selected text and burn a `{uuid}` on every arrow key, and a snippet
@@ -237,8 +257,8 @@ submits through the normal expansion path. A missing required value focuses the 
 which reads `previousApp` before hiding the panel and then calls the same `expandSnippet` funnel a
 launcher row does — so template expansion, cursor placement, the Accessibility prompt, the
 confirmation HUD and the pasteboard lease are the ones described below, not a second copy of them.
-The rest of the menu is **Edit Snippet** and **Create Snippet**, which hand off to the pane's editor
-through `AppCore.pendingSnippetEdit`, and **Show in Finder**.
+The rest of the menu is **Edit Snippet** (local files only), **Create Snippet**, and **Show in Finder**.
+Shared-library records are visibly read-only; Settings disables edit/delete and the browser omits Edit.
 
 `Create Snippet` is a launcher command as well as a menu row because the palette swallows ⌘K when a
 screen has no rows: an empty library would otherwise open a browser with nothing to do.

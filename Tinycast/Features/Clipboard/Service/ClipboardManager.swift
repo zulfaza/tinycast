@@ -3,7 +3,7 @@ import AppKit
 @MainActor
 final class ClipboardManager {
     /// Marker we attach to the pasteboard when *we* write to it, so polling ignores our own pastes.
-    static let internalType = NSPasteboard.PasteboardType("com.tinycast.internal")
+    nonisolated static let internalType = NSPasteboard.PasteboardType("com.tinycast.internal")
 
     /// Longest text captured; bigger copies are skipped, truncation losing the tail.
     static let maxTextLength = 32_000
@@ -115,7 +115,88 @@ final class ClipboardManager {
         // Nil rather than empty, so a copied `http` URL falls through and stays a link.
         guard !durable.isEmpty else { return nil }
         // Reversed on insert, so the first file copied ends up leading the history.
-        return durable.map(\.standardizedFileURL.path).reversed()
+        return Array(durable.map(\.standardizedFileURL.path).reversed())
+    }
+
+    /// Copies every bounded source type, including formats Tinycast does not interpret itself.
+    nonisolated static func representations(on pasteboard: NSPasteboard) -> [ClipboardRepresentation] {
+        guard pasteboard.types?.isEmpty == false else { return [] }
+        var order: [String] = []
+        var values: [String: [Data]] = [:]
+        var total = 0
+        let items = pasteboard.pasteboardItems ?? []
+        if items.isEmpty {
+            for type in pasteboard.types ?? [] {
+                let identifier = type.rawValue
+                guard identifier != Self.internalType.rawValue, !identifier.isEmpty,
+                    !order.contains(identifier),
+                    order.count < ClipboardStore.maximumRepresentationCount
+                else { continue }
+                order.append(identifier)
+            }
+        } else {
+            for item in items {
+                for type in item.types {
+                    let identifier = type.rawValue
+                    guard identifier != Self.internalType.rawValue, !identifier.isEmpty,
+                        !order.contains(identifier),
+                        order.count < ClipboardStore.maximumRepresentationCount
+                    else { continue }
+                    order.append(identifier)
+                }
+                if order.count == ClipboardStore.maximumRepresentationCount { break }
+            }
+        }
+        for identifier in order {
+            let type = NSPasteboard.PasteboardType(identifier)
+            var accepted: [Data] = []
+            if items.isEmpty {
+                if let data = pasteboard.data(forType: type) {
+                    if data.count <= ClipboardStore.maximumRepresentationBytes,
+                        total + data.count <= ClipboardStore.maximumRepresentationSetBytes
+                    {
+                        accepted.append(data)
+                        total += data.count
+                    }
+                } else if let string = pasteboard.string(forType: type),
+                    string.utf8.count <= ClipboardStore.maximumRepresentationBytes
+                {
+                    let data = Data(string.utf8)
+                    if data.count <= ClipboardStore.maximumRepresentationBytes,
+                        total + data.count <= ClipboardStore.maximumRepresentationSetBytes
+                    {
+                        accepted.append(data)
+                        total += data.count
+                    }
+                }
+            } else {
+                for item in items {
+                    guard accepted.count < ClipboardStore.maximumValuesPerRepresentation else { break }
+                    let data: Data?
+                    if let source = item.data(forType: type) {
+                        data = source
+                    } else if let string = item.string(forType: type),
+                        string.utf8.count <= ClipboardStore.maximumRepresentationBytes
+                    {
+                        data = Data(string.utf8)
+                    } else {
+                        data = nil
+                    }
+                    guard let data, data.count <= ClipboardStore.maximumRepresentationBytes,
+                        total + data.count <= ClipboardStore.maximumRepresentationSetBytes
+                    else { continue }
+                    accepted.append(data)
+                    total += data.count
+                }
+            }
+            if !accepted.isEmpty { values[identifier] = accepted }
+            if total >= ClipboardStore.maximumRepresentationSetBytes { break }
+        }
+        return order.compactMap { identifier in
+            values[identifier].map {
+                ClipboardRepresentation(typeIdentifier: identifier, values: $0)
+            }
+        }
     }
 
     /// An app that stages a temp file beside better inline content must keep the inline content.
@@ -139,10 +220,11 @@ final class ClipboardManager {
         // The pasteboard carries no source, so attribute it to the frontmost app.
         let sourceBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         if let sourceBundleID, settings.clipboardDisabledApps.contains(sourceBundleID) { return }
+        let representations = Self.representations(on: pb)
 
         // Ahead of the text branch: Finder puts the file's *name* on `.string` beside its URL.
         if let paths = Self.fileURLs(on: pb) {
-            store.addFiles(paths, sourceBundleID: sourceBundleID)
+            store.addFiles(paths, sourceBundleID: sourceBundleID, representations: representations)
             return
         }
 
@@ -150,7 +232,7 @@ final class ClipboardManager {
             !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         {
             guard text.count <= Self.maxTextLength else { return }
-            store.addText(text, sourceBundleID: sourceBundleID)
+            store.addText(text, sourceBundleID: sourceBundleID, representations: representations)
             return
         }
 
@@ -164,7 +246,8 @@ final class ClipboardManager {
                     ? data
                     : NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:])
                 guard let png else { return }
-                await store.addImage(png, sourceBundleID: sourceBundleID)
+                await store.addImage(
+                    png, sourceBundleID: sourceBundleID, representations: representations)
             }
         }
     }

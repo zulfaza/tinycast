@@ -51,37 +51,42 @@ enum BackupApplier {
     private nonisolated static func importClipboard(
         _ bundle: BackupBundle, into store: ClipboardStore
     ) async -> Int {
-        ClipboardStore.importStoredItems(
-            inDatabaseAt: store.dbURL, adoptingImagesInto: store.imagesDir,
-            bundle.clipboardItems().lazy.compactMap { staged($0, in: bundle) })
+        let entries = bundle.clipboardItems().lazy.compactMap { item -> ClipboardStore.StoredEntry? in
+            guard let staged = staged(item, in: bundle) else { return nil }
+            return ClipboardStore.StoredEntry(item: staged.item, metadata: staged.metadata)
+        }
+        return ClipboardStore.importStoredEntries(
+            inDatabaseAt: store.dbURL, adoptingImagesInto: store.imagesDir, entries)
     }
 
     /// The row still points into staging; the store adopts the blob once it accepts the clip.
     private nonisolated static func staged(
         _ item: BackupClipboardItem, in bundle: BackupBundle
-    ) -> ClipboardItem? {
+    ) -> (item: ClipboardItem, metadata: ClipboardStore.StoredMetadata)? {
+        let metadata = ClipboardStore.StoredMetadata(
+            name: item.name,
+            filePaths: [],
+            representations: item.representations,
+            qrPayloads: item.qrPayloads)
         switch item.kind {
         case .text:
             guard let text = item.text else { return nil }
-            return ClipboardItem(
+            return (
+                ClipboardItem(
                 id: UUID(), kind: .text, text: text, imagePath: nil, createdAt: item.createdAt,
-                sourceBundleID: item.sourceBundleID, pinnedAt: item.pinnedAt)
+                sourceBundleID: item.sourceBundleID, pinnedAt: item.pinnedAt, name: item.name), metadata)
         case .image:
             guard let name = item.imageName, let url = bundle.clipboardImageURL(named: name) else {
                 return nil
             }
-            return ClipboardItem(
+            return (
+                ClipboardItem(
                 id: UUID(), kind: .image, text: nil, imagePath: url.path,
                 createdAt: item.createdAt, sourceBundleID: item.sourceBundleID,
-                pinnedAt: item.pinnedAt)
+                pinnedAt: item.pinnedAt, name: item.name), metadata)
         case .file:
             // A path from another Mac names nothing here, so the row is dropped rather than dead.
-            guard let path = item.text, FileManager.default.fileExists(atPath: path) else {
-                return nil
-            }
-            return ClipboardItem(
-                id: UUID(), kind: .file, text: path, imagePath: nil, createdAt: item.createdAt,
-                sourceBundleID: item.sourceBundleID, pinnedAt: item.pinnedAt)
+            return nil
         }
     }
 

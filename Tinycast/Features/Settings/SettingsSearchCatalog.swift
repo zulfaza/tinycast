@@ -108,7 +108,7 @@ enum SettingsSearchCatalog {
     // Pane order, then section order within a pane, so this reads as a table of contents.
 
     static let entries: [SettingsSearchEntry] =
-        general + applications + systemSettings
+        general + customThemes + applications + systemSettings
         + systemActions + commands + quicklinks + fallbacks + ai + quickActions + fileSearch + notes
         + snippets + navigation + windowManagement + clipboard + emoji + calendar
         + extensions + permissions + backup + about
@@ -166,6 +166,13 @@ enum SettingsSearchCatalog {
         .init(
             .generalGeneral, "Auto-switch input source",
             keywords: ["keyboard", "layout", "language", "abc"])
+    ]
+
+    private static let customThemes: [SettingsSearchEntry] = [
+        .init(pane: .customThemes, keywords: ["appearance", "colors", "gradient"]),
+        .init(
+            group: .customThemesTheme, "Custom theme",
+            keywords: ["colors", "light", "dark", "gradient", "import", "export"])
     ]
 
     private static let applications: [SettingsSearchEntry] = [
@@ -350,7 +357,10 @@ enum SettingsSearchCatalog {
             keywords: ["add", "keyword", "expansion"]),
         .init(
             .snippetsLibrary, "Snippets Folder",
-            keywords: ["reveal", "finder", "markdown", "files"])
+            keywords: ["reveal", "finder", "markdown", "files"]),
+        .init(
+            group: .snippetsExpansion, "Expansion",
+            keywords: ["trigger", "delimiter", "delay", "feedback", "exclude", "plain text"])
     ]
 
     private static let navigation: [SettingsSearchEntry] = [

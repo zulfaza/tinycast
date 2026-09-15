@@ -100,6 +100,7 @@ struct SnippetRepository: Sendable {
     let bundleIdentifier: String
     let channelDirectory: URL
     let snippetsDirectory: URL
+    private(set) var sharedLibraryDirectories: [URL]
 
     private let directoryLock: DirectoryLock
     private let mutationHooks: MutationHooks
@@ -110,7 +111,8 @@ struct SnippetRepository: Sendable {
             for: .applicationSupportDirectory,
             in: .userDomainMask
         )[0],
-        mutationHooks: MutationHooks = MutationHooks()
+        mutationHooks: MutationHooks = MutationHooks(),
+        sharedLibraryDirectories: [URL] = []
     ) {
         self.bundleIdentifier = bundleIdentifier
         let channelDirectory = applicationSupportRoot.appendingPathComponent(
@@ -119,14 +121,34 @@ struct SnippetRepository: Sendable {
         self.channelDirectory = channelDirectory
         directoryLock = Self.directoryLocks.directoryLock(for: channelDirectory)
         self.mutationHooks = mutationHooks
-        snippetsDirectory = channelDirectory.appendingPathComponent("Snippets", isDirectory: true)
+        let snippetsDirectory = channelDirectory.appendingPathComponent(
+            "Snippets", isDirectory: true)
+        self.snippetsDirectory = snippetsDirectory
+        self.sharedLibraryDirectories = Self.normalizedDirectories(sharedLibraryDirectories).filter {
+            $0.resolvingSymlinksInPath().path != snippetsDirectory.resolvingSymlinksInPath().path
+        }
+    }
+
+    mutating func setSharedLibraryDirectories(_ directories: [URL]) {
+        sharedLibraryDirectories = Self.normalizedDirectories(directories).filter {
+            $0.resolvingSymlinksInPath().path != snippetsDirectory.resolvingSymlinksInPath().path
+        }
+    }
+
+    func isWritable(_ fileURL: URL) -> Bool {
+        (try? validatedFileURL(fileURL)) != nil
     }
 
     func load() throws(RepositoryError) -> Snapshot {
         try directoryLock.withLock { () throws(RepositoryError) -> Snapshot in
             try mappedError(at: snippetsDirectory) {
                 try ensureSnippetsDirectory()
-                let files = try markdownFiles(in: snippetsDirectory)
+                var files = try markdownFiles(in: snippetsDirectory)
+                for directory in sharedLibraryDirectories where
+                    FileManager.default.fileExists(atPath: directory.path)
+                {
+                    files.append(contentsOf: try markdownFiles(in: directory))
+                }
                 var records: [StoredSnippet] = []
                 var issues: [Issue] = []
 
@@ -240,23 +262,33 @@ struct SnippetRepository: Sendable {
             at: snippetsDirectory, withIntermediateDirectories: true)
     }
 
+    private static func normalizedDirectories(_ directories: [URL]) -> [URL] {
+        var seen = Set<String>()
+        return directories.compactMap { directory in
+            let normalized = directory.standardizedFileURL
+            let identity = normalized.resolvingSymlinksInPath().path
+            guard seen.insert(identity).inserted else { return nil }
+            return normalized
+        }
+    }
+
     private func markdownFiles(in directory: URL) throws -> [URL] {
-        try FileManager.default.contentsOfDirectory(
+        let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL.path
+        return try FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         )
         .filter { $0.pathExtension.lowercased() == "md" }
-        .filter(Self.isLoadableFile)
+        .filter { Self.isLoadableFile($0, within: resolvedDirectory) }
         .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    // Keeps a directory or device node named `*.md` out; only non-files pay for resolving.
-    private static func isLoadableFile(_ url: URL) -> Bool {
-        if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true { return true }
-        return
-            (try? url.resolvingSymlinksInPath()
-            .resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+    // Resolve before loading so a local symlink cannot smuggle an outside file into the library.
+    private static func isLoadableFile(_ url: URL, within directoryPath: String) -> Bool {
+        let resolved = url.resolvingSymlinksInPath().standardizedFileURL
+        guard resolved.deletingLastPathComponent().path == directoryPath else { return false }
+        return (try? resolved.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
     }
 
     private func createUnlocked(_ snippet: Snippet) throws -> StoredSnippet {
@@ -306,7 +338,15 @@ struct SnippetRepository: Sendable {
         let standardized = fileURL.standardizedFileURL
         let parentPath = standardized.deletingLastPathComponent().resolvingSymlinksInPath().path
         let snippetsPath = snippetsDirectory.standardizedFileURL.resolvingSymlinksInPath().path
+        let resolved = standardized.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedParentPath = resolved.deletingLastPathComponent().path
+        let exists = FileManager.default.fileExists(atPath: standardized.path)
+        let isSymlink =
+            (try? FileManager.default.destinationOfSymbolicLink(atPath: standardized.path)) != nil
+        let isDanglingSymlink = isSymlink && !exists
         guard parentPath == snippetsPath,
+            !exists || resolvedParentPath == snippetsPath,
+            !isDanglingSymlink,
             standardized.pathExtension.lowercased() == "md"
         else {
             throw RepositoryError.invalidFileLocation(fileURL)

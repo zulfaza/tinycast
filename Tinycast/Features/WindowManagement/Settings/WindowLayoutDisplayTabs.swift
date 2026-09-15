@@ -26,7 +26,7 @@ struct WindowLayoutDisplayTabs: View {
                 .foregroundStyle(isSelected ? Theme.Colors.textPrimary : Theme.Colors.textSecondary)
                 .frame(width: Theme.Size.layoutDisplayTab, height: Theme.Size.layoutDisplayTab)
                 .background(shape.fill(Theme.Colors.controlSurface))
-                .overlay(shape.stroke(isSelected ? Color.accentColor : Theme.Colors.border))
+                .overlay(shape.stroke(isSelected ? Theme.Colors.accent : Theme.Colors.border))
                 .contentShape(shape)
         }
         .buttonStyle(.plain)

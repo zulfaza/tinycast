@@ -13,7 +13,7 @@ struct CameraView: View {
             footer
         }
         .frame(width: Theme.Size.cameraStage.width)
-        .background(Theme.Colors.panelScrim)
+        .background(Theme.Colors.panelSurface())
         .background(VisualEffectView())
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.dialog, style: .continuous))
         .panelEntrance()

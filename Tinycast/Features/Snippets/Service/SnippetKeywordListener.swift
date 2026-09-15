@@ -125,6 +125,7 @@ final class SnippetKeywordListener: HealthCheckable {
     @ObservationIgnored private var observers: [NotificationToken] = []
     /// The keystroke buffer: the tap callback mutates it per event, so it stays untracked.
     @ObservationIgnored private var policy = SnippetKeywordPolicy()
+    @ObservationIgnored private var excludedBundleIDs = Set<String>()
     @ObservationIgnored private var onUserActivity: (() -> Void)?
     @ObservationIgnored
     private var onMatch: ((StoredSnippet.ID, String, Int, InjectionTarget?) -> Void)?
@@ -164,6 +165,19 @@ final class SnippetKeywordListener: HealthCheckable {
                 guard record.snippet.isEnabled, let keyword = record.snippet.keyword else { return nil }
                 return SnippetKeywordPolicy.Keyword(snippetID: record.id, value: keyword)
             })
+    }
+
+    func updateTrigger(_ trigger: SnippetExpansionTrigger) {
+        policy.update(trigger: trigger)
+    }
+
+    func updateExcludedBundleIDs(_ bundleIDs: [String]) {
+        excludedBundleIDs = Set(
+            bundleIDs.compactMap {
+                let bundleID = $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return bundleID.isEmpty ? nil : bundleID
+            })
+        policy.reset()
     }
 
     func start(
@@ -336,6 +350,10 @@ final class SnippetKeywordListener: HealthCheckable {
             isResetKey: Self.resetKeyCodes.contains(keyCode),
             isDeleteBackward: keyCode == kVK_Delete)
         if input != .ignored { userActivity() }
+        if case .text = input, isExcludedTarget() {
+            policy.reset()
+            return
+        }
         guard let match = policy.process(input, at: now()) else { return }
         // Sampled here, with the keystroke: by delivery the reader may have moved on.
         let target = InjectionTarget.current()
@@ -345,6 +363,13 @@ final class SnippetKeywordListener: HealthCheckable {
             self.matchTask = nil
             self.onMatch?(match.snippetID, match.keyword, match.deletionCount, target)
         }
+    }
+
+    private func isExcludedTarget() -> Bool {
+        guard let target = InjectionTarget.current(),
+            let bundleIdentifier = target.externalApp?.bundleIdentifier
+        else { return false }
+        return excludedBundleIDs.contains(bundleIdentifier.lowercased())
     }
 
     private static let resetKeyCodes: Set<Int> = [

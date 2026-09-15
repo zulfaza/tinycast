@@ -5,12 +5,6 @@ enum Paster {
     /// Stamped on Tinycast's own synthetic keystrokes so the snippet keyword tap can skip them.
     static let tinycastEventTag: Int64 = 0x54494E59
 
-    /// Covers the gap between `activate()` returning and the target app accepting a keystroke.
-    private static let activationDelay: TimeInterval = 0.08
-
-    /// Shorter: no activation to wait on, only the pasteboard write reaching the target's process.
-    private static let directPostDelay: TimeInterval = 0.05
-
     /// Write the item and paste it into `previousApp`, activating it so ⌘V lands there.
     @MainActor @discardableResult
     static func paste(
@@ -18,9 +12,18 @@ enum Paster {
     ) -> Bool {
         guard write(item, store: store) else { return false }
         previousApp?.activate()
-        DispatchQueue.main.asyncAfter(deadline: .now() + activationDelay) {
-            postCommandV()
-        }
+        scheduleCommandV(after: .milliseconds(80))
+        return true
+    }
+
+    @MainActor @discardableResult
+    static func pasteAs(
+        _ representation: ClipboardRepresentation, item: ClipboardItem,
+        store: ClipboardStore, previousApp: NSRunningApplication?
+    ) -> Bool {
+        guard write(representation, item: item, store: store) else { return false }
+        previousApp?.activate()
+        scheduleCommandV(after: .milliseconds(80))
         return true
     }
 
@@ -28,6 +31,13 @@ enum Paster {
     @MainActor @discardableResult
     static func copy(_ item: ClipboardItem, store: ClipboardStore) -> Bool {
         write(item, store: store)
+    }
+
+    @MainActor @discardableResult
+    static func copyAs(
+        _ representation: ClipboardRepresentation, item: ClipboardItem, store: ClipboardStore
+    ) -> Bool {
+        write(representation, item: item, store: store)
     }
 
     /// Put a string on the pasteboard unmarked, so it enters history like any other copy.
@@ -44,9 +54,7 @@ enum Paster {
     static func pasteString(_ text: String, previousApp: NSRunningApplication?) {
         writeString(text)
         previousApp?.activate()
-        DispatchQueue.main.asyncAfter(deadline: .now() + activationDelay) {
-            postCommandV()
-        }
+        scheduleCommandV(after: .milliseconds(80))
     }
 
     /// A file, pasted into `previousApp`; the receiver takes the file or its path, as it reads.
@@ -54,9 +62,7 @@ enum Paster {
     static func pasteFile(_ url: URL, previousApp: NSRunningApplication?) {
         PasteboardFiles.write(url, to: .general)
         previousApp?.activate()
-        DispatchQueue.main.asyncAfter(deadline: .now() + activationDelay) {
-            postCommandV()
-        }
+        scheduleCommandV(after: .milliseconds(80))
     }
 
     /// String counterpart of `copy(_:store:)`.
@@ -70,9 +76,7 @@ enum Paster {
     static func pasteStringInPlace(_ text: String, into app: NSRunningApplication?) {
         writeString(text)
         guard let pid = app?.processIdentifier else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + directPostDelay) {
-            postCommandV(toPid: pid)
-        }
+        scheduleCommandV(after: .milliseconds(50), toPid: pid)
     }
 
     @MainActor
@@ -91,9 +95,19 @@ enum Paster {
     ) -> Bool {
         guard write(item, store: store) else { return false }
         if let pid = app?.processIdentifier {
-            DispatchQueue.main.asyncAfter(deadline: .now() + directPostDelay) {
-                postCommandV(toPid: pid)
-            }
+            scheduleCommandV(after: .milliseconds(50), toPid: pid)
+        }
+        return true
+    }
+
+    @MainActor @discardableResult
+    static func pasteAsInPlace(
+        _ representation: ClipboardRepresentation, item: ClipboardItem, store: ClipboardStore,
+        into app: NSRunningApplication?
+    ) -> Bool {
+        guard write(representation, item: item, store: store) else { return false }
+        if let pid = app?.processIdentifier {
+            scheduleCommandV(after: .milliseconds(50), toPid: pid)
         }
         return true
     }
@@ -119,17 +133,33 @@ enum Paster {
             pb.declareTypes([.png, ClipboardManager.internalType], owner: nil)
             pb.setData(data, forType: .png)
         case .file:
-            guard let url = store.fileURL(for: item),
-                FileManager.default.fileExists(atPath: url.path)
+            let urls = store.fileURLs(for: item)
+            guard !urls.isEmpty,
+                urls.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) })
             else { return false }
-            pb.clearContents()
-            pb.declareTypes([.fileURL, .string, ClipboardManager.internalType], owner: nil)
-            pb.setData(url.dataRepresentation, forType: .fileURL)
-            // Both types: a file-taking app receives the file, a text field receives the path.
-            pb.setString(url.path, forType: .string)
+            guard PasteboardFiles.write(urls, to: pb) else { return false }
         }
         pb.setData(Data(), forType: ClipboardManager.internalType)
         // The poller skips marked writes, so this is the only promotion point.
+        store.promote(item)
+        return true
+    }
+
+    @MainActor @discardableResult
+    static func write(
+        _ representation: ClipboardRepresentation, item: ClipboardItem, store: ClipboardStore,
+        to pb: NSPasteboard = .general
+    ) -> Bool {
+        guard !representation.values.isEmpty else { return false }
+        let type = NSPasteboard.PasteboardType(representation.typeIdentifier)
+        let items = representation.values.map { data in
+            let item = NSPasteboardItem()
+            item.setData(data, forType: type)
+            return item
+        }
+        pb.clearContents()
+        guard pb.writeObjects(items) else { return false }
+        pb.setData(Data(), forType: ClipboardManager.internalType)
         store.promote(item)
         return true
     }
@@ -138,6 +168,15 @@ enum Paster {
     @MainActor
     static func postCommandV(toPid pid: pid_t? = nil) {
         postCommand(key: CGKeyCode(kVK_ANSI_V), toPid: pid)
+    }
+
+    @MainActor
+    private static func scheduleCommandV(after delay: Duration, toPid pid: pid_t? = nil) {
+        Task {
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            postCommandV(toPid: pid)
+        }
     }
 
     /// Synthesize ⌘C, for reading a selection an app will not surface over Accessibility.

@@ -86,7 +86,7 @@ struct WindowLayoutEntryPicker: View {
                     draft.removeSelectedEntry()
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.Colors.destructive)
                 .padding(.horizontal, Theme.Spacing.md)
                 .frame(height: Theme.Size.layoutControlHeight, alignment: .leading)
             }

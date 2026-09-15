@@ -7,10 +7,26 @@ struct EmojiScreen: PaletteScreen {
     let core: AppCore
     let vm: PaletteState
     let tone: EmojiSkinTone
+    var customKeywords: [EmojiKeyword]
     let openActions: () -> Void
 
+    init(
+        index: EmojiIndex, frequent: FrequentEmojiStore, core: AppCore, vm: PaletteState,
+        tone: EmojiSkinTone, openActions: @escaping () -> Void,
+        customKeywords: [EmojiKeyword] = []
+    ) {
+        self.index = index
+        self.frequent = frequent
+        self.core = core
+        self.vm = vm
+        self.tone = tone
+        self.openActions = openActions
+        self.customKeywords = customKeywords
+    }
+
     private var sections: [EmojiGridSection] {
-        EmojiGrid.sections(query: vm.query, index: index, frequent: frequent)
+        EmojiGrid.sections(
+            query: vm.query, index: index, frequent: frequent, customKeywords: customKeywords)
     }
 
     /// Flat grid order across sections — what the selection indexes.
@@ -99,25 +115,49 @@ enum EmojiActionsMenu {
     {
         PopoverMenuContent(
             header: entry.displayName,
-            items: [
-                PopoverMenuItem(
-                    title: target?.pasteTitle ?? "Paste",
-                    icon: .paste(target, fallback: "doc.on.clipboard"), shortcut: "↵"
-                ) {
-                    core.emojiCoordinator.pasteEmoji(entry)
-                },
-                PopoverMenuItem(
-                    title: "Copy to Clipboard", systemImage: "doc.on.doc", shortcut: "⌘↵"
-                ) {
-                    core.emojiCoordinator.copyEmoji(entry)
-                },
-                PopoverMenuItem(
-                    title: "Paste and Keep Window Open",
-                    icon: .paste(target, fallback: "macwindow"), shortcut: "⌥↵"
-                ) {
-                    core.emojiCoordinator.pasteEmojiKeepingWindowOpen(entry)
-                }
-            ]
+            items: baseItems(entry: entry, core: core, target: target)
+                + toneItems(entry: entry, core: core, target: target)
         )
+    }
+
+    private static func baseItems(
+        entry: EmojiEntry, core: AppCore, target: PasteTarget?
+    ) -> [PopoverMenuItem] {
+        [
+            PopoverMenuItem(
+                title: target?.pasteTitle ?? "Paste",
+                icon: .paste(target, fallback: "doc.on.clipboard"), shortcut: "↵"
+            ) {
+                core.emojiCoordinator.pasteEmoji(entry)
+            },
+            PopoverMenuItem(
+                title: "Copy to Clipboard", systemImage: "doc.on.doc", shortcut: "⌘↵"
+            ) {
+                core.emojiCoordinator.copyEmoji(entry)
+            },
+            PopoverMenuItem(
+                title: "Paste and Keep Window Open",
+                icon: .paste(target, fallback: "macwindow"), shortcut: "⌥↵"
+            ) {
+                core.emojiCoordinator.pasteEmojiKeepingWindowOpen(entry)
+            }
+        ]
+    }
+
+    private static func toneItems(
+        entry: EmojiEntry, core: AppCore, target: PasteTarget?
+    ) -> [PopoverMenuItem] {
+        guard entry.supportsSkinTone else { return [] }
+        return EmojiSkinTone.allCases.map { tone in
+            let title = tone == .none
+                ? "Paste without skin tone"
+                : "Paste with \(tone.title.lowercased()) skin tone"
+            return PopoverMenuItem(
+                title: title, icon: .paste(target, fallback: "hand.wave"),
+                startsSection: tone == .none
+            ) {
+                core.emojiCoordinator.pasteEmoji(entry, tone: tone)
+            }
+        }
     }
 }

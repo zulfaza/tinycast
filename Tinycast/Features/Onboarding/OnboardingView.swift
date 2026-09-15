@@ -223,7 +223,9 @@ struct OnboardingView: View {
             HStack(spacing: Theme.Spacing.sm) {
                 ForEach(0...Self.lastStep, id: \.self) { index in
                     Circle()
-                        .fill(index == step ? Color.primary : Color.primary.opacity(0.2))
+                        .fill(
+                            index == step
+                                ? Theme.Colors.textPrimary : Theme.Colors.textPrimary.opacity(0.2))
                         .frame(width: 7, height: 7)
                 }
             }
@@ -342,11 +344,12 @@ struct OnboardingView: View {
             Text(accessibilityTrusted ? "Granted" : "Not granted")
         }
         .font(.caption.weight(.semibold))
-        .foregroundStyle(accessibilityTrusted ? Color.green : Color.orange)
+        .foregroundStyle(accessibilityTrusted ? Theme.Colors.success : Color.orange)
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.vertical, Theme.Spacing.xs)
         .background(
-            Capsule().fill((accessibilityTrusted ? Color.green : Color.orange).opacity(0.14)))
+            Capsule().fill(
+                (accessibilityTrusted ? Theme.Colors.success : Color.orange).opacity(0.14)))
     }
 
     // Read the bundle directly: the app icon is generic until LaunchServices registers.

@@ -13,6 +13,9 @@ struct SnippetsTests {
         // The in-process delivery tier drives a real text view, which needs AppKit awake.
         _ = NSApplication.shared
         testIdentityAndRevision()
+        testTagsAndFiltering()
+        testMarkdownPlainText()
+        testDelimiterPolicy()
         await testSnippetUsage()
         testRaycastImport()
         try testMarkdownCodec()
@@ -46,6 +49,68 @@ struct SnippetsTests {
         check(
             "source revision changes with source content",
             SnippetSourceRevision(content: "same") != SnippetSourceRevision(content: "same\n"))
+    }
+
+    private static func testTagsAndFiltering() {
+        let tagged = record(
+            "/tmp/tagged.md",
+            Snippet(name: "Meeting", text: "Body", keyword: "!meet", tags: [" Work ", "work", "Team"]))
+        check("snippet tags normalize whitespace and duplicates", tagged.snippet.tags == ["Team", "Work"])
+        check(
+            "snippet filter matches text and tags",
+            SnippetFilter(query: "meeting #work").matches(tagged))
+        check(
+            "snippet filter rejects a missing tag",
+            !SnippetFilter(query: "meeting #personal").matches(tagged))
+        check(
+            "tag-only snippet filter works",
+            SnippetFilter(query: "#team").matches(tagged))
+    }
+
+    private static func testMarkdownPlainText() {
+        let markdown = "# Heading\n\n**bold** and [link](https://example.com) with `code`."
+        check(
+            "plain snippet output removes Markdown decoration",
+            SnippetMarkdownSerializer.plainText(from: markdown)
+                == "Heading\n\nbold and link with code.")
+        let blocks = "> quote\n- item\n1. next\n![alt](image.png)\n<div>html</div>\n```swift\nlet value = 1\n```"
+        check(
+            "plain output handles supported block and inline Markdown",
+            SnippetMarkdownSerializer.plainText(from: blocks)
+                == "quote\nitem\nnext\nalt\nhtml\nlet value = 1")
+        check(
+            "plain output removes tilde code fences",
+            SnippetMarkdownSerializer.plainText(from: "~~~\ncode\n~~~") == "code")
+        let snippetRecord = record("/tmp/plain.md", Snippet(name: "Plain", text: markdown))
+        let context = SnippetTemplateEngine.ExpansionContext(
+            clipboardHistory: [], selection: "", now: Date(), calendar: .current,
+            locale: .current, timeZone: .current)
+        check(
+            "template expansion supports requested plain output",
+            SnippetTemplateEngine.expand(
+                snippetRecord, snippets: [snippetRecord], context: context, output: .plainText).text
+                == "Heading\n\nbold and link with code.")
+    }
+
+    private static func testDelimiterPolicy() {
+        let id = "/tmp/delimiter.md"
+        var policy = SnippetKeywordPolicy(
+            keywords: [.init(snippetID: id, value: "!meet")],
+            trigger: SnippetExpansionTrigger(
+                mode: .delimiter, delimiter: "whitespace", retainsDelimiter: false))
+        let now = Date(timeIntervalSince1970: 1_750_000_000)
+        _ = policy.process(.text("!meet"), at: now)
+        let match = policy.process(.text(" "), at: now.addingTimeInterval(1))
+        check("delimiter mode waits for a delimiter", match?.deletionCount == 6)
+
+        policy.update(trigger: SnippetExpansionTrigger(
+            mode: .delimiter, delimiter: "whitespace", retainsDelimiter: true))
+        _ = policy.process(.text("!meet"), at: now)
+        let retained = policy.process(.text("\n"), at: now.addingTimeInterval(1))
+        check("delimiter mode can retain the delimiter", retained?.deletionCount == 5)
+        check(
+            "an empty delimiter falls back to whitespace",
+            SnippetExpansionTrigger(mode: .delimiter, delimiter: "").delimiter == "whitespace")
     }
 
     private static func testSnippetUsage() async {
@@ -248,6 +313,9 @@ struct SnippetsTests {
         expectParseError(
             "unknown frontmatter key is rejected", content: "---\nunknown: \"value\"\n---\n", fileURL: fileURL
         )
+        expectParseError(
+            "trailing tag comma is rejected", content: "---\ntags: [\"one\",]\n---\n", fileURL: fileURL
+        )
         // A file still carrying a removed key is reported, not silently half-loaded.
         expectParseError(
             "the removed category key is rejected", content: "---\ncategory: \"Work\"\n---\n",
@@ -294,6 +362,35 @@ struct SnippetsTests {
         let secondLoad = try stable.load()
         check("a repeated load of an empty library stays empty", secondLoad.records.isEmpty)
 
+        let sharedDirectory = root.appendingPathComponent("shared", isDirectory: true)
+        try fm.createDirectory(at: sharedDirectory, withIntermediateDirectories: true)
+        let sharedURL = sharedDirectory.appendingPathComponent("shared.md")
+        try SnippetMarkdownSerializer.serialize(
+            Snippet(name: "Shared", text: "From library", tags: ["team"]))
+            .write(to: sharedURL, atomically: true, encoding: .utf8)
+        let sharedRepository = SnippetRepository(
+            bundleIdentifier: "com.example.shared",
+            applicationSupportRoot: channelRoot,
+            sharedLibraryDirectories: [sharedDirectory])
+        let sharedSnapshot = try sharedRepository.load()
+        check(
+            "shared libraries load alongside the local channel",
+            sharedSnapshot.records.contains { $0.id == sharedURL.standardizedFileURL.path })
+        check(
+            "shared library metadata round-trips",
+            sharedSnapshot.records.first { $0.id == sharedURL.standardizedFileURL.path }?.snippet.tags
+                == ["team"])
+        check("shared library records report read-only", !sharedRepository.isWritable(sharedURL))
+        do {
+            _ = try sharedRepository.save(
+                sharedSnapshot.records[0].snippet,
+                fileURL: sharedURL,
+                expectedRevision: sharedSnapshot.records[0].sourceRevision)
+            check("shared library records are read-only", false)
+        } catch SnippetRepository.RepositoryError.invalidFileLocation {
+            check("shared library records are read-only", true)
+        }
+
         let corruptRoot = root.appendingPathComponent("partial-load", isDirectory: true)
         let corruptRepository = SnippetRepository(
             bundleIdentifier: "com.example.partial",
@@ -335,6 +432,29 @@ struct SnippetsTests {
             nonRegularEntries.records.contains {
                 $0.id == linkedEntryURL.standardizedFileURL.path
             })
+        let outsideURL = root.appendingPathComponent("outside.md")
+        try SnippetMarkdownSerializer.serialize(Snippet(name: "Outside", text: "Body"))
+            .write(to: outsideURL, atomically: true, encoding: .utf8)
+        let escapedURL = corruptRepository.snippetsDirectory.appendingPathComponent("escaped.md")
+        try fm.createSymbolicLink(at: escapedURL, withDestinationURL: outsideURL)
+        let escapedSnapshot = try corruptRepository.load()
+        check(
+            "a symlink to an outside file is not loaded",
+            escapedSnapshot.records.allSatisfy {
+                $0.id != escapedURL.standardizedFileURL.path
+            })
+        let escaped = StoredSnippet(
+            fileURL: escapedURL,
+            snippet: Snippet(name: "Outside", text: "Body"),
+            sourceRevision: SnippetSourceRevision(
+                content: try String(contentsOf: outsideURL, encoding: .utf8)))
+        do {
+            _ = try corruptRepository.save(
+                escaped.snippet, fileURL: escaped.fileURL, expectedRevision: escaped.sourceRevision)
+            check("a symlink to an outside file cannot be mutated", false)
+        } catch SnippetRepository.RepositoryError.invalidFileLocation {
+            check("a symlink to an outside file cannot be mutated", true)
+        }
 
         let crudRoot = root.appendingPathComponent("crud", isDirectory: true)
         let crudRepository = SnippetRepository(
@@ -958,6 +1078,30 @@ struct SnippetsTests {
                 && pasteboard.pasteboardItems?.count == 1
                 && pasteboard.data(forType: .png) == Data([9, 8, 7])
                 && pasteboard.string(forType: .string) == nil)
+
+        let rich = InjectedText(markdown: "**Bold**", plainText: "Bold")
+        let richLease = TemporaryPasteboardLease.begin(
+            injected: rich,
+            pasteboard: pasteboard)
+        let rtf = pasteboard.data(forType: .rtf).flatMap {
+            try? NSAttributedString(
+                data: $0,
+                options: [.documentType: NSAttributedString.DocumentType.rtf],
+                documentAttributes: nil)
+        }
+        let html = pasteboard.data(forType: .html).flatMap {
+            try? NSAttributedString(
+                data: $0,
+                options: [.documentType: NSAttributedString.DocumentType.html],
+                documentAttributes: nil)
+        }
+        check(
+            "rich delivery lends decodable RTF and HTML with a plain fallback",
+            richLease?.isOwned == true
+                && pasteboard.string(forType: .string) == "Bold"
+                && rtf?.string.trimmingCharacters(in: .whitespacesAndNewlines) == "Bold"
+                && html?.string.trimmingCharacters(in: .whitespacesAndNewlines) == "Bold")
+        _ = richLease?.restoreIfOwned()
     }
 
     private static func testStoreWatcher() async throws {

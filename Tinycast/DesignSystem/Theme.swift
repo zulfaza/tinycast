@@ -1,3 +1,4 @@
+import Foundation
 import QuartzCore
 import SwiftUI
 
@@ -310,16 +311,67 @@ enum Theme {
         }
 
         /// The ramp's inverse: the scrim darkens the dark surface and lightens the light one.
-        static let panelScrim = adaptive(dark: .srgbInk(0, alpha: 0.40), light: .srgbInk(1, alpha: 0.55))
+        static var panelScrim: Color {
+            dynamic(.panelBackground) { isDark in
+                .srgbInk(isDark ? 0 : 1, alpha: isDark ? 0.40 : 0.55)
+            }
+        }
 
         static func panelScrim(transparency: Int) -> Color {
-            guard transparency != 0 else { return panelScrim }
-            let amount = Double(max(-100, min(100, transparency))) / 100
-            func alpha(_ baseline: Double) -> Double {
-                amount > 0 ? baseline * (1 - amount) : baseline - (1 - baseline) * amount
+            dynamic(.panelBackground) { isDark in
+                .srgbInk(
+                    isDark ? 0 : 1,
+                    alpha: adjustedAlpha(isDark ? 0.40 : 0.55, transparency: transparency))
+            } transform: { color in
+                color.withAlpha(adjustedAlpha(color.alpha, transparency: transparency))
             }
-            return adaptive(
-                dark: .srgbInk(0, alpha: alpha(0.40)), light: .srgbInk(1, alpha: alpha(0.55)))
+        }
+
+        /// The panel fill may be a two-stop custom gradient; callers still receive one token.
+        @MainActor
+        static func panelSurface(transparency: Int = 0) -> AnyShapeStyle {
+            guard let palette = customPalette(for: currentAppearanceIsDark) else {
+                return AnyShapeStyle(panelScrim(transparency: transparency))
+            }
+            guard let gradient = palette.gradient else {
+                return AnyShapeStyle(panelScrim(transparency: transparency))
+            }
+            let radians = gradient.angle * .pi / 180
+            let direction = CGPoint(x: cos(radians), y: sin(radians))
+            let start = UnitPoint(
+                x: 0.5 - direction.x / 2,
+                y: 0.5 - direction.y / 2)
+            let end = UnitPoint(
+                x: 0.5 + direction.x / 2,
+                y: 0.5 + direction.y / 2)
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        dynamic(
+                            .gradientFirst,
+                            fallback: { isDark in
+                                .srgbInk(
+                                    isDark ? 0 : 1,
+                                    alpha: adjustedAlpha(
+                                        isDark ? 0.40 : 0.55, transparency: transparency))
+                            },
+                            transform: {
+                                $0.withAlpha(adjustedAlpha($0.alpha, transparency: transparency))
+                            }),
+                        dynamic(
+                            .gradientSecond,
+                            fallback: { isDark in
+                                .srgbInk(
+                                    isDark ? 0 : 1,
+                                    alpha: adjustedAlpha(
+                                        isDark ? 0.40 : 0.55, transparency: transparency))
+                            },
+                            transform: {
+                                $0.withAlpha(adjustedAlpha($0.alpha, transparency: transparency))
+                            })
+                    ],
+                    startPoint: start,
+                    endPoint: end))
         }
 
         static func panelEdgeHighlight(transparency: Int) -> Color {
@@ -347,8 +399,12 @@ enum Theme {
         /// Control borders: outlined kbd chips.
         static let border = ramp(dark: 0.20, light: 0.18)
         /// Alpha 1, so a call site can dim it with `.opacity` and land on the value it replaced.
-        static let textPrimary = ramp(dark: 1.0, light: 1.0)
-        static let textSecondary = ramp(dark: 0.60, light: 0.60)
+        static var textPrimary: Color {
+            dynamic(.primaryText) { isDark in .srgbInk(isDark ? 1 : 0, alpha: 1) }
+        }
+        static var textSecondary: Color {
+            dynamic(.secondaryText) { isDark in .srgbInk(isDark ? 1 : 0, alpha: 0.60) }
+        }
         static let textTertiary = ramp(dark: 0.40, light: 0.42)
         static let menuSymbol = ramp(dark: 0.70, light: 0.70)
         static let noteText = ramp(dark: 0.90, light: 0.85)
@@ -370,24 +426,105 @@ enum Theme {
             dark: .srgbInk(0, alpha: 0.55), light: .srgbInk(0, alpha: 0.50))
         static let glassFrost = adaptive(dark: .srgbInk(1, alpha: 0.05), light: .srgbInk(1, alpha: 0.25))
         /// The pill behind the header of the section a Settings search jumped to.
-        static let searchFlash = Color.accentColor.opacity(0.35)
+        static var searchFlash: Color { accent.opacity(0.35) }
         /// The two squares of a checkerboard, behind a colour with alpha to show.
         static let checkerLight = Color(nsColor: .srgbInk(1, alpha: 0.22))
         static let checkerDark = Color(nsColor: .srgbInk(0, alpha: 0.22))
         /// The violet of the app mark, used only to tint the About support callout.
-        static let brand = Color(red: 0.525, green: 0.231, blue: 1.0)
+        static var brand: Color {
+            dynamic(.accent) { _ in .srgbInk(0.525, alpha: 1) }
+        }
         /// The palette's drop guides while dragging, and once a release would snap it home.
         static let dropGuide = ramp(dark: 0.35, light: 0.35)
         static let dropGuideArmed = Color.blue
         /// Destructive tint: a destructive label, and a `.danger` dialog's glyph.
-        static let destructive = Color.red
+        static var destructive: Color {
+            dynamic(.destructive) { _ in .red }
+        }
         /// Success tint: the leading glyph of a `.success` dialog.
-        static let success = Color.green
+        static var success: Color {
+            dynamic(.success) { _ in .green }
+        }
+        static var accent: Color {
+            dynamic(.accent) { _ in .controlAccentColor }
+        }
         /// Progress tint: the message pill's spinner while the work behind it is still running.
         static let progress = Color.blue
         /// The command output window's page: a flat surface the log sits directly on.
         static let terminalSurface = adaptive(
             dark: .srgbInk(0.07, alpha: 1), light: .srgbInk(0.99, alpha: 1))
+
+        fileprivate enum Token {
+            case panelBackground
+            case primaryText
+            case accent
+            case secondaryText
+            case success
+            case destructive
+            case gradientFirst
+            case gradientSecond
+        }
+
+        @MainActor private static var currentAppearanceIsDark: Bool {
+            NSApp?.effectiveAppearance.isDark ?? false
+        }
+
+        private static func dynamic(
+            _ token: Token,
+            fallback: @escaping (Bool) -> NSColor,
+            transform: @escaping (ThemeColor) -> ThemeColor = { $0 }
+        ) -> Color {
+            Color(nsColor: NSColor(name: nil) { appearance in
+                let isDark = appearance.isDark
+                guard let color = customPalette(for: isDark)?.color(for: token) else {
+                    return fallback(isDark)
+                }
+                return transform(color).nsColor
+            })
+        }
+
+        private static func customPalette(for isDark: Bool) -> ThemePalette? {
+            guard let data = UserDefaults.standard.data(forKey: CustomThemeStorage.userDefaultsKey),
+                let theme = try? CustomThemeDocument.decode(data)
+            else { return nil }
+            return isDark ? theme.dark : theme.light
+        }
+
+        private static func adjustedAlpha(_ baseline: Double, transparency: Int) -> Double {
+            guard transparency != 0 else { return baseline }
+            let amount = Double(max(-100, min(100, transparency))) / 100
+            return amount > 0
+                ? baseline * (1 - amount)
+                : baseline - (1 - baseline) * amount
+        }
+    }
+}
+
+private extension ThemePalette {
+    func color(for token: Theme.Colors.Token) -> ThemeColor {
+        switch token {
+        case .panelBackground: panelBackground
+        case .primaryText: primaryText
+        case .accent: accent
+        case .secondaryText: support.secondaryText
+        case .success: support.success
+        case .destructive: support.destructive
+        case .gradientFirst: gradient?.first ?? panelBackground
+        case .gradientSecond: gradient?.second ?? panelBackground
+        }
+    }
+}
+
+private extension ThemeColor {
+    var nsColor: NSColor {
+        NSColor(
+            srgbRed: CGFloat(red), green: CGFloat(green), blue: CGFloat(blue), alpha: CGFloat(alpha))
+    }
+
+    var swiftUIColor: Color {
+        Color(
+            .sRGB, red: CGFloat(red), green: CGFloat(green), blue: CGFloat(blue),
+            opacity: CGFloat(alpha))
     }
 }
 

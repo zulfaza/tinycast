@@ -166,7 +166,7 @@ struct AliasField: View {
         .background(shape.fill(Theme.Colors.cardFill))
         .overlay(
             shape.strokeBorder(
-                focused ? Color.accentColor : Theme.Colors.cardStroke, lineWidth: 1)
+                focused ? Theme.Colors.accent : Theme.Colors.cardStroke, lineWidth: 1)
         )
         .clipShape(shape)
         .accessibilityLabel("Alias for \(name)")

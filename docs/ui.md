@@ -199,7 +199,8 @@ shipped. Light is the same stop with the ink inverted, and is the only column op
 
 `glassFrost` is white in **both** — the frost brightens glass rather than inking it — so it is an
 `adaptive` pair, not a `ramp`. `panelScrim` is the ramp's inverse, for the same reason.
-`brand`, `destructive`, `success` and `dropGuideArmed` are fixed hues and adapt on their own.
+`brand`, `destructive`, `success` and `dropGuideArmed` use fixed default hues and adapt on their
+own; a custom theme may override the first three through its accent/support colors.
 
 Beyond these, `.secondary`/`.tertiary` foreground styles are fine for SF Symbols (they resolve against
 the environment's appearance). **Selection always beats hover** when a row is both.
@@ -207,6 +208,13 @@ the environment's appearance). **Selection always beats hover** when a row is bo
 An extension's own surfaces live in `ExtensionColors` (`Features/Extensions/UI/`), not here — the
 `ramp` mechanism is shared, the values are the feature's. See the Extensions non-negotiable in
 [`AGENTS.md`](../AGENTS.md).
+
+### Custom themes
+
+`CustomThemeStore` supplies separate validated Light and Dark palettes to the same token resolver.
+Custom panel backgrounds may use a two-stop gradient; all other custom values remain token colors.
+The shipped Dark literals remain the reset baseline, and extension-owned `ExtensionColors` stay
+feature-local. See [features/themes.md](features/themes.md).
 
 ---
 

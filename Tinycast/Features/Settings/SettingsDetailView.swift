@@ -2,6 +2,7 @@ import SwiftUI
 
 /// The pane column: whichever pane the history currently points at.
 struct SettingsDetailView: View {
+    @Environment(AppCore.self) private var core
     @Environment(SettingsNavigationState.self) private var navigation
 
     var body: some View {
@@ -9,6 +10,7 @@ struct SettingsDetailView: View {
         Group {
             switch navigation.tab {
             case .general: GeneralSettingsView()
+            case .customThemes: CustomThemeSettingsView()
             case .applications: ApplicationsSettingsView()
             case .systemSettings: SystemSettingsSettingsView()
             case .systemActions: SystemActionsSettingsView()
@@ -23,7 +25,8 @@ struct SettingsDetailView: View {
             case .navigation: NavigationSettingsView()
             case .windowManagement: WindowManagementSettingsView()
             case .clipboard: ClipboardSettingsView()
-            case .emoji: EmojiSettingsView()
+            case .emoji:
+                EmojiSettingsView(keywordStore: core.emojiKeywords, index: core.emojiIndex)
             case .calendar: CalendarSettingsView()
             case .extensions: ExtensionsSettingsView()
             case .permissions: PermissionsSettingsView()

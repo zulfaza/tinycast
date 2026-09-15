@@ -179,6 +179,39 @@ enum ClipboardActionsMenu {
                     core.clipboardCoordinator.pasteKeepingWindowOpen(item)
                 }
             ]
+        for representation in store.representations(for: item) {
+            items.append(
+                PopoverMenuItem(
+                    title: "Paste as \(representation.displayName)",
+                    systemImage: "doc.on.clipboard", startsSection: true
+                ) {
+                    core.clipboardCoordinator.pasteAs(item, representation: representation)
+                })
+        }
+        for payload in store.qrPayloads(for: item) {
+            let preview = String(payload.value.prefix(32))
+            items.append(
+                PopoverMenuItem(
+                    title: "Copy QR (\(payload.isURL ? "URL" : "Text")): \(preview)",
+                    systemImage: payload.isURL ? "qrcode" : "qrcode.viewfinder", startsSection: true
+                ) {
+                    core.clipboardCoordinator.copyQR(payload)
+                })
+        }
+        items.append(
+            PopoverMenuItem(title: "Rename Entry", systemImage: "pencil", startsSection: true) {
+                core.clipboardCoordinator.renameClip(item)
+            })
+        if item.kind == .text {
+            items.append(
+                PopoverMenuItem(title: "Save as File", systemImage: "doc", startsSection: true) {
+                    core.clipboardCoordinator.saveTextAsFile(item)
+                })
+            items.append(
+                PopoverMenuItem(title: "Save as Snippet", systemImage: "curlybraces") {
+                    core.clipboardCoordinator.saveTextAsSnippet(item)
+                })
+        }
         if item.isPinned {
             items.append(
                 PopoverMenuItem(
@@ -228,6 +261,7 @@ enum ClipboardActionsMenu {
     }
 
     private static func headerText(_ item: ClipboardItem) -> String {
+        if let name = item.name { return name }
         switch item.kind {
         case .text:
             // Collapse whitespace so a multi-line copy stays a clean one-line title.
@@ -235,7 +269,9 @@ enum ClipboardActionsMenu {
                 separator: " ")
             return String(oneLine.prefix(40))
         case .image: return "Image"
-        case .file: return (item.filePath as NSString?)?.lastPathComponent ?? "File"
+        case .file:
+            if item.filePaths.count > 1 { return "\(item.filePaths.count) Files" }
+            return (item.filePath as NSString?)?.lastPathComponent ?? "File"
         }
     }
 }

@@ -2,20 +2,83 @@ import AppKit
 import Carbon.HIToolbox
 
 /// Its own shape, not a caller's result type, so the injector stays owned by no one feature.
+struct InjectedRepresentation: Equatable, Sendable {
+    let type: String
+    let data: Data
+}
+
+enum InjectedTextContent: Equatable, Sendable {
+    case plain(String)
+    case rich(markdown: String, plainText: String, representations: [InjectedRepresentation])
+
+    var plainText: String {
+        switch self {
+        case .plain(let text): return text
+        case .rich(_, let plainText, _): return plainText
+        }
+    }
+
+    var representations: [InjectedRepresentation] {
+        switch self {
+        case .plain: return []
+        case .rich(_, _, let representations): return representations
+        }
+    }
+}
+
 struct InjectedText: Equatable, Sendable {
-    let text: String
+    let content: InjectedTextContent
     /// Leaves the caret this many characters back from the end; nil leaves it after the text.
     let cursorOffsetFromEnd: Int?
 
     init(_ text: String, cursorOffsetFromEnd: Int? = nil) {
-        self.text = text
+        content = .plain(text)
         self.cursorOffsetFromEnd = cursorOffsetFromEnd
     }
+
+    init(
+        markdown: String,
+        plainText: String,
+        cursorOffsetFromEnd: Int? = nil
+    ) {
+        content = .rich(
+            markdown: markdown,
+            plainText: plainText,
+            representations: Self.representations(markdown: markdown))
+        self.cursorOffsetFromEnd = cursorOffsetFromEnd
+    }
+
+    var text: String { content.plainText }
+    var hasRichContent: Bool { !content.representations.isEmpty }
 
     /// UTF-16 distance from the start of the inserted text to where the caret should land.
     var caretPrefixLength: Int {
         let offset = min(max(cursorOffsetFromEnd ?? 0, 0), text.count)
         return text[..<text.index(text.endIndex, offsetBy: -offset)].utf16.count
+    }
+
+    private static func representations(markdown: String) -> [InjectedRepresentation] {
+        var representations: [InjectedRepresentation] = []
+        if let attributed = try? AttributedString(markdown: markdown) {
+            let nsAttributed = NSAttributedString(attributed)
+            if let rtf = try? nsAttributed.data(
+                from: NSRange(location: 0, length: nsAttributed.length),
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+            ) {
+                representations.append(
+                    InjectedRepresentation(
+                        type: NSPasteboard.PasteboardType.rtf.rawValue, data: rtf))
+            }
+            if let html = try? nsAttributed.data(
+                from: NSRange(location: 0, length: nsAttributed.length),
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.html]
+            ) {
+                representations.append(
+                    InjectedRepresentation(
+                        type: NSPasteboard.PasteboardType.html.rawValue, data: html))
+            }
+        }
+        return representations
     }
 }
 
@@ -265,6 +328,7 @@ final class TextInjector {
         expectedKeyword: String?,
         keywordLength: Int,
         automaticGeneration: AutomaticGeneration?,
+        injectionDelay: Duration = .zero,
         onDelivered: @escaping @MainActor () -> Void = {},
         onFailed: @escaping @MainActor () -> Void = {}
     ) {
@@ -282,9 +346,15 @@ final class TextInjector {
         deliveryQueue.enqueue(isAutomatic: automaticGeneration != nil) { [weak self] in
             guard let self else { return }
             let completion = DeliveryCompletion(onDelivered: onDelivered, onFailed: onFailed)
+            guard await self.wait(for: injectionDelay) else {
+                completion.settle()
+                return
+            }
             if let editor = target?.ownEditor {
                 await self.deliverInProcess(
-                    injected,
+                    injected.hasRichContent
+                        ? InjectedText(injected.text, cursorOffsetFromEnd: injected.cursorOffsetFromEnd)
+                        : injected,
                     into: editor,
                     expectedKeyword: expectedKeyword,
                     keywordLength: keywordLength,
@@ -375,7 +445,7 @@ final class TextInjector {
 
         guard
             await deliverUsingEvents(
-                injected.text,
+                injected,
                 keywordLength: keywordLength,
                 targetApp: targetApp,
                 automaticGeneration: automaticGeneration)
@@ -403,26 +473,27 @@ final class TextInjector {
     }
 
     private func deliverUsingEvents(
-        _ text: String,
+        _ injected: InjectedText,
         keywordLength: Int,
         targetApp: NSRunningApplication?,
         automaticGeneration: AutomaticGeneration?
     ) async -> Bool {
         let isShortSingleLine =
-            text.count <= 100
-            && !text.contains("\n")
-            && !text.contains("\r")
+            !injected.hasRichContent
+            && injected.text.count <= 100
+            && !injected.text.contains("\n")
+            && !injected.text.contains("\r")
         if isShortSingleLine {
             return await deliverUsingUnicodeEvents(
-                text,
+                injected.text,
                 keywordLength: keywordLength,
                 targetApp: targetApp,
                 automaticGeneration: automaticGeneration)
         }
 
-        guard let lease = beginTemporaryPasteboardLease(text) else {
+        guard let lease = beginTemporaryPasteboardLease(injected) else {
             return await deliverUsingUnicodeEvents(
-                text,
+                injected.text,
                 keywordLength: keywordLength,
                 targetApp: targetApp,
                 automaticGeneration: automaticGeneration)
@@ -512,10 +583,10 @@ final class TextInjector {
         return await wait(for: .milliseconds(40))
     }
 
-    private func beginTemporaryPasteboardLease(_ text: String) -> TemporaryPasteboardLease? {
+    private func beginTemporaryPasteboardLease(_ injected: InjectedText) -> TemporaryPasteboardLease? {
         clipboardManager.prepareForTinycastPasteboardMutation()
         return TemporaryPasteboardLease.begin(
-            text: text,
+            injected: injected,
             pasteboard: NSPasteboard.general
         ) { [clipboardManager] changeCount in
             clipboardManager.synchronizeAfterTinycastPasteboardMutation(
@@ -629,6 +700,7 @@ final class TextInjector {
         keywordLength: Int,
         automaticGeneration: AutomaticGeneration?
     ) async -> AccessibilityReplacement {
+        guard !injected.hasRichContent else { return .unavailable }
         guard let targetApp else { return .unavailable }
         let state = await accessibilityTarget(
             in: targetApp,
@@ -1086,8 +1158,16 @@ final class TemporaryPasteboardLease {
         pasteboard: any PasteboardAccess,
         onMutation: (Int) -> Void = { _ in }
     ) -> TemporaryPasteboardLease? {
+        begin(injected: InjectedText(text), pasteboard: pasteboard, onMutation: onMutation)
+    }
+
+    static func begin(
+        injected: InjectedText,
+        pasteboard: any PasteboardAccess,
+        onMutation: (Int) -> Void = { _ in }
+    ) -> TemporaryPasteboardLease? {
         guard let snapshot = PasteboardSnapshot(pasteboard: pasteboard),
-            let temporaryItem = PasteboardSnapshot.temporaryItem(carrying: text),
+            let temporaryItem = PasteboardSnapshot.temporaryItem(carrying: injected),
             let originalItems = snapshot.pasteboardItems(),
             pasteboard.changeCount == snapshot.changeCount
         else { return nil }
@@ -1151,12 +1231,21 @@ struct PasteboardSnapshot {
         self.changeCount = changeCount
     }
 
-    /// A kept `public.html` is the flavour a Chromium editor prefers, so we lend the text alone.
     static func temporaryItem(carrying text: String) -> NSPasteboardItem? {
+        temporaryItem(carrying: InjectedText(text))
+    }
+
+    static func temporaryItem(carrying injected: InjectedText) -> NSPasteboardItem? {
         let item = NSPasteboardItem()
-        guard item.setString(text, forType: .string),
+        guard item.setString(injected.text, forType: .string),
             item.setData(Data(), forType: ClipboardManager.internalType)
         else { return nil }
+        for representation in injected.content.representations {
+            guard item.setData(
+                representation.data,
+                forType: NSPasteboard.PasteboardType(rawValue: representation.type))
+            else { return nil }
+        }
         return item
     }
 

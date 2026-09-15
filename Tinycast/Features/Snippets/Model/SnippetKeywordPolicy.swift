@@ -84,11 +84,20 @@ struct SnippetKeywordPolicy: Sendable {
     static let maximumBufferLength = 256
 
     private(set) var keywords: [Keyword] = []
+    private(set) var trigger: SnippetExpansionTrigger
     private(set) var buffer = ""
     private var lastInputAt: Date?
 
-    init(keywords: [Keyword] = []) {
+    init(
+        keywords: [Keyword] = [], trigger: SnippetExpansionTrigger = .default
+    ) {
+        self.trigger = trigger
         update(keywords)
+    }
+
+    mutating func update(trigger: SnippetExpansionTrigger) {
+        self.trigger = trigger
+        reset()
     }
 
     mutating func update(_ keywords: [Keyword]) {
@@ -126,15 +135,28 @@ struct SnippetKeywordPolicy: Sendable {
             }
         }
 
-        let normalizedBuffer = buffer.lowercased()
+        let candidate: String
+        let delimiterLength: Int
+        switch trigger.mode {
+        case .immediate:
+            candidate = buffer
+            delimiterLength = 0
+        case .delimiter:
+            guard let delimiter = trailingDelimiter(in: buffer) else { return nil }
+            candidate = String(buffer.dropLast(delimiter.count))
+            delimiterLength = trigger.retainsDelimiter ? 0 : delimiter.count
+        }
+
+        let normalizedBuffer = candidate.lowercased()
         guard let keyword = keywords.first(where: { normalizedBuffer.hasSuffix($0.value) }) else {
             return nil
         }
+        let deletionCount = keyword.deletionCount + delimiterLength
         reset()
         return Match(
             snippetID: keyword.snippetID,
             keyword: keyword.value,
-            deletionCount: keyword.deletionCount)
+            deletionCount: deletionCount)
     }
 
     mutating func reset() {
@@ -159,5 +181,17 @@ struct SnippetKeywordPolicy: Sendable {
         if isDeleteBackward { return .deleteBackward }
         guard let text else { return .reset }
         return .text(text)
+    }
+
+    private func trailingDelimiter(in value: String) -> String? {
+        switch trigger.delimiter {
+        case "": return nil
+        case "whitespace":
+            guard let last = value.last, last.isWhitespace else { return nil }
+            return String(last)
+        default:
+            guard value.hasSuffix(trigger.delimiter) else { return nil }
+            return trigger.delimiter
+        }
     }
 }

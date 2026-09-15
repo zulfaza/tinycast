@@ -167,13 +167,16 @@ private struct ClipboardRow: View {
     }
 
     private var previewText: String {
+        if let name = item.name { return name }
         switch item.kind {
         // Cap before trimming: never walk a multi-MB clipboard string per row.
         case .text:
             return String((item.text ?? "").prefix(200)).trimmingCharacters(
                 in: .whitespacesAndNewlines)
         case .image: return "Image"
-        case .file: return item.filePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "File"
+        case .file:
+            if item.filePaths.count > 1 { return "\(item.filePaths.count) Files" }
+            return item.filePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "File"
         }
     }
 
@@ -345,6 +348,7 @@ struct ClipboardPreview: View {
 /// The "Information" block; disk-touching details are gathered off the main actor.
 private struct ClipboardInfoSection: View {
     @Environment(\.metrics) private var metrics
+    @Environment(ClipboardStore.self) private var store
     let item: ClipboardItem
     let imageURL: URL?
 
@@ -447,6 +451,11 @@ private struct ClipboardInfoSection: View {
         }
         rows.append(
             InfoRow(label: "Copied", value: Self.copiedFormatter.string(from: item.createdAt)))
+        for (index, payload) in store.qrPayloads(for: item).enumerated() {
+            rows.append(
+                InfoRow(
+                    label: index == 0 ? "QR Code" : "QR Code (\(index + 1))", value: payload.value))
+        }
         return rows
     }
 

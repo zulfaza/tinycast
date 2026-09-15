@@ -3,6 +3,7 @@ import Foundation
 /// What a row hands to the app it is dropped on.
 enum ClipDragPayload: Equatable, Sendable {
     case file(URL)
+    case files([URL])
     /// A browser reads `public.url`, a text field reads the string.
     case link(URL, String)
     case text(String)
@@ -11,6 +12,9 @@ enum ClipDragPayload: Equatable, Sendable {
 extension ClipboardItem {
     /// `textForm` stays the one answer to a link, so the drag and the type filter cannot disagree.
     var dragPayload: ClipDragPayload {
+        if kind == .file, filePaths.count > 1 {
+            return .files(filePaths.map { URL(fileURLWithPath: $0) })
+        }
         if let path = imagePath ?? filePath { return .file(URL(fileURLWithPath: path)) }
         let copy = text ?? ""
         guard textForm == .link else { return .text(copy) }

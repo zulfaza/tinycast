@@ -13,6 +13,7 @@ extension SettingsAnchor {
     static let generalHyperKey = Self(tab: .general, title: "Hyper Key")
     static let generalAppearance = Self(tab: .general, title: "Appearance")
     static let generalGeneral = Self(tab: .general, title: "General")
+    static let customThemesTheme = Self(tab: .customThemes, title: "Custom theme")
 
     static let applicationsSearchScopes = Self(tab: .applications, title: "Search Scopes")
     static let applicationsApplications = Self(tab: .applications, title: "Applications")
@@ -58,6 +59,7 @@ extension SettingsAnchor {
     static let snippetsSnippets = Self(tab: .snippets, title: "Snippets")
     static let snippetsCommands = Self(tab: .snippets, title: "Commands")
     static let snippetsLibrary = Self(tab: .snippets, title: "Library")
+    static let snippetsExpansion = Self(tab: .snippets, title: "Expansion")
 
     static let navigationNavigation = Self(tab: .navigation, title: "Navigation")
     static let navigationCommands = Self(tab: .navigation, title: "Commands")

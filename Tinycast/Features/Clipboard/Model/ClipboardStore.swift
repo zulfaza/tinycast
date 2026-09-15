@@ -18,34 +18,46 @@ struct ClipboardItem: Identifiable, Hashable, Sendable {
     let sourceBundleID: String?
     /// When the entry was pinned; pins lead the list and are exempt from pruning.
     let pinnedAt: Date?
+    /// User-provided label, searched alongside the captured content.
+    let name: String?
+    /// All paths copied in one pasteboard change, in source order.
+    let filePaths: [String]
 
     var isPinned: Bool { pinnedAt != nil }
 
     /// The referenced path, so no call site re-derives a file entry's meaning from `text`.
-    var filePath: String? { kind == .file ? text : nil }
+    var filePath: String? { kind == .file ? filePaths.first : nil }
 
     init(text: String, sourceBundleID: String?) {
         self.init(
             id: UUID(), kind: .text, text: text, imagePath: nil, createdAt: Date(),
-            sourceBundleID: sourceBundleID)
+            sourceBundleID: sourceBundleID, name: nil, filePaths: [])
     }
 
     init(imagePath: String, createdAt: Date = Date(), sourceBundleID: String?) {
         self.init(
             id: UUID(), kind: .image, text: nil, imagePath: imagePath, createdAt: createdAt,
-            sourceBundleID: sourceBundleID)
+            sourceBundleID: sourceBundleID, name: nil, filePaths: [])
     }
 
     /// Referenced where it lies: `imagePath` stays nil, keeping an unowned file from `deleteBlob`.
     init(filePath: String, createdAt: Date = Date(), sourceBundleID: String?) {
         self.init(
             id: UUID(), kind: .file, text: filePath, imagePath: nil, createdAt: createdAt,
-            sourceBundleID: sourceBundleID)
+            sourceBundleID: sourceBundleID, name: nil, filePaths: [filePath])
+    }
+
+    init(filePaths: [String], createdAt: Date = Date(), sourceBundleID: String?) {
+        let ordered = Array(filePaths)
+        self.init(
+            id: UUID(), kind: .file, text: ordered.joined(separator: "\n"), imagePath: nil,
+            createdAt: createdAt, sourceBundleID: sourceBundleID, name: nil, filePaths: ordered)
     }
 
     init(
         id: UUID, kind: Kind, text: String?, imagePath: String?, createdAt: Date,
-        sourceBundleID: String?, pinnedAt: Date? = nil
+        sourceBundleID: String?, pinnedAt: Date? = nil, name: String? = nil,
+        filePaths: [String]? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -54,6 +66,16 @@ struct ClipboardItem: Identifiable, Hashable, Sendable {
         self.createdAt = createdAt
         self.sourceBundleID = sourceBundleID
         self.pinnedAt = pinnedAt
+        self.name = name
+        let fallbackPaths: [String]
+        if kind == .file, let text {
+            fallbackPaths = text.split(separator: "\n").map(String.init)
+        } else {
+            fallbackPaths = []
+        }
+        self.filePaths = kind == .file && filePaths?.isEmpty != false
+            ? fallbackPaths
+            : filePaths ?? []
     }
 
     /// Copy with the two fields the store rewrites; the pin is always stated outright.
@@ -61,12 +83,25 @@ struct ClipboardItem: Identifiable, Hashable, Sendable {
         ClipboardItem(
             id: id, kind: kind, text: text, imagePath: imagePath,
             createdAt: createdAt ?? self.createdAt, sourceBundleID: sourceBundleID,
-            pinnedAt: pinnedAt)
+            pinnedAt: pinnedAt, name: name, filePaths: filePaths)
+    }
+
+    func with(name: String?) -> ClipboardItem {
+        ClipboardItem(
+            id: id, kind: kind, text: text, imagePath: imagePath, createdAt: createdAt,
+            sourceBundleID: sourceBundleID, pinnedAt: pinnedAt, name: name, filePaths: filePaths)
+    }
+
+    func with(filePaths: [String]) -> ClipboardItem {
+        ClipboardItem(
+            id: id, kind: kind, text: text, imagePath: imagePath, createdAt: createdAt,
+            sourceBundleID: sourceBundleID, pinnedAt: pinnedAt, name: name, filePaths: filePaths)
     }
 
     /// Case-insensitive substring match: how the store filters without FTS.
     func matches(_ query: String) -> Bool {
-        text?.localizedCaseInsensitiveContains(query) ?? false
+        name?.localizedCaseInsensitiveContains(query) == true
+            || text?.localizedCaseInsensitiveContains(query) == true
     }
 }
 
@@ -143,6 +178,11 @@ final class ClipboardStore {
     @ObservationIgnored private var textSearchFilter: ClipboardFilter?
     @ObservationIgnored private var textSearchRequest: UUID?
     @ObservationIgnored private var textSearchMatches: [ClipboardItem] = []
+    @ObservationIgnored private var representationsByID: [UUID: [ClipboardRepresentation]] = [:]
+    @ObservationIgnored private var filePathsByID: [UUID: [String]] = [:]
+    @ObservationIgnored private var namesByID: [UUID: String] = [:]
+    @ObservationIgnored private var qrByID: [UUID: [ClipboardQRPayload]] = [:]
+    @ObservationIgnored private var metadataLoadedIDs: Set<UUID> = []
 
     var maxAge: TimeInterval = ClipboardRetention.threeMonths.maxAge
 
@@ -155,6 +195,13 @@ final class ClipboardStore {
     nonisolated private static let memoryWindow = 1000
     /// The most unpinned rows any one query answers with, ordinary and OCR-only alike.
     nonisolated private static let searchLimit = 200
+    nonisolated static let maximumRepresentationCount = 32
+    nonisolated static let maximumValuesPerRepresentation = 32
+    nonisolated static let maximumRepresentationBytes = 8 * 1024 * 1024
+    nonisolated static let maximumRepresentationSetBytes = 32 * 1024 * 1024
+    nonisolated private static let metadataCacheLimit = 1000
+    nonisolated private static let maximumFilePathCount = 32
+    nonisolated private static let maximumNameBytes = 1_024
 
     nonisolated private static let insertSQL = """
         INSERT INTO items(id, kind, text, image_path, created_at, source_app, pinned_at)
@@ -173,6 +220,28 @@ final class ClipboardStore {
         );
         CREATE INDEX IF NOT EXISTS items_created_at ON items(created_at);
         CREATE INDEX IF NOT EXISTS items_pinned_at ON items(pinned_at) WHERE pinned_at IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS item_names(
+          item_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS item_files(
+          item_id TEXT NOT NULL, ordinal INTEGER NOT NULL, path TEXT NOT NULL,
+          PRIMARY KEY(item_id, ordinal)
+        );
+        CREATE TABLE IF NOT EXISTS item_representations(
+          item_id TEXT NOT NULL, ordinal INTEGER NOT NULL, value_index INTEGER NOT NULL,
+          type_identifier TEXT NOT NULL, data BLOB NOT NULL,
+          PRIMARY KEY(item_id, ordinal, value_index)
+        );
+        CREATE TABLE IF NOT EXISTS item_qr(
+          item_id TEXT NOT NULL, ordinal INTEGER NOT NULL, value TEXT NOT NULL, is_url INTEGER NOT NULL,
+          PRIMARY KEY(item_id, ordinal)
+        );
+        CREATE TRIGGER IF NOT EXISTS items_metadata_ad AFTER DELETE ON items BEGIN
+          DELETE FROM item_names WHERE item_id = old.id;
+          DELETE FROM item_files WHERE item_id = old.id;
+          DELETE FROM item_representations WHERE item_id = old.id;
+          DELETE FROM item_qr WHERE item_id = old.id;
+        END;
         CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
           text, content='items', content_rowid='rowid', tokenize='trigram'
         );
@@ -254,6 +323,11 @@ final class ClipboardStore {
         setTextSearchEnabled(false)
         extractionGeneration = UUID()
         closeDatabase()
+        representationsByID.removeAll()
+        filePathsByID.removeAll()
+        qrByID.removeAll()
+        namesByID.removeAll()
+        metadataLoadedIDs.removeAll()
         items = []
     }
 
@@ -274,11 +348,12 @@ final class ClipboardStore {
     func load() {
         invalidateSearch()
         extractionGeneration = UUID()
+        loadMetadata()
         guard let stmt = loadStmt else { return }
         sqlite3_bind_int64(stmt, 1, windowFloor())
         var loaded: [ClipboardItem] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
-            if let item = Self.row(stmt) { loaded.append(item) }
+            if let item = Self.row(stmt) { loaded.append(decorated(item)) }
         }
         sqlite3_reset(stmt)
         sqlite3_clear_bindings(stmt)
@@ -303,32 +378,173 @@ final class ClipboardStore {
         return sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int64(stmt, 0) : 0
     }
 
-    func addText(_ text: String, sourceBundleID: String?) {
+    func addText(
+        _ text: String, sourceBundleID: String?, representations: [ClipboardRepresentation] = []
+    ) {
         if items.first?.kind == .text, items.first?.text == text { return }
-        insert(ClipboardItem(text: text, sourceBundleID: sourceBundleID))
+        let item = ClipboardItem(text: text, sourceBundleID: sourceBundleID)
+        insert(
+            item,
+            representations: representations.isEmpty ? Self.textRepresentation(text) : representations)
     }
 
-    /// One row per file. Batched, so a multi-file copy prunes once rather than once per file.
-    func addFiles(_ paths: [String], sourceBundleID: String?) {
-        // Only a single file can be a ⌘C repeat, which is the case `addText` also guards.
-        if paths.count == 1, items.first?.kind == .file, items.first?.text == paths[0] { return }
-        for path in paths {
-            let item = ClipboardItem(filePath: path, sourceBundleID: sourceBundleID)
-            if let stmt = insertStmt { Self.bindAndInsert(stmt, item) }
-            items.insert(item, at: 0)
-        }
-        trimWindow()
-        prune()
+    /// Paths arrive in insertion order; reverse them to retain the pasteboard's source order.
+    func addFiles(
+        _ paths: [String], sourceBundleID: String?, representations: [ClipboardRepresentation] = []
+    ) {
+        let ordered = Array(paths.reversed())
+        guard !ordered.isEmpty else { return }
+        if items.first?.kind == .file, items.first?.filePaths == ordered { return }
+        let item = ClipboardItem(filePaths: ordered, sourceBundleID: sourceBundleID)
+        insert(item, representations: representations, filePaths: ordered)
     }
 
-    func addImage(_ data: Data, sourceBundleID: String?) {
+    func addImage(
+        _ data: Data, sourceBundleID: String?, representations: [ClipboardRepresentation] = []
+    ) {
         let url = imagesDir.appendingPathComponent(UUID().uuidString + ".png")
         let item = ClipboardItem(imagePath: url.path, sourceBundleID: sourceBundleID)
         // The blob write is multi-MB I/O; only the row insert returns to the main actor.
         Task.detached(priority: .utility) { [weak self] in
             guard (try? data.write(to: url, options: .atomic)) != nil else { return }
-            await self?.insert(item)
+            await self?.insert(item, representations: representations)
         }
+    }
+
+    /// Inserts a captured item while retaining the source pasteboard types.
+    func addCaptured(
+        _ item: ClipboardItem, representations: [ClipboardRepresentation], filePaths: [String] = []
+    ) {
+        insert(item, representations: representations, filePaths: filePaths)
+    }
+
+    func representations(for item: ClipboardItem) -> [ClipboardRepresentation] {
+        if let cached = representationsByID[item.id] { return cached }
+        guard let db else { return [] }
+        let statement = """
+            SELECT ordinal, value_index, type_identifier, data
+            FROM item_representations WHERE item_id = ?1
+            ORDER BY ordinal, value_index
+            """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, statement, -1, &stmt, nil) == SQLITE_OK, let stmt else {
+            return []
+        }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+        let boundedResult = Self.readRepresentations(from: stmt)
+        guard boundedResult.isEmpty else {
+            cache(boundedResult, for: item.id, in: &representationsByID)
+            return boundedResult
+        }
+        let fallback: [ClipboardRepresentation]
+        switch item.kind {
+        case .text:
+            fallback = item.text.map(Self.textRepresentation) ?? []
+        case .image:
+            guard let path = item.imagePath, let data = try? Data(
+                contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe),
+                data.count <= Self.maximumRepresentationBytes
+            else { return [] }
+            fallback = [ClipboardRepresentation(typeIdentifier: "public.png", values: [data])]
+        case .file:
+            let urls = fileURLs(for: item)
+            let fileData = urls.map(\.dataRepresentation)
+            let pathData = urls.map { Data($0.path.utf8) }
+            fallback = [
+                ClipboardRepresentation(typeIdentifier: "public.file-url", values: fileData),
+                ClipboardRepresentation(typeIdentifier: "public.utf8-plain-text", values: pathData)
+            ]
+        }
+        cache(fallback, for: item.id, in: &representationsByID)
+        return fallback
+    }
+
+    func rename(_ item: ClipboardItem, to name: String?) {
+        let normalized = name.flatMap { (raw: String) -> String? in
+            let cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty else { return nil }
+            return String(decoding: cleaned.utf8.prefix(Self.maximumNameBytes), as: UTF8.self)
+        }
+        guard db != nil else { return }
+        if let delete = prepare("DELETE FROM item_names WHERE item_id = ?1") {
+            sqlite3_bind_text(delete, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+            sqlite3_step(delete)
+            sqlite3_finalize(delete)
+        }
+        if let normalized, let insert = prepare(
+            "INSERT INTO item_names(item_id, name) VALUES(?1, ?2)"
+        ) {
+            sqlite3_bind_text(insert, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(insert, 2, normalized, -1, SQLITE_TRANSIENT)
+            sqlite3_step(insert)
+            sqlite3_finalize(insert)
+        }
+        if let normalized {
+            cache(normalized, for: item.id, in: &namesByID)
+        } else {
+            namesByID.removeValue(forKey: item.id)
+        }
+        markMetadataLoaded(item.id)
+        updateItem(item.with(name: normalized))
+    }
+
+    @discardableResult
+    func setQRCodes(
+        _ payloads: [ClipboardQRPayload], for item: ClipboardItem, generation: UUID
+    ) -> Bool {
+        guard generation == extractionGeneration, db != nil else { return false }
+        guard itemExists(item.id) else { return false }
+        let bounded = Self.boundedQRCodes(payloads)
+        guard let delete = prepare("DELETE FROM item_qr WHERE item_id = ?1"),
+            let insert = prepare(
+                "INSERT INTO item_qr(item_id, ordinal, value, is_url) VALUES(?1, ?2, ?3, ?4)"
+            )
+        else {
+            return false
+        }
+        defer {
+            sqlite3_finalize(delete)
+            sqlite3_finalize(insert)
+        }
+        guard sqlite3_exec(db, "BEGIN", nil, nil, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(delete, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+        guard sqlite3_step(delete) == SQLITE_DONE else {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            return false
+        }
+        for (ordinal, payload) in bounded.enumerated() {
+            sqlite3_bind_text(insert, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(insert, 2, Int32(ordinal))
+            sqlite3_bind_text(insert, 3, payload.value, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(insert, 4, payload.isURL ? 1 : 0)
+            guard sqlite3_step(insert) == SQLITE_DONE else {
+                sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+                return false
+            }
+            sqlite3_reset(insert)
+            sqlite3_clear_bindings(insert)
+        }
+        guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            return false
+        }
+        cache(bounded, for: item.id, in: &qrByID)
+        invalidateSearch(preservingMatches: true)
+        searchRevision += 1
+        return true
+    }
+
+    func qrPayloads(for item: ClipboardItem) -> [ClipboardQRPayload] {
+        if let cached = qrByID[item.id] { return cached }
+        guard let stmt = prepare(
+            "SELECT value, is_url FROM item_qr WHERE item_id = ?1 ORDER BY ordinal"
+        ) else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+        let result = Self.readQRCodes(from: stmt)
+        cache(result, for: item.id, in: &qrByID)
+        return result
     }
 
     /// Bulk-insert from an import: original timestamps, external image paths, deduped.
@@ -354,6 +570,11 @@ final class ClipboardStore {
 
     func remove(_ item: ClipboardItem) {
         textSearchMatches.removeAll { $0.id == item.id }
+        representationsByID.removeValue(forKey: item.id)
+        filePathsByID.removeValue(forKey: item.id)
+        namesByID.removeValue(forKey: item.id)
+        qrByID.removeValue(forKey: item.id)
+        metadataLoadedIDs.remove(item.id)
         if let stmt = deleteByIDStmt {
             sqlite3_bind_text(stmt, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
             sqlite3_step(stmt)
@@ -370,6 +591,11 @@ final class ClipboardStore {
         if db != nil { sqlite3_exec(db, "DELETE FROM items", nil, nil, nil) }
         try? FileManager.default.removeItem(at: imagesDir)
         try? FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+        representationsByID.removeAll()
+        filePathsByID.removeAll()
+        namesByID.removeAll()
+        qrByID.removeAll()
+        metadataLoadedIDs.removeAll()
         items = []
     }
 
@@ -470,6 +696,10 @@ final class ClipboardStore {
         return URL(fileURLWithPath: path)
     }
 
+    func fileURLs(for item: ClipboardItem) -> [URL] {
+        item.filePaths.prefix(Self.maximumFilePathCount).map(URL.init(fileURLWithPath:))
+    }
+
     /// Display order for `query` under `filter`: pinned entries first, each block newest-first.
     func search(_ query: String, filter: ClipboardFilter) -> [ClipboardItem] {
         // Load-bearing: a settled OCR query changes the answer without `items` changing.
@@ -519,10 +749,11 @@ final class ClipboardStore {
         guard let stmt = searchStmt, q.count >= 3 else { return fallbackSearch(q) }
         let match = "\"" + q.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         sqlite3_bind_text(stmt, 1, match, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, Self.likePattern(q), -1, SQLITE_TRANSIENT)
         var results: [ClipboardItem] = []
         var status = sqlite3_step(stmt)
         while status == SQLITE_ROW {
-            if let item = Self.row(stmt) { results.append(item) }
+            if let item = Self.row(stmt) { results.append(decorated(item)) }
             status = sqlite3_step(stmt)
         }
         sqlite3_reset(stmt)
@@ -579,7 +810,7 @@ final class ClipboardStore {
             }
             guard !Task.isCancelled, let self, self.textSearchRequest == request else { return }
             let previous = self.searchCache
-            self.textSearchMatches = matches
+            self.textSearchMatches = matches.map { self.decorated($0) }
             self.textSearchTask = nil
             self.searchCache = nil
             self.searchRevision += 1
@@ -655,7 +886,12 @@ final class ClipboardStore {
     // MARK: - Private
 
     private func fallbackSearch(_ q: String) -> [ClipboardItem] {
-        items.filter { $0.matches(q) }
+        items.filter { item in
+            item.matches(q)
+                || qrPayloads(for: item).contains {
+                    $0.value.localizedCaseInsensitiveContains(q)
+                }
+        }
     }
 
     private var orderedItems: [ClipboardItem] {
@@ -671,6 +907,20 @@ final class ClipboardStore {
     private var pinnedItems: [ClipboardItem] {
         items.filter(\.isPinned)
             .sorted { ($0.pinnedAt ?? .distantFuture) < ($1.pinnedAt ?? .distantFuture) }
+    }
+
+    private func itemExists(_ id: UUID) -> Bool {
+        guard let stmt = prepare("SELECT 1 FROM items WHERE id = ?1") else { return false }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+        return sqlite3_step(stmt) == SQLITE_ROW
+    }
+
+    private func cache<Value>(_ value: Value, for id: UUID, in cache: inout [UUID: Value]) {
+        if cache.count >= Self.metadataCacheLimit, let evicted = cache.keys.first, evicted != id {
+            cache.removeValue(forKey: evicted)
+        }
+        cache[id] = value
     }
 
     /// The row keeps its place and gains a stamp, which heads the Pinned section.
@@ -730,11 +980,179 @@ final class ClipboardStore {
         items.remove(at: index)
     }
 
-    private func insert(_ item: ClipboardItem) {
+    private func insert(
+        _ item: ClipboardItem, representations: [ClipboardRepresentation] = [],
+        filePaths: [String] = []
+    ) {
+        let paths = filePaths.isEmpty ? item.filePaths : filePaths
+        let safeRepresentations = Self.boundedRepresentations(representations)
         if let stmt = insertStmt { Self.bindAndInsert(stmt, item) }
-        items.insert(item, at: 0)
+        writeMetadata(for: item, representations: safeRepresentations, filePaths: paths)
+        cache(safeRepresentations, for: item.id, in: &representationsByID)
+        cache(Array(paths.prefix(Self.maximumFilePathCount)), for: item.id, in: &filePathsByID)
+        if let name = item.name { cache(name, for: item.id, in: &namesByID) }
+        items.insert(decorated(item), at: 0)
         trimWindow()
         prune()
+    }
+
+    private func updateItem(_ updated: ClipboardItem) {
+        if let index = items.firstIndex(where: { $0.id == updated.id }) {
+            items[index] = updated
+        }
+        searchCache = nil
+        orderedCache = nil
+    }
+
+    private func writeMetadata(
+        for item: ClipboardItem, representations: [ClipboardRepresentation], filePaths: [String]
+    ) {
+        let boundedPaths = Array(filePaths.prefix(Self.maximumFilePathCount))
+        if let name = item.name, let stmt = prepare(
+            "INSERT OR REPLACE INTO item_names(item_id, name) VALUES(?1, ?2)"
+        ) {
+            sqlite3_bind_text(stmt, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, name, -1, SQLITE_TRANSIENT)
+            sqlite3_step(stmt)
+            sqlite3_finalize(stmt)
+        }
+        if !boundedPaths.isEmpty, let stmt = prepare(
+            "INSERT INTO item_files(item_id, ordinal, path) VALUES(?1, ?2, ?3)"
+        ) {
+            for (ordinal, path) in boundedPaths.enumerated() {
+                sqlite3_bind_text(stmt, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_int(stmt, 2, Int32(ordinal))
+                sqlite3_bind_text(stmt, 3, path, -1, SQLITE_TRANSIENT)
+                sqlite3_step(stmt)
+                sqlite3_reset(stmt)
+                sqlite3_clear_bindings(stmt)
+            }
+            sqlite3_finalize(stmt)
+        }
+        guard !representations.isEmpty, let stmt = prepare(
+            """
+            INSERT INTO item_representations(item_id, ordinal, value_index, type_identifier, data)
+            VALUES(?1, ?2, ?3, ?4, ?5)
+            """
+        ) else { return }
+        for (ordinal, representation) in representations.enumerated() {
+            for (index, data) in representation.values.enumerated() {
+                sqlite3_bind_text(stmt, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_int(stmt, 2, Int32(ordinal))
+                sqlite3_bind_int(stmt, 3, Int32(index))
+                sqlite3_bind_text(stmt, 4, representation.typeIdentifier, -1, SQLITE_TRANSIENT)
+                data.withUnsafeBytes { bytes in
+                    _ = sqlite3_bind_blob(
+                        stmt, 5, bytes.baseAddress, Int32(data.count), SQLITE_TRANSIENT)
+                }
+                sqlite3_step(stmt)
+                sqlite3_reset(stmt)
+                sqlite3_clear_bindings(stmt)
+            }
+        }
+        sqlite3_finalize(stmt)
+    }
+
+    private func loadMetadata() {
+        // Representations can be large; rows load their metadata only when they become visible.
+        representationsByID.removeAll()
+        filePathsByID.removeAll()
+        namesByID.removeAll()
+        qrByID.removeAll()
+        metadataLoadedIDs.removeAll()
+    }
+
+    private func decorated(_ item: ClipboardItem) -> ClipboardItem {
+        loadMetadata(for: item.id)
+        let paths = filePathsByID[item.id] ?? item.filePaths
+        let name = item.name ?? namesByID[item.id]
+        return item.with(filePaths: paths).with(name: name)
+    }
+
+    private func loadMetadata(for id: UUID) {
+        guard !metadataLoadedIDs.contains(id), db != nil else { return }
+        markMetadataLoaded(id)
+        if let stmt = prepare("SELECT name FROM item_names WHERE item_id = ?1") {
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+            if sqlite3_step(stmt) == SQLITE_ROW, let name = Self.columnString(stmt, 0) {
+                cache(name, for: id, in: &namesByID)
+            }
+        }
+        if let stmt = prepare(
+            "SELECT path FROM item_files WHERE item_id = ?1 ORDER BY ordinal"
+        ) {
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+            var paths: [String] = []
+            while paths.count < Self.maximumFilePathCount, sqlite3_step(stmt) == SQLITE_ROW {
+                if let path = Self.columnString(stmt, 0) { paths.append(path) }
+            }
+            if !paths.isEmpty { cache(paths, for: id, in: &filePathsByID) }
+        }
+    }
+
+    private func markMetadataLoaded(_ id: UUID) {
+        if metadataLoadedIDs.count >= Self.metadataCacheLimit,
+            let evicted = metadataLoadedIDs.first, evicted != id
+        {
+            metadataLoadedIDs.remove(evicted)
+            namesByID.removeValue(forKey: evicted)
+            filePathsByID.removeValue(forKey: evicted)
+        }
+        metadataLoadedIDs.insert(id)
+    }
+
+    nonisolated private static func textRepresentation(_ text: String) -> [ClipboardRepresentation] {
+        [ClipboardRepresentation(typeIdentifier: "public.utf8-plain-text", values: [Data(text.utf8)])]
+    }
+
+    nonisolated private static func likePattern(_ value: String) -> String {
+        value.replacingOccurrences(of: "/", with: "//")
+            .replacingOccurrences(of: "%", with: "/%")
+            .replacingOccurrences(of: "_", with: "/_")
+    }
+
+    nonisolated private static func boundedRepresentations(
+        _ representations: [ClipboardRepresentation]
+    ) -> [ClipboardRepresentation] {
+        var total = 0
+        var result: [ClipboardRepresentation] = []
+        for representation in representations.prefix(maximumRepresentationCount) {
+            guard !representation.typeIdentifier.isEmpty else { continue }
+            var values: [Data] = []
+            for data in representation.values.prefix(maximumValuesPerRepresentation) {
+                guard data.count <= maximumRepresentationBytes,
+                    total + data.count <= maximumRepresentationSetBytes
+                else { continue }
+                values.append(data)
+                total += data.count
+            }
+            if !values.isEmpty {
+                result.append(
+                    ClipboardRepresentation(typeIdentifier: representation.typeIdentifier, values: values))
+            }
+            guard total < maximumRepresentationSetBytes else { break }
+        }
+        return result
+    }
+
+    nonisolated private static func boundedName(_ name: String) -> String {
+        String(decoding: name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .utf8.prefix(maximumNameBytes), as: UTF8.self)
+    }
+
+    nonisolated private static func boundedQRCodes(
+        _ payloads: [ClipboardQRPayload]
+    ) -> [ClipboardQRPayload] {
+        payloads.reduce(into: [ClipboardQRPayload]()) { result, payload in
+            guard result.count < ClipboardQRPayload.maximumCount,
+                !payload.value.isEmpty,
+                payload.value.utf8.count <= ClipboardQRPayload.maximumBytes,
+                !result.contains(payload)
+            else { return }
+            result.append(payload)
+        }
     }
 
     nonisolated private static func bindAndInsert(_ stmt: OpaquePointer, _ item: ClipboardItem) {
@@ -836,10 +1254,18 @@ final class ClipboardStore {
         searchStmt = prepare(
             """
             SELECT i.id, i.kind, i.text, i.image_path, i.created_at, i.source_app, i.pinned_at
-            FROM (
-              SELECT rowid FROM items_fts WHERE items_fts MATCH ?
+            FROM items i
+            WHERE i.rowid IN (
+              SELECT rowid FROM items_fts WHERE items_fts MATCH ?1
               ORDER BY rowid DESC LIMIT \(Self.searchLimit)
-            ) f JOIN items i ON i.rowid = f.rowid ORDER BY f.rowid DESC
+            ) OR i.id IN (
+              SELECT item_id FROM item_names
+              WHERE name COLLATE NOCASE LIKE '%' || ?2 || '%' ESCAPE '/'
+            ) OR i.id IN (
+              SELECT item_id FROM item_qr
+              WHERE value COLLATE NOCASE LIKE '%' || ?2 || '%' ESCAPE '/'
+            )
+            ORDER BY i.rowid DESC LIMIT \(Self.searchLimit)
             """)
         deleteByIDStmt = prepare("DELETE FROM items WHERE id = ?")
         // Only ever sets a stamp: unpinning rewrites the whole row so it leads the history again.
@@ -878,11 +1304,25 @@ final class ClipboardStore {
         db = nil
     }
 
-    /// Streams an import into the file off-main; a staged blob moves into `imagesDirectory`,
-    /// which is what makes `owns` true and lets retention reclaim it later.
+    /// Staged blobs move into `imagesDirectory` so retention can reclaim them after import.
     nonisolated static func importStoredItems(
         inDatabaseAt url: URL, adoptingImagesInto imagesDirectory: URL? = nil,
-        _ items: some Sequence<ClipboardItem>
+        _ items: some Sequence<ClipboardItem>, metadata: [UUID: StoredMetadata] = [:]
+    ) -> Int {
+        let entries = items.lazy.map { item in
+            StoredEntry(
+                item: item,
+                metadata: metadata[item.id] ?? StoredMetadata(
+                    name: item.name, filePaths: item.filePaths, representations: [], qrPayloads: []))
+        }
+        return importStoredEntries(
+            inDatabaseAt: url, adoptingImagesInto: imagesDirectory, entries)
+    }
+
+    /// Streams items and their metadata through one transaction without staging the history.
+    nonisolated static func importStoredEntries(
+        inDatabaseAt url: URL, adoptingImagesInto imagesDirectory: URL? = nil,
+        _ entries: some Sequence<StoredEntry>
     ) -> Int {
         var keys: Set<Int> = []
         forEachStoredItem(inDatabaseAt: url) { keys.insert(importKey($0)) }
@@ -903,15 +1343,16 @@ final class ClipboardStore {
         var inserted = 0
         // One transaction for the batch: ~1 WAL commit rather than one per row.
         sqlite3_exec(db, "BEGIN", nil, nil, nil)
-        for staged in items {
-            let item = adoptionTarget(staged, in: imagesDirectory)
+        for entry in entries {
+            let item = adoptionTarget(entry.item, in: imagesDirectory)
             guard keys.insert(importKey(item)).inserted else { continue }
-            if item.imagePath != staged.imagePath,
-                !moveBlob(from: staged.imagePath, to: item.imagePath)
+            if item.imagePath != entry.item.imagePath,
+                !moveBlob(from: entry.item.imagePath, to: item.imagePath)
             {
                 continue
             }
             bindAndInsert(stmt, item)
+            writeMetadata(entry.metadata, for: item, in: db)
             inserted += 1
         }
         sqlite3_exec(db, "COMMIT", nil, nil, nil)
@@ -927,8 +1368,7 @@ final class ClipboardStore {
         return hasher.finalize()
     }
 
-    /// Keeps the staged blob's name, so importing one backup twice lands on the same path — and
-    /// the row dedupes on it rather than minting a second copy of every image.
+    /// Preserve the bundle name so repeat imports dedupe instead of minting another image.
     nonisolated private static func adoptionTarget(
         _ item: ClipboardItem, in directory: URL?
     ) -> ClipboardItem {
@@ -937,7 +1377,77 @@ final class ClipboardStore {
         return ClipboardItem(
             id: item.id, kind: .image, text: nil,
             imagePath: directory.appendingPathComponent(name).path, createdAt: item.createdAt,
-            sourceBundleID: item.sourceBundleID, pinnedAt: item.pinnedAt)
+            sourceBundleID: item.sourceBundleID, pinnedAt: item.pinnedAt, name: item.name,
+            filePaths: item.filePaths)
+    }
+
+    nonisolated private static func writeMetadata(
+        _ metadata: StoredMetadata?, for item: ClipboardItem, in db: OpaquePointer?
+    ) {
+        guard let metadata else { return }
+        let name = metadata.name.map(boundedName)
+        let filePaths = Array(metadata.filePaths.prefix(maximumFilePathCount))
+        let representations = boundedRepresentations(metadata.representations)
+        let qrPayloads = boundedQRCodes(metadata.qrPayloads)
+        if let name, !name.isEmpty, let stmt = prepareStatic(
+            db, "INSERT OR REPLACE INTO item_names(item_id, name) VALUES(?1, ?2)"
+        ) {
+            sqlite3_bind_text(stmt, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, name, -1, SQLITE_TRANSIENT)
+            sqlite3_step(stmt)
+            sqlite3_finalize(stmt)
+        }
+        if !filePaths.isEmpty, let stmt = prepareStatic(
+            db, "INSERT INTO item_files(item_id, ordinal, path) VALUES(?1, ?2, ?3)"
+        ) {
+            for (ordinal, path) in filePaths.enumerated() {
+                sqlite3_bind_text(stmt, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_int(stmt, 2, Int32(ordinal))
+                sqlite3_bind_text(stmt, 3, path, -1, SQLITE_TRANSIENT)
+                sqlite3_step(stmt)
+                sqlite3_reset(stmt)
+                sqlite3_clear_bindings(stmt)
+            }
+            sqlite3_finalize(stmt)
+        }
+        if let stmt = prepareStatic(
+            db,
+            """
+            INSERT INTO item_representations(item_id, ordinal, value_index, type_identifier, data)
+            VALUES(?1, ?2, ?3, ?4, ?5)
+            """
+        ) {
+            for (ordinal, representation) in representations.enumerated() {
+                for (index, data) in representation.values.enumerated() {
+                    sqlite3_bind_text(stmt, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+                    sqlite3_bind_int(stmt, 2, Int32(ordinal))
+                    sqlite3_bind_int(stmt, 3, Int32(index))
+                    sqlite3_bind_text(stmt, 4, representation.typeIdentifier, -1, SQLITE_TRANSIENT)
+                    data.withUnsafeBytes { bytes in
+                        _ = sqlite3_bind_blob(
+                            stmt, 5, bytes.baseAddress, Int32(data.count), SQLITE_TRANSIENT)
+                    }
+                    sqlite3_step(stmt)
+                    sqlite3_reset(stmt)
+                    sqlite3_clear_bindings(stmt)
+                }
+            }
+            sqlite3_finalize(stmt)
+        }
+        if !qrPayloads.isEmpty, let stmt = prepareStatic(
+            db, "INSERT INTO item_qr(item_id, ordinal, value, is_url) VALUES(?1, ?2, ?3, ?4)"
+        ) {
+            for (ordinal, payload) in qrPayloads.enumerated() {
+                sqlite3_bind_text(stmt, 1, item.id.uuidString, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_int(stmt, 2, Int32(ordinal))
+                sqlite3_bind_text(stmt, 3, payload.value, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_int(stmt, 4, payload.isURL ? 1 : 0)
+                sqlite3_step(stmt)
+                sqlite3_reset(stmt)
+                sqlite3_clear_bindings(stmt)
+            }
+            sqlite3_finalize(stmt)
+        }
     }
 
     /// false leaves the row out, so none ever points into a staging tree about to be discarded.
@@ -971,6 +1481,62 @@ final class ClipboardStore {
         }
     }
 
+    struct StoredMetadata: Sendable {
+        let name: String?
+        let filePaths: [String]
+        let representations: [ClipboardRepresentation]
+        let qrPayloads: [ClipboardQRPayload]
+    }
+
+    struct StoredEntry: Sendable {
+        let item: ClipboardItem
+        let metadata: StoredMetadata
+    }
+
+    nonisolated static func metadata(
+        for itemID: UUID, inDatabaseAt url: URL
+    ) -> StoredMetadata {
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+            sqlite3_close_v2(db)
+            return StoredMetadata(name: nil, filePaths: [], representations: [], qrPayloads: [])
+        }
+        defer { sqlite3_close_v2(db) }
+        let id = itemID.uuidString
+        let name = scalarString(db, "SELECT name FROM item_names WHERE item_id = ?1", id)
+        var filePaths: [String] = []
+        if let stmt = prepareStatic(
+            db, "SELECT path FROM item_files WHERE item_id = ?1 ORDER BY ordinal"
+        ) {
+            sqlite3_bind_text(stmt, 1, id, -1, SQLITE_TRANSIENT)
+            filePaths = readStrings(from: stmt, limit: maximumFilePathCount)
+            sqlite3_finalize(stmt)
+        }
+        var representations: [ClipboardRepresentation] = []
+        if let stmt = prepareStatic(
+            db,
+            """
+            SELECT ordinal, value_index, type_identifier, data
+            FROM item_representations WHERE item_id = ?1 ORDER BY ordinal, value_index
+            """
+        ) {
+            sqlite3_bind_text(stmt, 1, id, -1, SQLITE_TRANSIENT)
+            representations = readRepresentations(from: stmt)
+            sqlite3_finalize(stmt)
+        }
+        var qrPayloads: [ClipboardQRPayload] = []
+        if let stmt = prepareStatic(
+            db, "SELECT value, is_url FROM item_qr WHERE item_id = ?1 ORDER BY ordinal"
+        ) {
+            sqlite3_bind_text(stmt, 1, id, -1, SQLITE_TRANSIENT)
+            qrPayloads = readQRCodes(from: stmt)
+            sqlite3_finalize(stmt)
+        }
+        return StoredMetadata(
+            name: name, filePaths: filePaths, representations: representations,
+            qrPayloads: qrPayloads)
+    }
+
     nonisolated private static func row(_ stmt: OpaquePointer?) -> ClipboardItem? {
         guard let idString = columnString(stmt, 0), let id = UUID(uuidString: idString),
             let kindString = columnString(stmt, 1),
@@ -991,5 +1557,89 @@ final class ClipboardStore {
         guard let ptr = sqlite3_column_text(stmt, index) else { return nil }
         let count = Int(sqlite3_column_bytes(stmt, index))
         return String(decoding: UnsafeBufferPointer(start: ptr, count: count), as: UTF8.self)
+    }
+
+    nonisolated private static func columnData(_ stmt: OpaquePointer?, _ index: Int32) -> Data? {
+        guard let ptr = sqlite3_column_blob(stmt, index) else { return nil }
+        return Data(bytes: ptr, count: Int(sqlite3_column_bytes(stmt, index)))
+    }
+
+    nonisolated private static func readRepresentations(
+        from stmt: OpaquePointer?
+    ) -> [ClipboardRepresentation] {
+        var result: [ClipboardRepresentation] = []
+        var currentType: String?
+        var values: [Data] = []
+        var total = 0
+
+        func flush() {
+            guard let currentType, !values.isEmpty else { return }
+            result.append(ClipboardRepresentation(typeIdentifier: currentType, values: values))
+        }
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let type = columnString(stmt, 2), !type.isEmpty else { continue }
+            if type != currentType {
+                flush()
+                guard result.count < maximumRepresentationCount else { break }
+                currentType = type
+                values = []
+            }
+            guard values.count < maximumValuesPerRepresentation else { continue }
+            let byteCount = Int(sqlite3_column_bytes(stmt, 3))
+            guard byteCount <= maximumRepresentationBytes,
+                total + byteCount <= maximumRepresentationSetBytes,
+                let data = columnData(stmt, 3)
+            else { continue }
+            values.append(data)
+            total += byteCount
+            if total == maximumRepresentationSetBytes { break }
+        }
+        flush()
+        return result
+    }
+
+    nonisolated private static func readQRCodes(
+        from stmt: OpaquePointer?
+    ) -> [ClipboardQRPayload] {
+        var result: [ClipboardQRPayload] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard result.count < ClipboardQRPayload.maximumCount else { break }
+            guard let value = columnString(stmt, 0), !value.isEmpty,
+                value.utf8.count <= ClipboardQRPayload.maximumBytes
+            else { continue }
+            let payload = ClipboardQRPayload(value: value, isURL: sqlite3_column_int(stmt, 1) != 0)
+            guard !result.contains(payload) else { continue }
+            result.append(payload)
+        }
+        return result
+    }
+
+    nonisolated private static func prepareStatic(
+        _ db: OpaquePointer?, _ sql: String
+    ) -> OpaquePointer? {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        return stmt
+    }
+
+    nonisolated private static func scalarString(
+        _ db: OpaquePointer?, _ sql: String, _ id: String
+    ) -> String? {
+        guard let stmt = prepareStatic(db, sql) else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, id, -1, SQLITE_TRANSIENT)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return columnString(stmt, 0)
+    }
+
+    nonisolated private static func readStrings(
+        from stmt: OpaquePointer?, limit: Int
+    ) -> [String] {
+        var values: [String] = []
+        while values.count < limit, sqlite3_step(stmt) == SQLITE_ROW {
+            if let value = columnString(stmt, 0) { values.append(value) }
+        }
+        return values
     }
 }

@@ -621,7 +621,7 @@ private struct AIConnectionRow: View {
                 .help("Edit \(connection.title)")
                 .accessibilityLabel("Edit \(connection.title)")
             Button(action: onRemove) {
-                Image(systemName: "trash").foregroundStyle(.red)
+                Image(systemName: "trash").foregroundStyle(Theme.Colors.destructive)
             }
             .buttonStyle(.plain)
             .help("Remove \(connection.title)")

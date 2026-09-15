@@ -123,7 +123,7 @@ struct WindowLayoutPreviewCanvas: View {
                 isSelected
                     ? Theme.Colors.layoutPreviewWindowSelected : Theme.Colors.layoutPreviewWindow
             )
-            .overlay(shape.stroke(isSelected ? Color.accentColor : Theme.Colors.border))
+            .overlay(shape.stroke(isSelected ? Theme.Colors.accent : Theme.Colors.border))
             .overlay(icon(for: placed.entry.bundleID))
             .frame(width: max(1, rect.width), height: max(1, rect.height))
             .position(x: rect.midX, y: rect.midY)

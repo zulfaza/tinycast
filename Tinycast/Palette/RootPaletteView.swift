@@ -11,6 +11,8 @@ struct RootPaletteView: View {
     /// Observed so the card re-evaluates when a snapshot lands or consent changes.
     @Environment(CurrencyRateStore.self) private var currencyRates
     @Environment(EmojiIndex.self) private var emojiIndex
+    @Environment(EmojiKeywordStore.self) private var emojiKeywords
+    @Environment(CustomThemeStore.self) private var customThemes
     @Environment(FrequentEmojiStore.self) private var frequentEmoji
     @Environment(FileSearchSession.self) private var fileSearch
     @Environment(MenuSearchSession.self) private var menuSearch
@@ -72,7 +74,8 @@ struct RootPaletteView: View {
         case .emoji:
             return EmojiScreen(
                 index: emojiIndex, frequent: frequentEmoji, core: core, vm: vm,
-                tone: settings.emojiSkinTone, openActions: openActions)
+                tone: settings.emojiSkinTone, openActions: openActions,
+                customKeywords: emojiKeywords.records)
         case .fileSearch:
             return FileSearchScreen(
                 session: fileSearch, core: core, vm: vm, openActions: openActions)
@@ -220,6 +223,8 @@ struct RootPaletteView: View {
     }
 
     var body: some View {
+        // Keep palette surfaces observing user theme and alias edits through Observation.
+        let _ = customThemes.revision
         // Resolve the screen once per render, so the flat index can't drift from the rows.
         let screen = screen
         let count = screen.rows.count
