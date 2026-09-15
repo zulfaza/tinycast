@@ -30,6 +30,13 @@ jobs:
       display_name: ${{ steps.meta.outputs.display_name }}
       bundle_id: ${{ steps.meta.outputs.bundle_id }}
     steps:
+      - name: Require main
+        run: |
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::Release from main, got '$GITHUB_REF_NAME'"
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
 
       - name: Select Xcode 26
@@ -180,6 +187,7 @@ jobs:
           gh release create "$TAG" \
             "dist/${{ steps.meta.outputs.dmg_file }}" \
             "dist/${{ steps.meta.outputs.zip_file }}" \
+            --target "$GITHUB_SHA" \
             --title "${{ steps.meta.outputs.display_name }} ${{ steps.meta.outputs.full_version }}" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             $PRERELEASE_FLAG

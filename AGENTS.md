@@ -43,6 +43,12 @@ never reset, force-checkout, or overwrite fork-only work. Create a safety ref an
 before merging. If both repos changed a file, stop and ask Zul which hunks to keep; never auto-resolve
 by choosing ours or theirs. Release only after overlap decisions are explicit.
 
+Every sync branch starts from the fetched `origin/main`, then merges `upstream/main` into it. Never
+start from upstream or a release branch: tags and side branches do not put fork changes on `main`.
+Before opening the sync PR, verify the pre-sync `origin/main` is an ancestor of its head. Fork feature
+work must merge into `main` before another sync or release. Releases run from `main` only, and their
+tag must target the exact workflow SHA.
+
 ## Where things are
 
 | Folder | Holds |

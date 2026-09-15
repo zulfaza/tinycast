@@ -73,7 +73,7 @@ open one**. See [testing.md](testing.md#definition-of-done).
 ## Releasing
 
 `.github/workflows/release.yml` builds and publishes a DMG from GitHub Actions, no local machine
-needed. Run it from the **Actions** tab (`Release` → **Run workflow**) and pick:
+needed. Run it from the **Actions** tab (`Release` → **Run workflow**), select `main`, and pick:
 
 - **channel** — `beta` or `stable`. Each builds a distinct app (`Tinycast Beta.app` / `Tinycast.app`)
   with its own bundle id, alongside the local `Tinycast Dev.app`. Beta gets an auto-incrementing
@@ -84,6 +84,10 @@ needed. Run it from the **Actions** tab (`Release` → **Run workflow**) and pic
 It builds on a `macos-26` runner with Xcode 26 and publishes a GitHub Release tagged
 `v<full-version>` with a versioned DMG and zip asset, marked prerelease for beta. On success it also
 bumps the matching cask in the tap and announces the release on Discord.
+
+The workflow rejects any branch other than `main`, and passes its exact build SHA when creating the
+tag. Fork work therefore has to merge into `main` before release; a successful side-branch build can
+never publish an incomplete successor release.
 
 A stable run then fans out to a second job, `universal`, which rebuilds the same commit with
 `ARCHS="arm64 x86_64"` and attaches `Tinycast-Universal-<version>.dmg` / `.zip` to the release the
