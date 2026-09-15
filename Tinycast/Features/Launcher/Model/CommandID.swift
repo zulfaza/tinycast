@@ -156,4 +156,11 @@ enum CommandID: String, CaseIterable, Sendable {
     var hotKeyAction: HotKeyAction? {
         isQueryDriven || self == .quit ? nil : .command(self)
     }
+
+    func allowsHotKey(isShownInLauncher: Bool, snippetsEnabled: Bool) -> Bool {
+        switch self {
+        case .searchSnippets, .createSnippet: snippetsEnabled
+        default: isShownInLauncher
+        }
+    }
 }

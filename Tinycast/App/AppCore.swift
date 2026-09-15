@@ -291,9 +291,10 @@ final class AppCore {
             hotKeys.displayName = { [weak self] action in self?.hotKeyDisplayName(for: action) }
             hotKeys.allowsAction = { [weak self] action in
                 guard let self, visibility.allowsHotKey(action) else { return false }
-                // A disabled feature drops its commands from the launcher; their shortcuts go too.
                 guard case .command(let id) = action else { return true }
-                return appIndex.isCommandEnabled(id)
+                return id.allowsHotKey(
+                    isShownInLauncher: appIndex.isCommandEnabled(id),
+                    snippetsEnabled: settings.snippetsEnabled)
             }
             KeyShortcut.displayedHyperChord = { [settings] in
                 guard settings.hyperKey != .none else { return nil }
