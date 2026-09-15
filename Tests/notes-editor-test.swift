@@ -185,6 +185,7 @@ struct NotesEditorTests {
         let coordinator = NoteEditorView.Coordinator(parent: view)
         let textView = NoteTextView(usingTextLayoutManager: true)
         NoteEditorView.configure(textView)
+        textView.completionProvider = view.completionProvider
         textView.delegate = coordinator
         textView.editorUndoManager = coordinator.editorUndoManager
         textView.setFrameSize(NSSize(width: 320, height: 1))

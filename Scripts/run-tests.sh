@@ -240,6 +240,8 @@ run hover-arming-test      Tinycast/Palette/HoverArming.swift \
                            Tinycast/Palette/PaletteState.swift \
                            Tinycast/Palette/PaletteMode.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardRepresentation.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardQRPayload.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardFilter.swift \
                            Tinycast/Features/FileSearch/Model/FileSearchFilter.swift \
                            Tinycast/Features/Clipboard/Model/ColorValue.swift \
@@ -259,6 +261,8 @@ run palette-navigation-test Tinycast/Palette/PaletteState.swift \
                            Tinycast/Palette/PaletteMode.swift \
                            Tinycast/Palette/HoverArming.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardRepresentation.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardQRPayload.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardFilter.swift \
                            Tinycast/Features/FileSearch/Model/FileSearchFilter.swift \
                            Tinycast/Features/Clipboard/Model/ColorValue.swift \

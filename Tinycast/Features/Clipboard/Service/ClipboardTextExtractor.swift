@@ -104,7 +104,7 @@ nonisolated enum ClipboardTextExtractor {
         request.symbologies = [.qr]
         let observations = try await request.perform(on: image)
         try Task.checkCancellation()
-        return observations.compactMap(\.payloadStringValue)
+        return observations.compactMap(\.payloadString)
     }
 
     private static func extractPDF(_ url: URL) async throws -> String {
