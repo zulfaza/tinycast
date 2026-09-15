@@ -19,10 +19,11 @@ final class SnippetsStore {
     private(set) var operationError: String?
 
     let snippetsDirectory: URL
+    var sharedLibraryDirectories: [URL] { repository.sharedLibraryDirectories }
     var onSnapshot: ((SnippetRepository.Snapshot) -> Void)?
 
-    private let repository: SnippetRepository
-    @ObservationIgnored private var directoryWatcher: DispatchSourceFileSystemObject?
+    private var repository: SnippetRepository
+    @ObservationIgnored private var directoryWatchers: [String: DispatchSourceFileSystemObject] = [:]
     @ObservationIgnored private var fileWatchers: [String: DispatchSourceFileSystemObject] = [:]
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
     @ObservationIgnored private var watcherRetryTask: Task<Void, Never>?
@@ -40,7 +41,7 @@ final class SnippetsStore {
     isolated deinit {
         reloadTask?.cancel()
         watcherRetryTask?.cancel()
-        directoryWatcher?.cancel()
+        for source in directoryWatchers.values { source.cancel() }
         for source in fileWatchers.values { source.cancel() }
     }
 
@@ -65,6 +66,13 @@ final class SnippetsStore {
     func retry() {
         guard isStarted else { return }
         scheduleReload(after: .zero, showLoadingState: true)
+    }
+
+    func setSharedLibraryDirectories(_ directories: [URL]) {
+        repository.setSharedLibraryDirectories(directories)
+        guard isStarted else { return }
+        stopWatchers()
+        scheduleReload(after: .zero)
     }
 
     @discardableResult
@@ -121,6 +129,10 @@ final class SnippetsStore {
 
     func record(id: StoredSnippet.ID) -> StoredSnippet? {
         snippets.first(where: { $0.id == id })
+    }
+
+    func isWritable(_ record: StoredSnippet) -> Bool {
+        repository.isWritable(record.fileURL)
     }
 
     func recordUse(id: StoredSnippet.ID) {
@@ -240,8 +252,17 @@ final class SnippetsStore {
         watcherRetryTask = nil
 
         var changed = false
-        if directoryWatcher == nil {
-            changed = armDirectoryWatcher() || changed
+        let desiredDirectories = Set(
+            ([snippetsDirectory] + repository.sharedLibraryDirectories)
+                .map { $0.standardizedFileURL.path })
+        for path in Array(directoryWatchers.keys) where !desiredDirectories.contains(path) {
+            directoryWatchers.removeValue(forKey: path)?.cancel()
+            changed = true
+        }
+        for directory in [snippetsDirectory] + repository.sharedLibraryDirectories
+            where directoryWatchers[directory.standardizedFileURL.path] == nil
+        {
+            changed = armDirectoryWatcher(at: directory) || changed
         }
 
         let desiredPaths = Set(
@@ -256,18 +277,19 @@ final class SnippetsStore {
         }
 
         // Retry while anything is unwatched; a failed file watcher blinds us like a missing one.
-        if directoryWatcher == nil || desiredPaths.contains(where: { fileWatchers[$0] == nil }) {
+        if directoryWatchers.count < desiredDirectories.count
+            || desiredPaths.contains(where: { fileWatchers[$0] == nil })
+        {
             scheduleWatcherRetry()
         }
         return changed
     }
 
     @discardableResult
-    private func armDirectoryWatcher() -> Bool {
-        let descriptor = Darwin.open(snippetsDirectory.path, O_EVTONLY)
+    private func armDirectoryWatcher(at directory: URL) -> Bool {
+        let descriptor = Darwin.open(directory.path, O_EVTONLY)
         guard descriptor >= 0 else { return false }
 
-        watcherGeneration &+= 1
         let installedGeneration = watcherGeneration
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor,
@@ -275,11 +297,12 @@ final class SnippetsStore {
             queue: .main)
         source.setEventHandler { [weak self] in
             MainActor.assumeIsolated {
-                self?.handleDirectoryEvent(generation: installedGeneration)
+                self?.handleDirectoryEvent(
+                    path: directory.standardizedFileURL.path, generation: installedGeneration)
             }
         }
         source.setCancelHandler { Darwin.close(descriptor) }
-        directoryWatcher = source
+        directoryWatchers[directory.standardizedFileURL.path] = source
         source.resume()
         return true
     }
@@ -305,9 +328,9 @@ final class SnippetsStore {
         return true
     }
 
-    private func handleDirectoryEvent(generation installedGeneration: Int) {
+    private func handleDirectoryEvent(path: String, generation installedGeneration: Int) {
         guard isStarted, installedGeneration == watcherGeneration,
-            let events = directoryWatcher?.data
+            let events = directoryWatchers[path]?.data
         else { return }
 
         if !events.isDisjoint(with: [.delete, .rename, .revoke]) {
@@ -334,8 +357,8 @@ final class SnippetsStore {
 
     private func stopWatchers() {
         watcherGeneration &+= 1
-        directoryWatcher?.cancel()
-        directoryWatcher = nil
+        for source in directoryWatchers.values { source.cancel() }
+        directoryWatchers.removeAll()
         for source in fileWatchers.values { source.cancel() }
         fileWatchers.removeAll()
     }

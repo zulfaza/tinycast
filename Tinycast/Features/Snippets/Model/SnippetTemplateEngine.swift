@@ -94,7 +94,8 @@ enum SnippetTemplateEngine {
         _ record: StoredSnippet,
         snippets: [StoredSnippet],
         context: ExpansionContext,
-        userArguments: [String: String] = [:]
+        userArguments: [String: String] = [:],
+        output: SnippetExpansionOutput = .markdown
     ) -> ExpansionResult {
         result(
             of: expandText(
@@ -105,7 +106,7 @@ enum SnippetTemplateEngine {
                 encoding: .none,
                 depth: 0,
                 visitedIDs: [record.id]
-            ))
+            ), output: output)
     }
 
     /// Expands a non-snippet template; `{snippet:…}` has nothing to resolve and stays as text.
@@ -113,7 +114,8 @@ enum SnippetTemplateEngine {
         text: String,
         context: ExpansionContext,
         userArguments: [String: String] = [:],
-        encoding: ValueEncoding = .none
+        encoding: ValueEncoding = .none,
+        output: SnippetExpansionOutput = .markdown
     ) -> ExpansionResult {
         result(
             of: expandText(
@@ -124,11 +126,10 @@ enum SnippetTemplateEngine {
                 encoding: encoding,
                 depth: 0,
                 visitedIDs: []
-            ))
+            ), output: output)
     }
 
-    /// The `{argument}`s a template declares, in written order — what a form has to ask for.
-    /// One with a `default=` answers itself, so it is not among them, exactly as expansion decides.
+    /// Arguments in written order; `default=` answers itself, so expansion does not ask for it.
     static func declaredArguments(in text: String) -> [MissingArgument] {
         var declared: [MissingArgument] = []
         var seen = Set<String>()
@@ -183,10 +184,27 @@ enum SnippetTemplateEngine {
         }
     }
 
-    private static func result(of expansion: Expansion) -> ExpansionResult {
-        ExpansionResult(
-            text: expansion.text,
-            cursorOffsetFromEnd: expansion.cursorCharacterOffset.map { expansion.text.count - $0 },
+    private static func result(
+        of expansion: Expansion, output: SnippetExpansionOutput
+    ) -> ExpansionResult {
+        let renderedText: String
+        let renderedCursorOffset: Int?
+        switch output {
+        case .markdown:
+            renderedText = expansion.text
+            renderedCursorOffset = expansion.cursorCharacterOffset.map {
+                expansion.text.count - $0
+            }
+        case .plainText:
+            renderedText = SnippetMarkdownSerializer.plainText(from: expansion.text)
+            renderedCursorOffset = expansion.cursorCharacterOffset.map { cursor in
+                let prefix = String(expansion.text.prefix(cursor))
+                return renderedText.count - SnippetMarkdownSerializer.plainText(from: prefix).count
+            }
+        }
+        return ExpansionResult(
+            text: renderedText,
+            cursorOffsetFromEnd: renderedCursorOffset,
             missingArguments: expansion.missingArguments
         )
     }

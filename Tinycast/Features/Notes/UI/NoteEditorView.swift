@@ -6,6 +6,25 @@ struct NoteEditorView: NSViewRepresentable {
     let onSourceChange: (String) -> Void
     let onCharacterCountChange: (NoteEditorInput, Int) -> Void
     let onReady: (NoteTextView) -> Void
+    let completionProvider: @MainActor (
+        _ text: String, _ caretUTF16Offset: Int, _ selectedLength: Int
+    ) -> NoteInlineCompletion?
+
+    init(
+        input: NoteEditorInput,
+        onSourceChange: @escaping (String) -> Void,
+        onCharacterCountChange: @escaping (NoteEditorInput, Int) -> Void,
+        onReady: @escaping (NoteTextView) -> Void,
+        completionProvider: @escaping @MainActor (
+            _ text: String, _ caretUTF16Offset: Int, _ selectedLength: Int
+        ) -> NoteInlineCompletion? = { _, _, _ in nil }
+    ) {
+        self.input = input
+        self.onSourceChange = onSourceChange
+        self.onCharacterCountChange = onCharacterCountChange
+        self.onReady = onReady
+        self.completionProvider = completionProvider
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -23,6 +42,7 @@ struct NoteEditorView: NSViewRepresentable {
 
         let textView = NoteTextView(usingTextLayoutManager: true)
         Self.configure(textView)
+        textView.completionProvider = completionProvider
         textView.delegate = context.coordinator
         textView.editorUndoManager = context.coordinator.editorUndoManager
         scrollView.documentView = textView
@@ -34,6 +54,7 @@ struct NoteEditorView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
+        context.coordinator.textView?.completionProvider = completionProvider
         context.coordinator.update(input)
     }
 
@@ -61,6 +82,7 @@ struct NoteEditorView: NSViewRepresentable {
             NoteEditorView.install(input.source, in: textView)
             textView.setSelectedRange(NSRange(location: selectionLocation, length: 0))
             isInstalling = false
+            textView.refreshCompletion()
             if resetUndo { editorUndoManager.removeAllActions() }
             reportCharacterCount()
         }

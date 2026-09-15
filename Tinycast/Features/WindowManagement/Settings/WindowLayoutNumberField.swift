@@ -84,7 +84,7 @@ extension View {
         return padding(.horizontal, Theme.Spacing.md)
             .frame(height: Theme.Size.layoutControlHeight)
             .background(shape.fill(Theme.Colors.cardFill))
-            .overlay(shape.stroke(isFocused ? Color.accentColor : Theme.Colors.cardStroke))
+            .overlay(shape.stroke(isFocused ? Theme.Colors.accent : Theme.Colors.cardStroke))
             .contentShape(shape)
     }
 }

@@ -151,7 +151,7 @@ struct BackupSettingsView: View {
         switch status {
         case .success(let message):
             Label(message, systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.Colors.success)
         case .failure(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)

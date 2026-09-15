@@ -56,7 +56,7 @@ struct DialogView: View {
         }
         .padding(Theme.Spacing.xxl)
         .frame(width: Theme.Size.dialogWidth, alignment: .leading)
-        .background(Theme.Colors.panelScrim)
+        .background(Theme.Colors.panelSurface())
         .background(VisualEffectView())
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.dialog, style: .continuous))
         .panelEntrance()

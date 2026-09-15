@@ -188,7 +188,7 @@ private struct SnippetArgumentsRow: View {
                     RoundedRectangle(cornerRadius: metrics.radius.row)
                         .strokeBorder(
                             focused
-                                ? Color.accentColor
+                                ? Theme.Colors.accent
                                 : required
                                     ? Theme.Colors.destructive.opacity(0.55)
                                     : Theme.Colors.cardStroke))

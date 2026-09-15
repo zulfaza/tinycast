@@ -6,12 +6,23 @@ enum PasteboardFiles {
     private static let legacyFilenames = NSPasteboard.PasteboardType("NSFilenamesPboardType")
 
     /// The file itself on the board, so a paste in Finder copies it rather than its path.
-    static func write(_ url: URL, to pasteboard: NSPasteboard) {
+    @discardableResult
+    static func write(_ url: URL, to pasteboard: NSPasteboard) -> Bool {
+        write([url], to: pasteboard)
+    }
+
+    @discardableResult
+    static func write(_ urls: [URL], to pasteboard: NSPasteboard) -> Bool {
+        guard !urls.isEmpty else { return false }
         pasteboard.clearContents()
-        pasteboard.declareTypes([.fileURL, .string], owner: nil)
-        pasteboard.setData(url.dataRepresentation, forType: .fileURL)
-        // Both types: a file-taking app receives the file, a text field receives the path.
-        pasteboard.setString(url.path, forType: .string)
+        let items = urls.map { url in
+            let item = NSPasteboardItem()
+            item.setData(url.dataRepresentation, forType: .fileURL)
+            // Both types: a file-taking app receives the file, a text field receives the path.
+            item.setString(url.path, forType: .string)
+            return item
+        }
+        return pasteboard.writeObjects(items)
     }
 
     /// Empty when the board names no file, so a caller falls through to text or bytes.
@@ -25,10 +36,14 @@ enum PasteboardFiles {
     ) -> [URL] {
         guard limit > 0 else { return [] }
         var matches: [URL] = []
-        var hasFileURL = false
-        for item in pasteboard.pasteboardItems ?? [] {
+        let items = pasteboard.pasteboardItems ?? []
+        var hasFileURL = items.isEmpty && pasteboard.types?.contains(.fileURL) == true
+            && suppressesLegacyFallback(
+                data: pasteboard.data(forType: .fileURL),
+                string: pasteboard.string(forType: .fileURL))
+        for item in items {
+            hasFileURL = hasFileURL || suppressesLegacyFallback(for: item)
             guard let url = url(from: item) else { continue }
-            hasFileURL = true
             guard predicate(url) else { continue }
             matches.append(url)
             if matches.count == limit { return matches }
@@ -57,5 +72,27 @@ enum PasteboardFiles {
             url.isFileURL
         else { return nil }
         return url
+    }
+
+    private static func suppressesLegacyFallback(for item: NSPasteboardItem) -> Bool {
+        guard item.types.contains(.fileURL) else { return false }
+        return suppressesLegacyFallback(
+            data: item.data(forType: .fileURL), string: item.string(forType: .fileURL))
+    }
+
+    private static func suppressesLegacyFallback(data: Data?, string: String?) -> Bool {
+        guard data != nil || string != nil else { return true }
+        var hasValidNonFileURL = false
+        if let data {
+            guard let url = URL(dataRepresentation: data, relativeTo: nil) else { return true }
+            if url.isFileURL { return true }
+            hasValidNonFileURL = true
+        }
+        if let string {
+            guard let url = URL(string: string) else { return true }
+            if url.isFileURL { return true }
+            hasValidNonFileURL = true
+        }
+        return !hasValidNonFileURL
     }
 }

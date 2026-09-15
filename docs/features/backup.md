@@ -80,6 +80,10 @@ built in memory to encode and again to decode; a line per clip is one small enco
 because a newline inside a clip is escaped as `\n` by the encoder and can never appear raw —
 `backup-archive-test` asserts the line count equals the clip count for exactly that reason.
 
+File clipboard entries are not exported: they contain paths owned by the source Mac, and the importer
+cannot restore those paths. Clipboard counts therefore include only portable text and image entries.
+Clipboard rows use the current format-1 shape; older rows lacking required metadata are not restored.
+
 **AppleArchive, LZFSE, and a deliberately narrow keyset.** `"TYP,PAT,DAT,MOD,MTM"` rather than
 `.defaultForArchive`: no `UID`/`GID`, which would restore another Mac's numeric owner, and no `IDX`,
 whose hardlink dedup would record a link to a blob outside the staged tree. `MTM` stays because the
@@ -125,7 +129,7 @@ Per category:
 
 - **Settings** merge field by field, and a file carrying custom commands or their shortcuts still hits
   `confirmExecutableImport` first.
-- **Clipboard** streams through `ClipboardStore.importStoredItems`, off the main actor and on its own
+- **Clipboard** streams through `ClipboardStore.importStoredEntries`, off the main actor and on its own
   connection: a restored history runs past the memory window and must never sit in memory or freeze the
   UI. A row is deduped on its text, or on the path its image takes; the blob keeps the name the bundle
   gave it, so importing one file twice lands on the same path and adds nothing. Only a file inside

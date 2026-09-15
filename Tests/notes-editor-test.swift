@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import SwiftUI
 
@@ -12,6 +13,7 @@ struct NotesEditorTests {
         testLiteralEditingAndNativeCommands()
         testUndoIsolation()
         testCharacterCountReports()
+        testInlineCompletion()
         print(failures == 0 ? "Notes editor tests passed" : "\(failures) tests failed")
         exit(failures == 0 ? 0 : 1)
     }
@@ -120,6 +122,33 @@ struct NotesEditorTests {
             reports.last?.0.id == second.id && reports.last?.1 == 6)
     }
 
+    private static func testInlineCompletion() {
+        let source = "say :wave later"
+        let editor = makeEditor(
+            input: NoteEditorInput(id: NoteID(rawValue: "Inline.md"), source: source, epoch: 1),
+            completionProvider: { text, caret, selection in
+                guard text == source, caret == 9, selection == 0 else { return nil }
+                return NoteInlineCompletion(
+                    text: "👋", replacementRange: NSRange(location: 4, length: 5))
+            })
+        editor.textView.setSelectedRange(NSRange(location: 9, length: 0))
+        let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: editor.window.windowNumber, context: nil, characters: "\t",
+            charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: UInt16(kVK_Tab))
+        guard let event else {
+            check("Tab event can be created for inline completion", false)
+            return
+        }
+        editor.textView.keyDown(with: event)
+        check(
+            "inline completion replaces a token in the middle of a note",
+            editor.textView.string == "say 👋 later")
+        check(
+            "inline completion leaves the caret after the inserted glyph",
+            editor.textView.selectedRange().location == 6)
+    }
+
     /// The primitives `copy:`/`cut:`/`paste:` delegate to; the actions clobber the real clipboard.
     private static func copySelection(of textView: NSTextView, to pasteboard: NSPasteboard) {
         let types = textView.writablePasteboardTypes
@@ -143,15 +172,20 @@ struct NotesEditorTests {
     private static func makeEditor(
         input: NoteEditorInput,
         onSourceChange: @escaping (String) -> Void = { _ in },
-        onCountChange: @escaping (NoteEditorInput, Int) -> Void = { _, _ in }
+        onCountChange: @escaping (NoteEditorInput, Int) -> Void = { _, _ in },
+        completionProvider: @escaping (
+            _ text: String, _ caretUTF16Offset: Int, _ selectedLength: Int
+        ) -> NoteInlineCompletion? = { _, _, _ in nil }
     ) -> (coordinator: NoteEditorView.Coordinator, textView: NoteTextView, window: NSWindow) {
         let view = view(
             for: input,
             onSourceChange: onSourceChange,
-            onCountChange: onCountChange)
+            onCountChange: onCountChange,
+            completionProvider: completionProvider)
         let coordinator = NoteEditorView.Coordinator(parent: view)
         let textView = NoteTextView(usingTextLayoutManager: true)
         NoteEditorView.configure(textView)
+        textView.completionProvider = view.completionProvider
         textView.delegate = coordinator
         textView.editorUndoManager = coordinator.editorUndoManager
         textView.setFrameSize(NSSize(width: 320, height: 1))
@@ -172,13 +206,17 @@ struct NotesEditorTests {
     private static func view(
         for input: NoteEditorInput,
         onSourceChange: @escaping (String) -> Void = { _ in },
-        onCountChange: @escaping (NoteEditorInput, Int) -> Void = { _, _ in }
+        onCountChange: @escaping (NoteEditorInput, Int) -> Void = { _, _ in },
+        completionProvider: @escaping (
+            _ text: String, _ caretUTF16Offset: Int, _ selectedLength: Int
+        ) -> NoteInlineCompletion? = { _, _, _ in nil }
     ) -> NoteEditorView {
         NoteEditorView(
             input: input,
             onSourceChange: onSourceChange,
             onCharacterCountChange: onCountChange,
-            onReady: { _ in })
+            onReady: { _ in },
+            completionProvider: completionProvider)
     }
 
     private static func check(_ message: String, _ condition: @autoclosure () -> Bool) {

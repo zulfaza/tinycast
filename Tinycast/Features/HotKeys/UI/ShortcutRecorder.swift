@@ -29,7 +29,7 @@ struct ShortcutRecorder: View {
             .background(shape.fill(Theme.Colors.cardFill).opacity(showsFill ? 1 : 0))
             .overlay(
                 shape.strokeBorder(
-                    isRecording ? Color.accentColor : Theme.Colors.cardStroke, lineWidth: 1)
+                    isRecording ? Theme.Colors.accent : Theme.Colors.cardStroke, lineWidth: 1)
             )
             // An over-long binding truncates rather than resizing the field.
             .clipShape(shape)
@@ -81,7 +81,7 @@ struct ShortcutRecorder: View {
                         RoundedRectangle(
                             cornerRadius: Theme.Radius.recorderKeyCap, style: .continuous
                         )
-                        .fill(Color.primary.opacity(0.08))
+                        .fill(Theme.Colors.textPrimary.opacity(0.08))
                     )
             }
         }

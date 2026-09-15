@@ -37,7 +37,9 @@ final class AppCore {
     let updateChecker = UpdateCheckStore()
     let supportReminders: SupportReminderStore
     let emojiIndex = EmojiIndex()
+    let emojiKeywords = EmojiKeywordStore()
     let frequentEmoji = FrequentEmojiStore()
+    let customThemes = CustomThemeStore()
     let runningApps = RunningAppsMonitor()
     let palette = PaletteState()
     let fileSearch = FileSearchSession()
@@ -116,6 +118,9 @@ final class AppCore {
         store: notesStore,
         settings: settings,
         appIndex: appIndex,
+        emojiIndex: emojiIndex,
+        emojiKeywords: emojiKeywords,
+        frequentEmoji: frequentEmoji,
         core: self)
 
     @ObservationIgnored private(set) lazy var launcherCoordinator = LauncherCoordinator(
@@ -175,6 +180,7 @@ final class AppCore {
 
     @ObservationIgnored private lazy var windowController = PaletteWindowController(core: self)
     @ObservationIgnored private lazy var messageHUD = MessageHUDController(settings: settings)
+    @ObservationIgnored private lazy var clipboardEditor = ClipboardEditorWindowController(core: self)
     /// Every confirmation, report and prompt; it also stops a held hotkey stacking them.
     @ObservationIgnored private lazy var dialogs = DialogController(settings: settings)
     private let healthTicker = HealthTicker()
@@ -315,6 +321,21 @@ final class AppCore {
                 quicklinkIDs: Set(quicklinks.quicklinks.map(\.id)),
                 windowLayoutIDs: Set(windowLayouts.layouts.map(\.id)),
                 quickActionIDs: Set(customQuickActions.actions.map(\.id)))
+            clipboardCoordinator.onRenameClip = { [weak self] item in
+                guard let self else { return }
+                self.paletteCoordinator.hidePalette(restoreFocus: false)
+                self.clipboardEditor.rename(item)
+            }
+            clipboardCoordinator.onSaveTextAsFile = { [weak self] item in
+                guard let self else { return }
+                self.paletteCoordinator.hidePalette(restoreFocus: false)
+                self.clipboardEditor.saveAsFile(item)
+            }
+            clipboardCoordinator.onSaveTextAsSnippet = { [weak self] item in
+                guard let self else { return }
+                self.paletteCoordinator.hidePalette(restoreFocus: false)
+                self.clipboardEditor.saveAsSnippet(item)
+            }
             // Keeps running while Carbon pauses: the recorder needs its rewritten flags.
             hyperKeyTap.start(settings: settings)
 
@@ -328,10 +349,12 @@ final class AppCore {
                 Task { await snippetsStore.start() }
                 snippetCoordinator.startSnippetKeywordListener()
             }
+            snippetCoordinator.applySnippetPolicy()
             // Unconditional: a disabled feature has to take its command rows down with it.
             snippetCoordinator.applySnippetsLauncherPresence()
 
             observeFeatureSwitches()
+            observeCustomThemeChanges()
 
             // First launch binds no hotkey, so guide once; the marker is written at show-time.
             if !OnboardingState.hasOnboarded {
@@ -546,8 +569,38 @@ final class AppCore {
         track(
             { _ = $0.snippetsShowInLauncher },
             reproject: { $0.snippetCoordinator.applySnippetsLauncherPresence() })
+        track(
+            {
+                _ = $0.snippetsTriggerMode
+                _ = $0.snippetsDelimiter
+                _ = $0.snippetsRetainsDelimiter
+                _ = $0.snippetsOutput
+                _ = $0.snippetsInjectionDelay
+                _ = $0.snippetsCompletionFeedback
+                _ = $0.snippetsExcludedApps
+                _ = $0.snippetsSharedLibraries
+            }, reproject: { $0.snippetCoordinator.applySnippetPolicy() })
         track({ _ = $0.appearance }, reproject: { $0.applyAppearance() })
         track({ _ = $0.interfaceSize }, reproject: { $0.windowController.applyInterfaceSize() })
+    }
+
+    private func observeCustomThemeChanges() {
+        withObservationTracking {
+            _ = customThemes.revision
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.observeCustomThemeChanges()
+                self.invalidateThemeSurfaces()
+            }
+        }
+    }
+
+    private func invalidateThemeSurfaces() {
+        for window in NSApp.windows where window.isVisible {
+            window.contentView?.needsDisplay = true
+            window.displayIfNeeded()
+        }
     }
 
     /// `.system` resolves to `nil`, so AppKit follows macOS with nothing polling.

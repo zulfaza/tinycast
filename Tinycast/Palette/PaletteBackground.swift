@@ -12,7 +12,7 @@ struct PaletteBackground: View {
     }
 
     var body: some View {
-        Theme.Colors.panelScrim(transparency: settings.paletteTransparency)
+        Theme.Colors.panelSurface(transparency: settings.paletteTransparency)
             .background(VisualEffectView())
             .overlay {
                 if settings.paletteTransparency != 0 {

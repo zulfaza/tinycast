@@ -40,6 +40,8 @@ struct SnippetsSettingsView: View {
                 }
             }
 
+            expansion
+
             Group {
                 FeatureCommandsSection(owner: .snippets, anchor: .snippetsCommands)
                 library
@@ -65,6 +67,77 @@ struct SnippetsSettingsView: View {
         }
     }
 
+    private var expansion: some View {
+        @Bindable var settings = settings
+        return Section {
+            Picker("Trigger", selection: $settings.snippetsTriggerMode) {
+                Text("Immediately").tag(SnippetExpansionTriggerMode.immediate)
+                Text("After delimiter").tag(SnippetExpansionTriggerMode.delimiter)
+            }
+            if settings.snippetsTriggerMode == .delimiter {
+                TextField("Delimiter (whitespace or literal)", text: $settings.snippetsDelimiter)
+                Toggle("Keep delimiter", isOn: $settings.snippetsRetainsDelimiter)
+            }
+            Picker("Output", selection: $settings.snippetsOutput) {
+                ForEach(SnippetExpansionOutput.allCases, id: \.rawValue) { output in
+                    Text(output.title).tag(output)
+                }
+            }
+            Picker("Injection delay", selection: $settings.snippetsInjectionDelay) {
+                ForEach(SnippetInjectionDelay.allCases) { delay in
+                    Text(delay.title).tag(delay)
+                }
+            }
+            Toggle("Show completion feedback", isOn: $settings.snippetsCompletionFeedback)
+            TextField(
+                "Excluded app bundle IDs (comma-separated)",
+                text: Binding(
+                    get: { settings.snippetsExcludedApps.joined(separator: ", ") },
+                    set: { settings.snippetsExcludedApps = $0.split(separator: ",").map(String.init) }))
+            LabeledContent("Shared libraries") {
+                HStack {
+                    Button("Choose folders…", action: chooseSharedLibraries)
+                    if !settings.snippetsSharedLibraries.isEmpty {
+                        Button("Clear") { settings.snippetsSharedLibraries = [] }
+                    }
+                }
+            }
+            ForEach(settings.snippetsSharedLibraries, id: \.self) { directory in
+                HStack {
+                    Text(directory)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: Theme.Spacing.lg)
+                    Button("Remove") {
+                        settings.snippetsSharedLibraries.removeAll { $0 == directory }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove shared library (directory)")
+                }
+            }
+        } header: {
+            SettingsSectionHeader(.snippetsExpansion)
+        } footer: {
+            Text("Control when and where keyword expansion runs. Shared libraries stay read-only.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func chooseSharedLibraries() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.begin { response in
+            guard response == .OK else { return }
+            settings.snippetsSharedLibraries = panel.urls.map(\.path)
+        }
+    }
+
     private var library: some View {
         Section {
             if sortedSnippets.isEmpty {
@@ -74,6 +147,7 @@ struct SnippetsSettingsView: View {
                 ForEach(sortedSnippets) { record in
                     SnippetSettingsRow(
                         record: record,
+                        canEdit: snippetsStore.isWritable(record),
                         onEdit: { core.snippetCoordinator.editSnippet(record) },
                         onDelete: { pendingDeletion = record })
                 }
@@ -171,6 +245,7 @@ struct SnippetEditRequest: Identifiable {
 
 private struct SnippetSettingsRow: View {
     let record: StoredSnippet
+    let canEdit: Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
 
@@ -184,14 +259,16 @@ private struct SnippetSettingsRow: View {
             .buttonStyle(.plain)
             .help("Edit Snippet")
             .accessibilityLabel("Edit \(record.snippet.name)")
+            .disabled(!canEdit)
 
             Button(action: onDelete) {
                 Image(systemName: "trash")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.Colors.destructive)
             }
             .buttonStyle(.plain)
             .help("Delete Snippet")
             .accessibilityLabel("Delete \(record.snippet.name)")
+            .disabled(!canEdit)
         }
     }
 
@@ -199,8 +276,19 @@ private struct SnippetSettingsRow: View {
         let filename = record.fileURL.lastPathComponent
         guard let keyword = record.snippet.keyword?.trimmingCharacters(in: .whitespacesAndNewlines),
             !keyword.isEmpty
-        else { return filename }
-        return "\(keyword) · \(filename)"
+        else {
+            return metadataWithTags(filename: filename)
+        }
+        return metadataWithTags(filename: "\(keyword) · \(filename)")
+    }
+
+    private func metadataWithTags(filename: String) -> String {
+        var parts = [filename]
+        if !record.snippet.tags.isEmpty {
+            parts.append(record.snippet.tags.map { "#\($0)" }.joined(separator: " "))
+        }
+        if !canEdit { parts.append("Read-only shared library") }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -213,6 +301,7 @@ private struct SnippetEditorSheet: View {
     @FocusState private var isTemplateFocused: Bool
     @State private var name: String
     @State private var keyword: String
+    @State private var tags: String
     @State private var text: String
     @State private var selection: TextSelection?
     @State private var isEnabled: Bool
@@ -225,6 +314,7 @@ private struct SnippetEditorSheet: View {
         let snippet = record?.snippet
         _name = State(initialValue: snippet?.name ?? "")
         _keyword = State(initialValue: snippet?.keyword ?? "")
+        _tags = State(initialValue: snippet?.tags.joined(separator: ", ") ?? "")
         _text = State(initialValue: snippet?.text ?? "")
         _isEnabled = State(initialValue: snippet?.isEnabled ?? true)
         _showsConfirmation = State(initialValue: snippet?.showsConfirmation ?? false)
@@ -241,6 +331,9 @@ private struct SnippetEditorSheet: View {
             field(
                 title: "Keyword", placeholder: "Optional, for example !notes", text: $keyword,
                 hint: "Optional. Type this to expand the snippet.")
+            field(
+                title: "Tags", placeholder: "Optional, comma-separated", text: $tags,
+                hint: "Optional. Filter browser results with #tag.")
 
             templateEditor
 
@@ -311,6 +404,7 @@ private struct SnippetEditorSheet: View {
             Section("Text") {
                 placeholderItem("{cursor}")
                 placeholderItem("{clipboard}")
+                placeholderItem("{clipboard offset=1}")
                 placeholderItem("{selection}")
                 placeholderItem("{uuid}")
             }
@@ -319,11 +413,18 @@ private struct SnippetEditorSheet: View {
                 placeholderItem("{time}")
                 placeholderItem("{datetime}")
                 placeholderItem("{day}")
+                placeholderItem("{date format=\"yyyy-MM-dd\"}")
+                placeholderItem("{date locale=\"fr-FR\"}")
+                placeholderItem("{time offset=\"+3h +30m\"}")
             }
             Section("Arguments") {
+                placeholderItem("{argument}")
                 placeholderItem("{argument name=\"Name\"}")
+                placeholderItem("{argument default=\"Default\"}")
+                placeholderItem("{argument options=\"One, Two\"}")
             }
             Section("Snippets") {
+                placeholderItem("{snippet:Name}")
                 placeholderItem("{snippet name=\"Name\"}")
             }
         }
@@ -383,6 +484,7 @@ private struct SnippetEditorSheet: View {
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             text: text,
             keyword: trimmedOrNil(keyword),
+            tags: tags.split(separator: ",").map(String.init),
             isEnabled: isEnabled,
             showsConfirmation: showsConfirmation)
     }

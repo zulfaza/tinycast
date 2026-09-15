@@ -70,6 +70,24 @@ pasteboard and the poller skips anything carrying it.
 `isCapturing` flag that `prepareForTinycastPasteboardMutation` reads — so a paste Tinycast performs
 itself no longer drains the pasteboard into history either.
 
+Each captured pasteboard type is retained in `item_representations` with one bounded value per source
+pasteboard item. The source type is the only type identity stored, so unknown UTIs survive without
+special cases; Tinycast's private marker is never retained. A representation keeps at most 32 values,
+each capped at 8 MiB, and the set at 32 MiB, keeping a hostile board from consuming the
+resident-memory budget. Large representations are loaded lazily with a bounded cache. `Paster` can
+write one retained representation back through **Paste As**, while
+the ordinary action keeps its existing canonical write.
+
+A pasteboard change containing several file URLs is one clipboard entry. `item_files` preserves their
+source order, while the row's existing file-path text remains searchable. Pasting or dragging that row
+hands all files to the receiver. External files remain references: neither grouped deletion nor
+retention ever removes them.
+
+Names live in `item_names`, separate from the captured value, and are included in ordinary search. A
+rename therefore survives reload and never changes type classification, OCR metadata, or what gets
+pasted. QR payload extraction uses the same short-lived helper process as image OCR; text and URL
+payloads are bounded metadata, never replacement clipboard content.
+
 Existing clips survive being switched off, since a history is captured rather than authored and
 nothing else can put it back. **Clear history stays live with the feature off** —
 `ClipboardCoordinator.clearHistory()` reopens the file, empties it and closes it again — so a reader
@@ -100,11 +118,11 @@ not read-only: a read-only connection to a WAL database still has to create its 
 fails confusingly when it cannot. It reads in `rowid` order, oldest first, so a streaming
 import rebuilds the same order it exported.
 
-**A restore streams back the same way.** `importStoredItems(inDatabaseAt:adoptingImagesInto:_:)` is the
-one insert path a bulk import takes, `importEntries` included: it hashes the existing rows once into a
-dedupe set rather than scanning the table per candidate, holds one transaction, and moves a staged blob
-into `imagesDir` only once the row is known to be new. `adoptingImagesInto` is nil where the paths
-handed in are already the ones to keep, as the Raycast import's are.
+**A restore streams back the same way.** `importStoredEntries(inDatabaseAt:adoptingImagesInto:_:)`
+is the insert path for a backup's rows: it hashes existing rows once into a dedupe set rather than
+scanning the table per candidate, holds one transaction, and moves a staged blob into `imagesDir` only
+once the row is known to be new. `adoptingImagesInto` is nil where paths are already the ones to keep,
+as the Raycast import's are.
 
 **The load query is deliberately two indexed branches**, not one `pinned_at IS NOT NULL OR rowid >= ?`.
 It fetches every pinned row plus the newest `memoryWindow` unpinned ones, keyed off the floor rowid
@@ -358,10 +376,9 @@ of a 359 pt content area, and the overflow pushed the bottom bar out and the pan
 preview kind already shrinks — an image scales to fit, text scrolls — so the player does too, and only
 its maximum is a token.
 
-**A backup carries the path, never the bytes.** `BackupClipboardItem.file` exports `text` and no
-blob, a file already gone at export time is counted missing, and a restore drops a row whose path
-does not exist on this Mac — the same thing the Raycast import already does for an image path.
-Carrying file bytes would make a backup unbounded and defeat the point of referencing in place.
+**File clipboard entries stay local.** Portable backups omit `BackupClipboardItem.file` rows because
+their paths belong to the source Mac; restore also drops any file row present in an archive. Carrying
+file bytes would make a backup unbounded and defeat the point of referencing in place.
 
 ## Dragging out
 

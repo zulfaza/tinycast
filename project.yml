@@ -71,6 +71,7 @@ targets:
     type: tool
     platform: macOS
     sources:
+      - Tinycast/Features/Clipboard/Model/ClipboardQRPayload.swift
       - Tinycast/Features/Clipboard/Service/ClipboardTextExtractor.swift
       - Tinycast/Features/Clipboard/Service/ClipboardTextHelper.swift
     settings:

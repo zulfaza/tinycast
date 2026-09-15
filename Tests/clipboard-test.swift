@@ -24,7 +24,14 @@ struct ClipboardTests {
         persistence()
         exportSeesPastTheMemoryWindow()
         importedImagesArriveOnce()
-        multiFileCopyMakesOneRowEach()
+        multiFileCopyStaysGrouped()
+        renamedEntriesAreSearchable()
+        namesTreatWildcardsLiterally()
+        namesAreBounded()
+        sourceRepresentationsPersist()
+        representationsAreBounded()
+        qrPayloadsPersist()
+        qrWriteAfterDeletionIsIgnored()
         referencedFilesOutliveTheirRows()
         filePathsAreNeverATextForm()
         fileEntriesAreFoundByNameAndFolder()
@@ -541,16 +548,102 @@ struct ClipboardTests {
         }
     }
 
-    /// One row per file, and the first file copied leads the history.
-    static func multiFileCopyMakesOneRowEach() {
+    /// One pasteboard change is one entry, with paths retaining source order.
+    static func multiFileCopyStaysGrouped() {
         withStore { store, _ in
-            store.addFiles(["/tmp/a.png", "/tmp/b.mov", "/tmp/c.pdf"], sourceBundleID: nil)
-            expect(store.items.count == 3, "three files make three rows")
+            store.addFiles(["/tmp/c.pdf", "/tmp/b.mov", "/tmp/a.png"], sourceBundleID: nil)
+            expect(store.items.count == 1, "three files make one grouped row")
             expect(
-                store.items.map(\.filePath) == ["/tmp/c.pdf", "/tmp/b.mov", "/tmp/a.png"],
-                "and the reader inserts them newest-last")
+                store.items[0].filePaths == ["/tmp/a.png", "/tmp/b.mov", "/tmp/c.pdf"],
+                "the grouped row retains source order")
             store.addFiles(["/tmp/c.pdf"], sourceBundleID: nil)
-            expect(store.items.count == 3, "re-copying the leading file adds no row")
+            expect(store.items.count == 2, "a different copy adds one row")
+        }
+    }
+
+    static func renamedEntriesAreSearchable() {
+        withStore { store, dir in
+            store.addText("a captured value", sourceBundleID: nil)
+            let item = store.items[0]
+            store.rename(item, to: "Quarterly report")
+            expect(store.search("quarterly", filter: .all).first?.id == item.id, "name is searchable")
+            let reopened = ClipboardStore(directory: dir)
+            reopened.load()
+            expect(reopened.items.first?.name == "Quarterly report", "name persists")
+        }
+    }
+
+    static func sourceRepresentationsPersist() {
+        withStore { store, dir in
+            let source = [
+                ClipboardRepresentation(
+                    typeIdentifier: "public.utf8-plain-text", values: [Data("plain".utf8)]),
+                ClipboardRepresentation(
+                    typeIdentifier: "public.rtf", values: [Data("{\\rtf1 rich}".utf8)])
+            ]
+            store.addText("plain", sourceBundleID: nil, representations: source)
+            expect(store.representations(for: store.items[0]) == source, "representations load")
+            let reopened = ClipboardStore(directory: dir)
+            reopened.load()
+            expect(reopened.representations(for: reopened.items[0]) == source, "representations persist")
+        }
+    }
+
+    static func representationsAreBounded() {
+        withStore { store, _ in
+            let source = (0..<64).map {
+                ClipboardRepresentation(typeIdentifier: "public.test.\($0)", values: [Data([1])])
+            }
+            store.addText("bounded", sourceBundleID: nil, representations: source)
+            expect(
+                store.representations(for: store.items[0]).count
+                    == ClipboardStore.maximumRepresentationCount,
+                "representation types are bounded")
+        }
+    }
+
+    static func qrPayloadsPersist() {
+        withStore { store, dir in
+            store.addText("QR source", sourceBundleID: nil)
+            let item = store.items[0]
+            let payloads = [ClipboardQRPayload(value: "https://tinycast.app", isURL: false)]
+            expect(
+                store.setQRCodes(payloads, for: item, generation: store.extractionGeneration),
+                "QR metadata writes")
+            expect(store.search("tinycast.app", filter: .all).first?.id == item.id, "QR is searchable")
+            let reopened = ClipboardStore(directory: dir)
+            reopened.load()
+            expect(reopened.qrPayloads(for: reopened.items[0]) == payloads, "QR metadata persists")
+        }
+    }
+
+    static func namesTreatWildcardsLiterally() {
+        withStore { store, _ in
+            store.addText("ordinary", sourceBundleID: nil)
+            store.rename(store.items[0], to: "100% report")
+            store.addText("another", sourceBundleID: nil)
+            expect(store.search("100%", filter: .all).count == 1, "name wildcards are literal")
+        }
+    }
+
+    static func namesAreBounded() {
+        withStore { store, _ in
+            store.addText("bounded name", sourceBundleID: nil)
+            store.rename(store.items[0], to: String(repeating: "x", count: 2_000))
+            expect(store.items[0].name?.utf8.count == 1_024, "name bytes are bounded")
+        }
+    }
+
+    static func qrWriteAfterDeletionIsIgnored() {
+        withStore { store, _ in
+            store.addText("deleted QR source", sourceBundleID: nil)
+            let item = store.items[0]
+            let generation = store.extractionGeneration
+            store.remove(item)
+            expect(
+                !store.setQRCodes(
+                    [ClipboardQRPayload(value: "orphan")], for: item, generation: generation),
+                "deleted rows reject late QR metadata")
         }
     }
 

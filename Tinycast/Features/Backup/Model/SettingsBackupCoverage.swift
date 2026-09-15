@@ -29,6 +29,13 @@ enum SettingsBackupCoverage {
         "customCommandsEnabled": .customCommandsEnabled,
         "customCommandsShowInLauncher": .customCommandsShowInLauncher,
         "snippetsShowInLauncher": .snippetsShowInLauncher,
+        "snippetsTriggerMode": .snippetsTriggerMode,
+        "snippetsDelimiter": .snippetsDelimiter,
+        "snippetsRetainsDelimiter": .snippetsRetainsDelimiter,
+        "snippetsOutput": .snippetsOutput,
+        "snippetsInjectionDelay": .snippetsInjectionDelay,
+        "snippetsCompletionFeedback": .snippetsCompletionFeedback,
+        "snippetsExcludedApps": .snippetsExcludedApps,
         "navigationEnabled": .navigationEnabled,
         "menuSearchDisabledApps": .menuSearchDisabledApps,
         "menuSearchShowsAppleMenu": .menuSearchShowsAppleMenu,
@@ -80,6 +87,8 @@ enum SettingsBackupCoverage {
             "Diagnostics are local to this Mac; an import must not enable runtime logging.",
         AppSettingsKey.palettePosition.rawValue:
             "Machine-local geometry: every entry names a display this Mac has, and no other one.",
+        AppSettingsKey.snippetsSharedLibraries.rawValue:
+            "Shared library paths belong to this Mac and must not be restored on another one.",
         AppSettingsKey.autoSwitchInputSource.rawValue:
             "Names a keyboard input source installed on this Mac; another Mac may not have it.",
         AppSettingsKey.calendarEnabled.rawValue:

@@ -6,6 +6,7 @@ final class ClipboardTextIndexer {
     private let store: ClipboardStore
     private let canRun: () -> Bool
     private let extract: @Sendable (ClipboardItem) async throws -> String
+    private let extractQR: @Sendable (ClipboardItem) async throws -> [ClipboardQRPayload]
     private let retryDelay: TimeInterval
     private let delay: Duration
     private var task: Task<Void, Never>?
@@ -18,13 +19,16 @@ final class ClipboardTextIndexer {
     init(
         store: ClipboardStore, delay: Duration = .milliseconds(250), retryDelay: TimeInterval = 30,
         canRun: @escaping () -> Bool,
-        extract: @escaping @Sendable (ClipboardItem) async throws -> String = ClipboardTextWorker.extract
+        extract: @escaping @Sendable (ClipboardItem) async throws -> String = ClipboardTextWorker.extract,
+        extractQR: @escaping @Sendable (ClipboardItem) async throws -> [ClipboardQRPayload] =
+            ClipboardTextWorker.extractQR
     ) {
         self.store = store
         self.delay = delay
         self.retryDelay = retryDelay
         self.canRun = canRun
         self.extract = extract
+        self.extractQR = extractQR
     }
 
     isolated deinit {
@@ -82,15 +86,20 @@ final class ClipboardTextIndexer {
                 let generation = self.store.extractionGeneration
                 let extract = self.extract
                 let worker = Task.detached(priority: .background) { try await extract(item) }
+                let extractQR = self.extractQR
+                let qrWorker = Task.detached(priority: .background) {
+                    try await extractQR(item)
+                }
+                var text: String?
                 do {
-                    let text = try await withTaskCancellationHandler {
+                    text = try await withTaskCancellationHandler {
                         try await worker.value
                     } onCancel: {
                         worker.cancel()
                     }
                     try Task.checkCancellation()
-                    self.store.setExtractedText(text, for: item, generation: generation)
                 } catch is CancellationError {
+                    qrWorker.cancel()
                     return
                 } catch {
                     guard !Task.isCancelled else { return }
@@ -99,6 +108,23 @@ final class ClipboardTextIndexer {
                     self.store.recordExtractionFailure(
                         for: item, generation: generation,
                         retryAt: Date().addingTimeInterval(self.retryDelay))
+                }
+                do {
+                    let payloads = try await withTaskCancellationHandler {
+                        try await qrWorker.value
+                    } onCancel: {
+                        qrWorker.cancel()
+                    }
+                    try Task.checkCancellation()
+                    self.store.setQRCodes(payloads, for: item, generation: generation)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    Self.logger.debug("Clipboard QR extraction skipped")
+                }
+                guard let text else { continue }
+                guard self.store.setExtractedText(text, for: item, generation: generation) else {
+                    continue
                 }
             }
         }

@@ -15,7 +15,8 @@ enum EmojiGrid {
     /// Ranked results while searching, otherwise Frequently Used plus every category.
     @MainActor
     static func sections(
-        query: String, index: EmojiIndex, frequent: FrequentEmojiStore
+        query: String, index: EmojiIndex, frequent: FrequentEmojiStore,
+        customKeywords: [EmojiKeyword] = []
     ) -> [EmojiGridSection] {
         var sections: [EmojiGridSection] = []
         var start = 0
@@ -30,7 +31,9 @@ enum EmojiGrid {
                 append(section.category.title, section.entries)
             }
         } else {
-            append("Results", index.search(query, frequent: frequent))
+            append(
+                "Results",
+                index.search(query, frequent: frequent, customKeywords: customKeywords))
         }
         return sections
     }

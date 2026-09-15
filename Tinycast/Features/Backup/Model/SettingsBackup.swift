@@ -46,6 +46,13 @@ struct SettingsBackup: Codable {
         var customCommandsEnabled: Bool?
         var customCommandsShowInLauncher: Bool?
         var snippetsShowInLauncher: Bool?
+        var snippetsTriggerMode: String?
+        var snippetsDelimiter: String?
+        var snippetsRetainsDelimiter: Bool?
+        var snippetsOutput: String?
+        var snippetsInjectionDelay: Int?
+        var snippetsCompletionFeedback: Bool?
+        var snippetsExcludedApps: [String]?
         // Safe to carry: it grants no permission class paste doesn't already prompt for.
         var navigationEnabled: Bool?
         var menuSearchDisabledApps: [String]?
@@ -122,8 +129,8 @@ extension SettingsBackup {
             hyperKeyIncludesShift: s.hyperKeyIncludesShift,
             hyperKeyQuickPress: s.hyperKeyQuickPress.rawValue,
             emojiSkinTone: s.emojiSkinTone.rawValue,
-            showInMenuBar: UserDefaults.standard.object(forKey: SettingsKey.showInMenuBar) as? Bool
-                ?? true,
+            showInMenuBar: UserDefaults.standard.object(forKey: SettingsKey.showInMenuBar) == nil
+                ? true : UserDefaults.standard.bool(forKey: SettingsKey.showInMenuBar),
             popToRootSeconds: s.popToRootTimeout.rawValue,
             escapeKeyBehavior: s.escapeKeyBehavior.rawValue,
             appearance: s.appearance.rawValue,
@@ -141,6 +148,13 @@ extension SettingsBackup {
             customCommandsEnabled: s.customCommandsEnabled,
             customCommandsShowInLauncher: s.customCommandsShowInLauncher,
             snippetsShowInLauncher: s.snippetsShowInLauncher,
+            snippetsTriggerMode: s.snippetsTriggerMode.rawValue,
+            snippetsDelimiter: s.snippetsDelimiter,
+            snippetsRetainsDelimiter: s.snippetsRetainsDelimiter,
+            snippetsOutput: s.snippetsOutput.rawValue,
+            snippetsInjectionDelay: s.snippetsInjectionDelay.rawValue,
+            snippetsCompletionFeedback: s.snippetsCompletionFeedback,
+            snippetsExcludedApps: s.snippetsExcludedApps,
             navigationEnabled: s.navigationEnabled,
             menuSearchDisabledApps: s.menuSearchDisabledApps,
             menuSearchShowsAppleMenu: s.menuSearchShowsAppleMenu,
@@ -359,6 +373,36 @@ extension SettingsBackup {
         }
         if let flag = s.snippetsShowInLauncher {
             settings.snippetsShowInLauncher = flag
+            count += 1
+        }
+        if let raw = s.snippetsTriggerMode,
+            let mode = SnippetExpansionTriggerMode(rawValue: raw)
+        {
+            settings.snippetsTriggerMode = mode
+            count += 1
+        }
+        if let delimiter = s.snippetsDelimiter, !delimiter.isEmpty {
+            settings.snippetsDelimiter = delimiter
+            count += 1
+        }
+        if let flag = s.snippetsRetainsDelimiter {
+            settings.snippetsRetainsDelimiter = flag
+            count += 1
+        }
+        if let raw = s.snippetsOutput, let output = SnippetExpansionOutput(rawValue: raw) {
+            settings.snippetsOutput = output
+            count += 1
+        }
+        if let raw = s.snippetsInjectionDelay, let delay = SnippetInjectionDelay(rawValue: raw) {
+            settings.snippetsInjectionDelay = delay
+            count += 1
+        }
+        if let flag = s.snippetsCompletionFeedback {
+            settings.snippetsCompletionFeedback = flag
+            count += 1
+        }
+        if let apps = s.snippetsExcludedApps {
+            settings.snippetsExcludedApps = apps
             count += 1
         }
         if let flag = s.navigationEnabled {

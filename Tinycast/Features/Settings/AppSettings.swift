@@ -305,6 +305,38 @@ final class AppSettings {
         didSet { defaults.set(snippetsShowInLauncher, forKey: Key.snippetsShowInLauncher.rawValue) }
     }
 
+    var snippetsTriggerMode: SnippetExpansionTriggerMode {
+        didSet { defaults.set(snippetsTriggerMode.rawValue, forKey: Key.snippetsTriggerMode.rawValue) }
+    }
+
+    var snippetsDelimiter: String {
+        didSet { defaults.set(snippetsDelimiter, forKey: Key.snippetsDelimiter.rawValue) }
+    }
+
+    var snippetsRetainsDelimiter: Bool {
+        didSet { defaults.set(snippetsRetainsDelimiter, forKey: Key.snippetsRetainsDelimiter.rawValue) }
+    }
+
+    var snippetsOutput: SnippetExpansionOutput {
+        didSet { defaults.set(snippetsOutput.rawValue, forKey: Key.snippetsOutput.rawValue) }
+    }
+
+    var snippetsInjectionDelay: SnippetInjectionDelay {
+        didSet { defaults.set(snippetsInjectionDelay.rawValue, forKey: Key.snippetsInjectionDelay.rawValue) }
+    }
+
+    var snippetsCompletionFeedback: Bool {
+        didSet { defaults.set(snippetsCompletionFeedback, forKey: Key.snippetsCompletionFeedback.rawValue) }
+    }
+
+    var snippetsExcludedApps: [String] {
+        didSet { defaults.set(snippetsExcludedApps, forKey: Key.snippetsExcludedApps.rawValue) }
+    }
+
+    var snippetsSharedLibraries: [String] {
+        didSet { defaults.set(snippetsSharedLibraries, forKey: Key.snippetsSharedLibraries.rawValue) }
+    }
+
     var navigationEnabled: Bool {
         didSet { defaults.set(navigationEnabled, forKey: Key.navigationEnabled.rawValue) }
     }
@@ -575,6 +607,22 @@ final class AppSettings {
         snippetsShowInLauncher =
             defaults.object(forKey: Key.snippetsShowInLauncher.rawValue) == nil
             || defaults.bool(forKey: Key.snippetsShowInLauncher.rawValue)
+        snippetsTriggerMode =
+            defaults.string(forKey: Key.snippetsTriggerMode.rawValue)
+            .flatMap(SnippetExpansionTriggerMode.init(rawValue:)) ?? .immediate
+        snippetsDelimiter = defaults.string(forKey: Key.snippetsDelimiter.rawValue) ?? "whitespace"
+        snippetsRetainsDelimiter =
+            defaults.object(forKey: Key.snippetsRetainsDelimiter.rawValue) == nil
+            || defaults.bool(forKey: Key.snippetsRetainsDelimiter.rawValue)
+        snippetsOutput =
+            defaults.string(forKey: Key.snippetsOutput.rawValue)
+            .flatMap(SnippetExpansionOutput.init(rawValue:)) ?? .markdown
+        snippetsInjectionDelay =
+            SnippetInjectionDelay(rawValue: defaults.integer(forKey: Key.snippetsInjectionDelay.rawValue))
+            ?? .none
+        snippetsCompletionFeedback = defaults.bool(forKey: Key.snippetsCompletionFeedback.rawValue)
+        snippetsExcludedApps = defaults.stringArray(forKey: Key.snippetsExcludedApps.rawValue) ?? []
+        snippetsSharedLibraries = defaults.stringArray(forKey: Key.snippetsSharedLibraries.rawValue) ?? []
         // Opt-in, unlike its siblings: until it is asked for, nothing about extensions is loaded.
         extensionsEnabled = defaults.bool(forKey: Key.extensionsEnabled.rawValue)
         extensionsShowInLauncher =
@@ -596,9 +644,8 @@ final class AppSettings {
             defaults.object(forKey: Key.calendarShowInLauncher.rawValue) == nil
             || defaults.bool(forKey: Key.calendarShowInLauncher.rawValue)
         calendarLauncherLimit =
-            defaults.object(forKey: Key.calendarLauncherLimit.rawValue)
-            .flatMap { $0 as? Int }
-            .flatMap(CalendarLauncherLimit.init(rawValue:)) ?? .three
+            CalendarLauncherLimit(rawValue: defaults.integer(forKey: Key.calendarLauncherLimit.rawValue))
+            ?? .three
         calendarIncludesTomorrow =
             defaults.object(forKey: Key.calendarIncludesTomorrow.rawValue) == nil
             || defaults.bool(forKey: Key.calendarIncludesTomorrow.rawValue)
@@ -620,9 +667,8 @@ final class AppSettings {
             defaults.object(forKey: Key.menuBarLinkedEventsOnly.rawValue) == nil
             || defaults.bool(forKey: Key.menuBarLinkedEventsOnly.rawValue)
         hideCurrentEvent =
-            defaults.object(forKey: Key.hideCurrentEvent.rawValue)
-            .flatMap { $0 as? Int }
-            .flatMap(HideCurrentEvent.init(rawValue:)) ?? .dontHide
+            HideCurrentEvent(rawValue: defaults.integer(forKey: Key.hideCurrentEvent.rawValue))
+            ?? .dontHide
         navigationEnabled = defaults.bool(forKey: Key.navigationEnabled.rawValue)
         menuSearchDisabledApps =
             defaults.stringArray(forKey: Key.menuSearchDisabledApps.rawValue) ?? []

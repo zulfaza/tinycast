@@ -102,7 +102,7 @@ private struct MCPServerRow: View {
                 .help("Edit \(server.title)")
                 .accessibilityLabel("Edit \(server.title)")
             Button(action: onRemove) {
-                Image(systemName: "trash").foregroundStyle(.red)
+                Image(systemName: "trash").foregroundStyle(Theme.Colors.destructive)
             }
             .buttonStyle(.plain)
             .help("Remove \(server.title)")

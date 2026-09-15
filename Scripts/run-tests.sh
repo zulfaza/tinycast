@@ -11,11 +11,12 @@ set -uo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$0")/.." || exit 1
 
-BIN="${TMPDIR:-/tmp}/tinycast-harness"
-mkdir -p "$BIN"
-
 # `--exec` is the worker half: xargs re-enters here once per queued harness.
 if [ "${1:-}" = "--exec" ]; then
+    if [ -z "${BIN:-}" ]; then
+        echo "test worker requires coordinator state" >&2
+        exit 2
+    fi
     shift
     name=$1 opt=$2
     shift 2
@@ -51,6 +52,11 @@ if [ "${1:-}" = "--exec" ]; then
     printf '\033[32mok\033[0m    %-25s %5ss  \033[2m(compile %ss)\033[0m\n' "$name" "$took" "$compiled"
     exit 0
 fi
+
+# Each invocation gets its own markers; concurrent suite runs must not erase each other's results.
+BIN="$(mktemp -d "${TMPDIR:-/tmp}/tinycast-harness.XXXXXX")" || exit 1
+export BIN
+trap 'rm -rf "$BIN"' EXIT
 
 QUEUE="$BIN/queue"
 : > "$QUEUE"
@@ -144,6 +150,8 @@ run calc-test              Tinycast/Features/Calculator/Model/*.swift
 run index calc-performance Tinycast/Features/Calculator/Model/*.swift
 run calendar-test          Tinycast/Features/Calendar/Model/*.swift
 run clipboard-test         Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardRepresentation.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardQRPayload.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardFilter.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardFileKind.swift \
                            Tinycast/Features/Clipboard/Model/ColorValue.swift \
@@ -157,6 +165,8 @@ run clipboard-text-test    Tinycast/Features/Clipboard/Model/*.swift $Q \
                            Tinycast/Features/Clipboard/Service/ClipboardTextIndexer.swift \
                            Tinycast/Features/Clipboard/Service/ClipboardTextWorker.swift
 run pasteboard-test        Tinycast/Platform/PasteboardFiles.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardRepresentation.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardQRPayload.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardFilter.swift \
                            Tinycast/Features/Clipboard/Model/ColorValue.swift \
@@ -176,11 +186,23 @@ run emoji-test             Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
                            Tinycast/Features/Emoji/Model/EmojiGridGeometry.swift \
                            Tinycast/Features/Emoji/Model/EmojiData.generated.swift
 run emoji-search-test      Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
+                           Tinycast/Features/Emoji/Model/EmojiKeyword.swift \
                            Tinycast/Features/Emoji/Model/EmojiData.generated.swift \
                            Tinycast/Features/Emoji/Service/EmojiIndex.swift \
                            Tinycast/Features/Emoji/Service/FrequentEmojiStore.swift \
                            Tinycast/Features/Launcher/Model/SearchRelevance.swift \
                            Tinycast/Platform/AppPaths.swift Tinycast/Platform/Memo.swift
+run emoji-keyword-test     Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
+                           Tinycast/Features/Emoji/Model/EmojiKeyword.swift \
+                           Tinycast/Features/Emoji/Service/EmojiKeywordStore.swift \
+                           Tinycast/Features/Emoji/Model/EmojiData.generated.swift \
+                           Tinycast/Features/Emoji/Service/EmojiIndex.swift \
+                           Tinycast/Features/Emoji/Service/FrequentEmojiStore.swift \
+                           Tinycast/Features/Launcher/Model/SearchRelevance.swift \
+                           Tinycast/Platform/AppPaths.swift Tinycast/Platform/Memo.swift
+run emoji-inline-completion-test \
+                           Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
+                           Tinycast/Features/Emoji/Model/EmojiInlineCompletion.swift
 run index emoji-search-performance \
                            Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
                            Tinycast/Features/Emoji/Model/EmojiData.generated.swift \
@@ -192,15 +214,20 @@ run palette-selection-test Tinycast/Features/PaletteRowIndex.swift \
                            Tinycast/Features/Emoji/Model/EmojiGridGeometry.swift
 run appearance-test        Tinycast/Platform/Appearance.swift \
                            Tinycast/DesignSystem/Theme.swift \
+                           Tinycast/DesignSystem/CustomTheme.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
                            Tinycast/Features/Settings/AppAppearance.swift
+run custom-theme-test      Tinycast/DesignSystem/CustomTheme.swift \
+                           Tinycast/Features/Settings/CustomThemeStore.swift
 run interface-size-test    Tinycast/Platform/Appearance.swift \
                            Tinycast/DesignSystem/Theme.swift \
+                           Tinycast/DesignSystem/CustomTheme.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
                            Tinycast/Features/Settings/InterfaceSize.swift \
                            Tinycast/Features/Extensions/Model/ExtensionFormMetrics.swift
 run palette-placement-test Tinycast/Platform/Appearance.swift \
                            Tinycast/DesignSystem/Theme.swift \
+                           Tinycast/DesignSystem/CustomTheme.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
                            Tinycast/Features/Settings/InterfaceSize.swift \
                            Tinycast/Palette/PalettePlacement.swift
@@ -213,6 +240,8 @@ run hover-arming-test      Tinycast/Palette/HoverArming.swift \
                            Tinycast/Palette/PaletteState.swift \
                            Tinycast/Palette/PaletteMode.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardRepresentation.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardQRPayload.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardFilter.swift \
                            Tinycast/Features/FileSearch/Model/FileSearchFilter.swift \
                            Tinycast/Features/Clipboard/Model/ColorValue.swift \
@@ -232,6 +261,8 @@ run palette-navigation-test Tinycast/Palette/PaletteState.swift \
                            Tinycast/Palette/PaletteMode.swift \
                            Tinycast/Palette/HoverArming.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardRepresentation.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardQRPayload.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardFilter.swift \
                            Tinycast/Features/FileSearch/Model/FileSearchFilter.swift \
                            Tinycast/Features/Clipboard/Model/ColorValue.swift \
@@ -277,6 +308,7 @@ run hotkey-test            Tinycast/Features/HotKeys/Model/DoubleTapModifier.swi
                            Tinycast/Features/WindowManagement/Model/WindowCommand.swift
 run callout-test           Tinycast/Platform/Appearance.swift \
                            Tinycast/DesignSystem/Theme.swift \
+                           Tinycast/DesignSystem/CustomTheme.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
                            Tinycast/Features/HotKeys/UI/CalloutPlacement.swift
 run icon-cache-test        Tinycast/Platform/Appearance.swift \
@@ -289,6 +321,7 @@ run ext-icon-test          Tinycast/Platform/Appearance.swift \
                            Tinycast/Platform/AppPaths.swift \
                            Tinycast/Platform/Compression/Zlib.swift \
                            Tinycast/DesignSystem/Theme.swift \
+                           Tinycast/DesignSystem/CustomTheme.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
                            Tinycast/Features/Extensions/Model/ExtensionBootConfig.swift \
                            Tinycast/Features/Extensions/Model/ExtensionLaunchType.swift \
@@ -351,6 +384,7 @@ run notes-test             Tinycast/Platform/Signposts.swift \
 run notes-editor-test      Tinycast/Platform/Signposts.swift \
                            Tinycast/Platform/Appearance.swift \
                            Tinycast/DesignSystem/Theme.swift \
+                           Tinycast/DesignSystem/CustomTheme.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
                            Tinycast/Features/TextInjection/Service/InjectableTextView.swift \
                            Tinycast/Features/Notes/Model/NoteDocument.swift \
@@ -368,6 +402,8 @@ run backup-archive-test    Tinycast/Platform/AppPaths.swift \
                            Tinycast/Features/Backup/Model/BackupCategory.swift \
                            Tinycast/Features/Backup/Model/BackupClipboardItem.swift \
                            Tinycast/Features/Backup/Model/BackupManifest.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardRepresentation.swift \
+                           Tinycast/Features/Clipboard/Model/ClipboardQRPayload.swift \
                            Tinycast/Features/Backup/Service/BackupStaging.swift
 E=Tinycast/Features/Extensions
 run symbols-test           $E/Service/SymbolCatalog.swift
@@ -401,6 +437,7 @@ run slow ext-test          -parse-as-library \
                            Tinycast/Platform/Images/IconCache.swift \
                            Tinycast/Platform/AppPaths.swift \
                            Tinycast/DesignSystem/Theme.swift \
+                           Tinycast/DesignSystem/CustomTheme.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
                            $E/Model/ExtensionBootConfig.swift \
                            $E/Model/ExtensionDeepLink.swift \

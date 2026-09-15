@@ -10,7 +10,7 @@ struct VolumeHUDView: View {
                 name: VolumeLevel.symbol(level: state.level, muted: state.muted),
                 size: Theme.Size.dialogIcon
             )
-            .foregroundStyle(Color.primary)
+            .foregroundStyle(Theme.Colors.textPrimary)
             HStack(spacing: Theme.Spacing.md) {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
@@ -34,7 +34,7 @@ struct VolumeHUDView: View {
         .padding(.vertical, Theme.Spacing.xxl)
         .padding(.horizontal, Theme.Spacing.xl)
         .frame(width: Theme.Size.hudWidth, height: Theme.Size.hudHeight)
-        .background(Theme.Colors.panelScrim)
+        .background(Theme.Colors.panelSurface())
         .background(VisualEffectView())
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.dialog, style: .continuous))
         .panelEntrance()

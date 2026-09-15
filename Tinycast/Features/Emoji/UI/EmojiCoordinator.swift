@@ -20,21 +20,23 @@ final class EmojiCoordinator {
         self.paletteCoordinator = paletteCoordinator
     }
 
-    func pasteEmoji(_ entry: EmojiEntry) {
+    func pasteEmoji(_ entry: EmojiEntry, tone override: EmojiSkinTone? = nil) {
         frequentEmoji.record(entry.glyph)
         let previous = windowController.previousApp
         paletteCoordinator.hidePalette(restoreFocus: false)
-        Paster.pasteString(entry.display(tone: settings.emojiSkinTone), previousApp: previous)
+        Paster.pasteString(
+            entry.display(tone: override ?? settings.emojiSkinTone), previousApp: previous)
     }
 
-    func copyEmoji(_ entry: EmojiEntry) {
+    func copyEmoji(_ entry: EmojiEntry, tone override: EmojiSkinTone? = nil) {
         frequentEmoji.record(entry.glyph)
         paletteCoordinator.hidePalette(restoreFocus: false)
-        Paster.copyString(entry.display(tone: settings.emojiSkinTone))
+        Paster.copyString(entry.display(tone: override ?? settings.emojiSkinTone))
     }
 
-    func pasteEmojiKeepingWindowOpen(_ entry: EmojiEntry) {
+    func pasteEmojiKeepingWindowOpen(_ entry: EmojiEntry, tone override: EmojiSkinTone? = nil) {
         frequentEmoji.record(entry.glyph)
-        windowController.pasteStringKeepingWindowOpen(entry.display(tone: settings.emojiSkinTone))
+        windowController.pasteStringKeepingWindowOpen(
+            entry.display(tone: override ?? settings.emojiSkinTone))
     }
 }

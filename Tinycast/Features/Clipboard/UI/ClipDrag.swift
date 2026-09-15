@@ -108,6 +108,13 @@ private final class ClipDragView: NSView, NSDraggingSource {
         switch payload {
         case .file(let url):
             return url as NSURL
+        case .files(let urls):
+            let item = NSPasteboardItem()
+            item.setPropertyList(
+                urls.map(\.path),
+                forType: NSPasteboard.PasteboardType("NSFilenamesPboardType"))
+            item.setString(urls.map(\.path).joined(separator: "\n"), forType: .string)
+            return item
         case .link(let url, let text):
             let item = NSPasteboardItem()
             item.setString(url.absoluteString, forType: .URL)
@@ -123,6 +130,11 @@ private final class ClipDragView: NSView, NSDraggingSource {
         switch payload {
         case .file(let url):
             // Cache-only: a decode on mouse-down stalls the frame the drag begins on.
+            return ImageThumbnail.cached(url, maxPixel: Self.previewPixel)
+                ?? FilePreviewThumbnail.cached(url, maxPixel: Self.previewPixel)
+                ?? NSWorkspace.shared.icon(forFile: url.path)
+        case .files(let urls):
+            guard let url = urls.first else { return Self.textImage("Files") }
             return ImageThumbnail.cached(url, maxPixel: Self.previewPixel)
                 ?? FilePreviewThumbnail.cached(url, maxPixel: Self.previewPixel)
                 ?? NSWorkspace.shared.icon(forFile: url.path)

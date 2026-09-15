@@ -1,4 +1,7 @@
 import Foundation
+import SQLite3
+
+private let BACKUP_SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 /// Stores → staged bundle: `plan` reads on the main actor, `write` does every byte of IO off it.
 @MainActor
@@ -91,10 +94,14 @@ enum BackupComposer {
         var written = 0
         var missing = 0
         var failure: Error?
+        let metadataReader = ClipboardMetadataReader(database: database)
         ClipboardStore.forEachStoredItem(inDatabaseAt: database) { item in
             guard failure == nil else { return }
+            guard item.kind != .file else { return }
             do {
-                guard let portable = try portableItem(item, into: bundle) else {
+                guard let portable = try portableItem(
+                    item, metadata: metadataReader.metadata(for: item.id), into: bundle)
+                else {
                     missing += 1
                     return
                 }
@@ -110,7 +117,7 @@ enum BackupComposer {
 
     /// nil when the image has gone; hardlinked where the volume allows, so PNGs cost inodes.
     private nonisolated static func portableItem(
-        _ item: ClipboardItem, into bundle: BackupBundle
+        _ item: ClipboardItem, metadata: ClipboardStore.StoredMetadata, into bundle: BackupBundle
     )
         throws -> BackupClipboardItem?
     {
@@ -134,20 +141,22 @@ enum BackupComposer {
             }
             imageName = name
         }
-        // A referenced file is exported as its path; a backup never carries bytes it never held.
-        if item.kind == .file, item.filePath.map(FileManager.default.fileExists) != true {
-            return nil
-        }
         let kind: BackupClipboardItem.Kind
         switch item.kind {
         case .text: kind = .text
         case .image: kind = .image
-        case .file: kind = .file
+        case .file: return nil
         }
         return BackupClipboardItem(
-            kind: kind, text: item.text, imageName: imageName,
-            createdAt: item.createdAt, sourceBundleID: item.sourceBundleID,
-            pinnedAt: item.pinnedAt)
+            kind: kind,
+            text: item.text,
+            imageName: imageName,
+            createdAt: item.createdAt,
+            sourceBundleID: item.sourceBundleID,
+            pinnedAt: item.pinnedAt,
+            name: metadata.name ?? item.name,
+            representations: metadata.representations,
+            qrPayloads: metadata.qrPayloads)
     }
 
     /// Markdown copied verbatim: both repositories read `.md` back, so a round trip loses nothing.
@@ -167,5 +176,135 @@ enum BackupComposer {
             copied += 1
         }
         return copied
+    }
+}
+
+/// One SQLite connection keeps metadata lookup incremental without reopening it per clip.
+private final class ClipboardMetadataReader {
+    private var database: OpaquePointer?
+    private var nameStatement: OpaquePointer?
+    private var representationsStatement: OpaquePointer?
+    private var qrStatement: OpaquePointer?
+
+    init(database url: URL) {
+        var opened: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &opened, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+            sqlite3_close_v2(opened)
+            return
+        }
+        database = opened
+        if let opened {
+            sqlite3_busy_timeout(opened, 5_000)
+            nameStatement = Self.prepare(
+                opened, "SELECT name FROM item_names WHERE item_id = ?1")
+            representationsStatement = Self.prepare(
+                opened,
+                """
+                SELECT ordinal, value_index, type_identifier, data
+                FROM item_representations WHERE item_id = ?1 ORDER BY ordinal, value_index
+                """)
+            qrStatement = Self.prepare(
+                opened, "SELECT value, is_url FROM item_qr WHERE item_id = ?1 ORDER BY ordinal")
+        }
+    }
+
+    deinit {
+        if let nameStatement { sqlite3_finalize(nameStatement) }
+        if let representationsStatement { sqlite3_finalize(representationsStatement) }
+        if let qrStatement { sqlite3_finalize(qrStatement) }
+        sqlite3_close_v2(database)
+    }
+
+    func metadata(for id: UUID) -> ClipboardStore.StoredMetadata {
+        guard database != nil else {
+            return ClipboardStore.StoredMetadata(
+                name: nil, filePaths: [], representations: [], qrPayloads: [])
+        }
+        let id = id.uuidString
+        return ClipboardStore.StoredMetadata(
+            name: name(for: id), filePaths: [], representations: representations(for: id),
+            qrPayloads: qrPayloads(for: id))
+    }
+
+    private func name(for id: String) -> String? {
+        guard let statement = nameStatement else { return nil }
+        bind(id, to: statement)
+        defer { reset(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return Self.string(statement, at: 0)
+    }
+
+    private func representations(for id: String) -> [ClipboardRepresentation] {
+        guard let statement = representationsStatement else { return [] }
+        bind(id, to: statement)
+        var result: [ClipboardRepresentation] = []
+        var currentType: String?
+        var values: [Data] = []
+        var total = 0
+
+        func flush() {
+            guard let currentType, !values.isEmpty else { return }
+            result.append(ClipboardRepresentation(typeIdentifier: currentType, values: values))
+        }
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let type = Self.string(statement, at: 2), !type.isEmpty else { continue }
+            if type != currentType {
+                flush()
+                guard result.count < ClipboardStore.maximumRepresentationCount else { break }
+                currentType = type
+                values = []
+            }
+            guard values.count < ClipboardStore.maximumValuesPerRepresentation else { continue }
+            let byteCount = Int(sqlite3_column_bytes(statement, 3))
+            guard byteCount <= ClipboardStore.maximumRepresentationBytes,
+                total + byteCount <= ClipboardStore.maximumRepresentationSetBytes,
+                let pointer = sqlite3_column_blob(statement, 3)
+            else { continue }
+            values.append(Data(bytes: pointer, count: byteCount))
+            total += byteCount
+            if total == ClipboardStore.maximumRepresentationSetBytes { break }
+        }
+        flush()
+        reset(statement)
+        return result
+    }
+
+    private func qrPayloads(for id: String) -> [ClipboardQRPayload] {
+        guard let statement = qrStatement else { return [] }
+        bind(id, to: statement)
+        var result: [ClipboardQRPayload] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard result.count < ClipboardQRPayload.maximumCount,
+                let value = Self.string(statement, at: 0), !value.isEmpty,
+                value.utf8.count <= ClipboardQRPayload.maximumBytes
+            else { continue }
+            let payload = ClipboardQRPayload(
+                value: value, isURL: sqlite3_column_int(statement, 1) != 0)
+            guard !result.contains(payload) else { continue }
+            result.append(payload)
+        }
+        reset(statement)
+        return result
+    }
+
+    private func bind(_ id: String, to statement: OpaquePointer) {
+        sqlite3_bind_text(statement, 1, id, -1, BACKUP_SQLITE_TRANSIENT)
+    }
+
+    private func reset(_ statement: OpaquePointer) {
+        sqlite3_reset(statement)
+        sqlite3_clear_bindings(statement)
+    }
+
+    private static func prepare(_ database: OpaquePointer, _ sql: String) -> OpaquePointer? {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
+        return statement
+    }
+
+    private static func string(_ statement: OpaquePointer, at index: Int32) -> String? {
+        guard let pointer = sqlite3_column_text(statement, index) else { return nil }
+        return String(cString: pointer)
     }
 }

@@ -38,7 +38,7 @@ struct QuickActionResultView: View {
         .overlay(alignment: .top) { measured(header) { headerHeight = $0 } }
         .overlay(alignment: .bottom) { measured(footer) { footerHeight = $0 } }
         .frame(width: metrics.size.quickActionPanel, height: panelHeight)
-        .background(Theme.Colors.panelScrim)
+        .background(Theme.Colors.panelSurface())
         .background(VisualEffectView())
         .clipShape(RoundedRectangle(cornerRadius: metrics.radius.dialog, style: .continuous))
         .panelEntrance()

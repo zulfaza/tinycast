@@ -96,9 +96,17 @@ private struct SnippetRow: View {
                         .font(.system(size: 12))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.secondary))
-            Text(record.snippet.name)
-                .font(metrics.typography.rowTitle)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: metrics.spacing.xxs) {
+                Text(record.snippet.name)
+                    .font(metrics.typography.rowTitle)
+                    .lineLimit(1)
+                if !record.snippet.tags.isEmpty {
+                    Text(record.snippet.tags.map { "#\($0)" }.joined(separator: " "))
+                        .font(metrics.typography.keyCap)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                        .lineLimit(1)
+                }
+            }
             Spacer(minLength: metrics.spacing.lg)
             if let keyword = record.snippet.keyword, !keyword.isEmpty {
                 Text(keyword)
@@ -157,9 +165,14 @@ private struct SnippetInfoSection: View {
     private var rows: [InfoRow] {
         var rows = [
             InfoRow(label: "Name", value: record.snippet.name),
-            InfoRow(label: "Content Type", value: "Text"),
+            InfoRow(label: "Content Type", value: "Markdown"),
             InfoRow(label: "Times Copied", value: usage.records[record.id]?.count.formatted() ?? "0")
         ]
+        if !record.snippet.tags.isEmpty {
+            rows.insert(
+                InfoRow(label: "Tags", value: record.snippet.tags.map { "#\($0)" }.joined(separator: " ")),
+                at: 1)
+        }
         if let lastUsed = usage.lastUsed(for: record.id) {
             rows.append(InfoRow(label: "Last Copied", value: Self.dateFormatter.string(from: lastUsed)))
         }

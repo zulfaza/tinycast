@@ -6,6 +6,8 @@ nonisolated enum ClipboardTextWorker {
 
     /// Mirrors `ClipboardTextExtractor.maximumTextBytes`: the helper is not in the app's module.
     private static let maximumOutputBytes = 32_000
+    private static let maximumQROutputBytes = ClipboardQRPayload.maximumCount
+        * (ClipboardQRPayload.maximumBytes * 6 + 64)
     private static let readSize = 4096
     /// The read loop and `waitUntilExit` block, so they stay off the cooperative pool.
     private static let queue = DispatchQueue(
@@ -19,14 +21,35 @@ nonisolated enum ClipboardTextWorker {
         return try await extract(at: URL(fileURLWithPath: path), isPDF: kind == .pdf, executable: executable)
     }
 
+    static func extractQR(_ item: ClipboardItem) async throws -> [ClipboardQRPayload] {
+        guard let path = item.imagePath ?? item.filePath else { return [] }
+        let kind = item.kind == .image ? ClipboardFileKind.image : ClipboardFileKind.of(path: path)
+        guard kind == .image else { return [] }
+        let executable = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/ClipboardTextHelper")
+        let data = try await extractRaw(
+            arguments: ["qr", URL(fileURLWithPath: path).path], executable: executable,
+            timeout: .seconds(60), maximumBytes: maximumQROutputBytes)
+        return try JSONDecoder().decode([ClipboardQRPayload].self, from: data)
+    }
+
     static func extract(
         at url: URL, isPDF: Bool, executable: URL, timeout: Duration = .seconds(60)
     ) async throws -> String {
+        let data = try await extractRaw(
+            arguments: [isPDF ? "pdf" : "image", url.path], executable: executable, timeout: timeout,
+            maximumBytes: maximumOutputBytes)
+        guard let text = String(data: data, encoding: .utf8) else { throw Failure.recognition }
+        return text
+    }
+
+    private static func extractRaw(
+        arguments: [String], executable: URL, timeout: Duration, maximumBytes: Int
+    ) async throws -> Data {
         try Task.checkCancellation()
         let process = Process()
         let output = Pipe()
         process.executableURL = executable
-        process.arguments = [isPDF ? "pdf" : "image", url.path]
+        process.arguments = arguments
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
@@ -40,18 +63,23 @@ nonisolated enum ClipboardTextWorker {
         }
         let result = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                queue.async { continuation.resume(returning: collect(from: process, reading: output)) }
+                queue.async {
+                    continuation.resume(
+                        returning: collect(from: process, reading: output, maximumBytes: maximumBytes))
+                }
             }
         } onCancel: {
             terminate(process)
         }
         deadline.cancel()
         try Task.checkCancellation()
-        return try result.get()
+        return Data(try result.get().utf8)
     }
 
     /// Blocking throughout, and the only place a helper is reaped: every exit runs the `defer`.
-    private static func collect(from process: Process, reading output: Pipe) -> Result<String, Failure> {
+    private static func collect(
+        from process: Process, reading output: Pipe, maximumBytes: Int
+    ) -> Result<String, Failure> {
         let reader = output.fileHandleForReading
         defer {
             terminate(process)
@@ -62,7 +90,7 @@ nonisolated enum ClipboardTextWorker {
         do {
             while let chunk = try reader.read(upToCount: readSize), !chunk.isEmpty {
                 data.append(chunk)
-                if data.count > maximumOutputBytes { return .failure(.outputLimit) }
+                if data.count > maximumBytes { return .failure(.outputLimit) }
             }
         } catch {
             return .failure(.recognition)

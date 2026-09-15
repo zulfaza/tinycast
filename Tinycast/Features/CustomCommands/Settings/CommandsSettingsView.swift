@@ -115,7 +115,7 @@ private struct CustomCommandSettingsRow: View {
 
             Button(action: onDelete) {
                 Image(systemName: "trash")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.Colors.destructive)
             }
             .buttonStyle(.plain)
             .help("Delete Command")

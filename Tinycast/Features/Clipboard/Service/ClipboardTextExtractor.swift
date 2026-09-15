@@ -25,6 +25,33 @@ nonisolated enum ClipboardTextExtractor {
         return bounded(try await recognize(image))
     }
 
+    static func extractQRCodes(at url: URL) async throws -> [ClipboardQRPayload] {
+        try Task.checkCancellation()
+        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile == true, let size = values.fileSize,
+            size <= maximumFileBytes,
+            let image = autoreleasepool(invoking: { image(at: url) })
+        else { return [] }
+        var result: [ClipboardQRPayload] = []
+        for y in stride(from: 0, to: max(1, image.height - tileOverlap), by: tileDimension - tileOverlap) {
+            for x in stride(from: 0, to: max(1, image.width - tileOverlap), by: tileDimension - tileOverlap) {
+                try Task.checkCancellation()
+                let rect = CGRect(
+                    x: x, y: y, width: min(tileDimension, image.width - x),
+                    height: min(tileDimension, image.height - y))
+                guard let tile = image.cropping(to: rect) else { continue }
+                let observations = try await detectQRCodes(in: tile)
+                for value in observations where value.utf8.count <= ClipboardQRPayload.maximumBytes {
+                    let payload = ClipboardQRPayload(value: value)
+                    guard !result.contains(payload) else { continue }
+                    result.append(payload)
+                    if result.count == ClipboardQRPayload.maximumCount { return result }
+                }
+            }
+        }
+        return result
+    }
+
     private static func image(at url: URL) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
             let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
@@ -70,6 +97,14 @@ nonisolated enum ClipboardTextExtractor {
         let observations = try await request.perform(on: image)
         try Task.checkCancellation()
         return observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+    }
+
+    private static func detectQRCodes(in image: CGImage) async throws -> [String] {
+        var request = DetectBarcodesRequest()
+        request.symbologies = [.qr]
+        let observations = try await request.perform(on: image)
+        try Task.checkCancellation()
+        return observations.compactMap(\.payloadString)
     }
 
     private static func extractPDF(_ url: URL) async throws -> String {

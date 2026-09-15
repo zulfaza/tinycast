@@ -16,7 +16,7 @@ struct PermissionsSettingsView: View {
                         systemImage: accessibilityTrusted
                             ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
                     )
-                    .foregroundStyle(accessibilityTrusted ? Color.green : Color.orange)
+                    .foregroundStyle(accessibilityTrusted ? Theme.Colors.success : Color.orange)
                 } label: {
                     SettingsRowTitle(.permissionsAccessibility, "Accessibility")
                     Text("Lets Tinycast paste a clipboard item into the app you were using.")

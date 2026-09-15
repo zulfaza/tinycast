@@ -14,11 +14,8 @@ struct SnippetsScreen: PaletteScreen {
     var rows: [StoredSnippet] {
         let _ = store.usageRevision
         let enabled = store.snippets.filter { $0.snippet.isEnabled }
-        let query = vm.query.trimmingCharacters(in: .whitespaces)
-        let filtered = query.isEmpty ? enabled : enabled.filter { record in
-            record.snippet.name.localizedCaseInsensitiveContains(query)
-                || record.snippet.keyword?.localizedCaseInsensitiveContains(query) == true
-        }
+        let filter = SnippetFilter(query: vm.query.trimmingCharacters(in: .whitespaces))
+        let filtered = enabled.filter(filter.matches)
         return filtered.sorted { lhs, rhs in
             let leftGroup = SnippetUsageGroup.allCases.firstIndex(of: store.usage.group(for: lhs.id)) ?? 0
             let rightGroup = SnippetUsageGroup.allCases.firstIndex(of: store.usage.group(for: rhs.id)) ?? 0
@@ -43,6 +40,7 @@ struct SnippetsScreen: PaletteScreen {
         guard let record = record(at: selection) else { return nil }
         return SnippetActionsMenu.content(
             record: record, core: core,
+            canEdit: store.isWritable(record),
             userArguments: SnippetArgumentsAccessory.values(
                 for: record, coordinator: core.snippetCoordinator, vm: vm))
     }
@@ -107,26 +105,32 @@ struct SnippetsScreen: PaletteScreen {
 @MainActor
 enum SnippetActionsMenu {
     static func content(
-        record: StoredSnippet, core: AppCore, userArguments: [String: String]
+        record: StoredSnippet, core: AppCore, canEdit: Bool, userArguments: [String: String]
     ) -> PopoverMenuContent {
-        PopoverMenuContent(
-            header: record.snippet.name,
-            items: [
-                PopoverMenuItem(title: "Paste Snippet", systemImage: "text.quote", shortcut: "↵") {
-                    core.snippetCoordinator.expandSnippetFromPalette(
-                        id: record.id, userArguments: userArguments)
-                },
+        var items = [
+            PopoverMenuItem(title: "Paste Snippet", systemImage: "text.quote", shortcut: "↵") {
+                core.snippetCoordinator.expandSnippetFromPalette(
+                    id: record.id, userArguments: userArguments)
+            }
+        ]
+        if canEdit {
+            items.append(
                 PopoverMenuItem(title: "Edit Snippet", systemImage: "pencil", startsSection: true) {
                     core.paletteCoordinator.hidePalette(restoreFocus: false)
                     core.snippetCoordinator.editSnippet(record)
-                },
-                PopoverMenuItem(title: "Create Snippet", systemImage: "plus") {
-                    core.paletteCoordinator.hidePalette(restoreFocus: false)
-                    core.snippetCoordinator.editSnippet(nil)
-                },
-                PopoverMenuItem(title: "Show in Finder", systemImage: "folder", startsSection: true) {
-                    core.snippetCoordinator.showSnippetInFinder(record)
-                }
-            ])
+                })
+        }
+        items.append(
+            PopoverMenuItem(title: "Create Snippet", systemImage: "plus") {
+                core.paletteCoordinator.hidePalette(restoreFocus: false)
+                core.snippetCoordinator.editSnippet(nil)
+            })
+        items.append(
+            PopoverMenuItem(title: "Show in Finder", systemImage: "folder", startsSection: true) {
+                core.snippetCoordinator.showSnippetInFinder(record)
+            })
+        return PopoverMenuContent(
+            header: record.snippet.name,
+            items: items)
     }
 }

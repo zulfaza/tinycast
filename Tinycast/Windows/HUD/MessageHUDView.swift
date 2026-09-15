@@ -15,7 +15,7 @@ struct MessageHUDView: View {
         HStack(spacing: Theme.Spacing.md) {
             Text(message)
                 .font(Theme.Typography.bar)
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(Theme.Colors.textPrimary)
                 .lineLimit(1)
             mark
         }
@@ -24,7 +24,7 @@ struct MessageHUDView: View {
         .frame(maxWidth: Theme.Size.hudMaxWidth, alignment: .leading)
         .fixedSize()
         // Not glass: with nothing to lens it falls back to an opaque backing and shows.
-        .background(Theme.Colors.panelScrim)
+        .background(Theme.Colors.panelSurface())
         .background(VisualEffectView())
         .clipShape(Capsule())
     }
