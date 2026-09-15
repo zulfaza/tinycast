@@ -73,7 +73,7 @@ struct CustomThemeSettingsView: View {
             onCompletion: importTheme)
         .fileExporter(
             isPresented: $showingExporter,
-            document: $exportDocument,
+            document: exportDocument,
             contentType: .json,
             defaultFilename: "Tinycast Theme.tinycast-theme",
             onCompletion: exportFinished)
@@ -107,7 +107,7 @@ struct CustomThemeSettingsView: View {
 
     private var gradientAngle: Binding<Double> {
         Binding(
-            get: { palette.gradient.map(Self.displayAngle) ?? 0 },
+            get: { palette.gradient.map { Self.displayAngle($0.angle) } ?? 0 },
             set: { angle in
                 guard let gradient = palette.gradient,
                     let updatedGradient = ThemeGradient(
