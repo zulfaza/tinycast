@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SnippetsSettingsView: View {
@@ -270,7 +271,11 @@ private struct SnippetEditorSheet: View {
             }
         }
         .padding(Theme.Spacing.xxl)
-        .frame(width: Theme.Size.editorSheetWidth)
+        .frame(width: Theme.Size.editorSheetWidth, height: 475)
+        .background(
+            SnippetEditorEventMonitor(
+                onEscape: { dismiss() }))
+        .onExitCommand(perform: dismiss.callAsFunction)
     }
 
     private var templateEditor: some View {
@@ -404,6 +409,45 @@ private struct SnippetEditorSheet: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+}
+
+private struct SnippetEditorEventMonitor: NSViewRepresentable {
+    let onEscape: () -> Void
+
+    @MainActor
+    final class Coordinator {
+        var monitor: Any?
+
+        isolated deinit {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak view] event in
+            guard let window = view?.window, event.window === window else { return event }
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            if event.keyCode == 53, modifiers.isEmpty {
+                onEscape()
+                return nil
+            }
+            return event
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        if let monitor = coordinator.monitor {
+            NSEvent.removeMonitor(monitor)
+            coordinator.monitor = nil
         }
     }
 }

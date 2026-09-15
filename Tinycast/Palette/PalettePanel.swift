@@ -19,6 +19,10 @@ final class PalettePanel: NSPanel {
     var onFieldEditorFocused: ((NSTextInputContext) -> Void)?
     /// Inline argument fields use arrows at their text boundaries to continue their focus ring.
     var onHeaderFieldBoundaryArrow: ((HeaderFieldBoundary) -> Bool)?
+    /// Inline argument fields need AppKit-level Tab handling because field editors consume it.
+    var onHeaderTab: ((Bool) -> Bool)?
+    /// Focused option fields cycle before the palette's row navigation sees their arrows.
+    var onHeaderOptionArrow: ((Int) -> Bool)?
     /// Arms hover from `sendEvent`, the one place both event streams pass through.
     weak var paletteState: PaletteState? {
         didSet {
@@ -190,6 +194,20 @@ final class PalettePanel: NSPanel {
         {
             return
         }
+        if event.type == .keyDown,
+            Int(event.keyCode) == kVK_Tab,
+            event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+            onHeaderTab?(event.modifierFlags.contains(.shift)) == true
+        {
+            return
+        }
+        if event.type == .keyDown,
+            event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]),
+            let delta = Self.optionArrowDelta(for: event),
+            onHeaderOptionArrow?(delta) == true
+        {
+            return
+        }
         if event.type == .keyDown, let boundary = headerFieldBoundary(for: event),
             onHeaderFieldBoundaryArrow?(boundary) == true
         {
@@ -203,6 +221,14 @@ final class PalettePanel: NSPanel {
             return
         }
         super.sendEvent(event)
+    }
+
+    private static func optionArrowDelta(for event: NSEvent) -> Int? {
+        switch Int(event.keyCode) {
+        case kVK_UpArrow: return -1
+        case kVK_DownArrow: return 1
+        default: return nil
+        }
     }
     init<Content: View>(rootView: Content) {
         super.init(

@@ -11,9 +11,11 @@ final class SettingsCoordinator {
 
     init(core: AppCore) {
         self.core = core
-        window = AppWindowController(
+        let window = AppWindowController(
             title: "Settings", contentSize: Theme.Size.settingsWindow, resizable: true,
             autosaveName: "SettingsWindow", activation: core.activationPolicy)
+        window.onWindowClosed = { [weak core] in core?.pendingSnippetEdit = nil }
+        self.window = window
     }
 
     /// A fresh window mounts on `tab`; an open one navigates to it, recording the jump in history.
@@ -70,6 +72,12 @@ final class SettingsCoordinator {
     func closeSettings() {
         window.close()
     }
+
+    func hide() {
+        window.hide()
+    }
+
+    var isVisible: Bool { window.isVisible }
 
     func focusExisting() -> Bool {
         window.focus()

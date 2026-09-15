@@ -17,6 +17,8 @@ final class SnippetCoordinator {
     /// The consent dialog and the `pendingSnippetEdit` handoff to the Settings pane.
     private unowned let core: AppCore
 
+    var interfaceMetrics: InterfaceMetrics { settings.interfaceSize.metrics }
+
     init(
         store: SnippetsStore,
         listener: SnippetKeywordListener,
@@ -112,6 +114,17 @@ final class SnippetCoordinator {
         settingsCoordinator.showSettings(tab: .snippets)
     }
 
+    var isEditingSnippet: Bool { core.pendingSnippetEdit != nil }
+
+    func toggleEditor() {
+        guard isEditingSnippet else { return }
+        if settingsCoordinator.isVisible {
+            settingsCoordinator.hide()
+        } else {
+            settingsCoordinator.showSettings(tab: .snippets)
+        }
+    }
+
     func showSnippetInFinder(_ record: StoredSnippet) {
         paletteCoordinator.hidePalette(restoreFocus: false)
         AppLauncher.showInFinder(record.fileURL)
@@ -154,10 +167,20 @@ final class SnippetCoordinator {
 
     /// The browser's ↵. The target has to be read before the panel hides, as the launcher's does.
     func expandSnippetFromPalette(id: StoredSnippet.ID) {
+        expandSnippetFromPalette(id: id, userArguments: [:])
+    }
+
+    func expandSnippetFromPalette(
+        id: StoredSnippet.ID, userArguments: [String: String]
+    ) {
         let target = windowController.previousTarget
         // One of our own editors is only reachable again once the palette hands key back to it.
         paletteCoordinator.hidePalette(restoreFocus: target?.ownEditor != nil)
-        expandSnippet(id: id, target: target)
+        expandSnippet(id: id, target: target, userArguments: userArguments)
+    }
+
+    func promptedArguments(for record: StoredSnippet) -> [SnippetTemplateEngine.MissingArgument] {
+        SnippetTemplateEngine.declaredArguments(in: record, snippets: store.snippets)
     }
 
     func expandSnippet(
@@ -165,7 +188,8 @@ final class SnippetCoordinator {
         target: InjectionTarget?,
         expectedKeyword: String? = nil,
         keywordLength: Int = 0,
-        automaticGeneration: UInt? = nil
+        automaticGeneration: UInt? = nil,
+        userArguments: [String: String] = [:]
     ) {
         let records = store.snippets
         guard let record = records.first(where: { $0.id == id }) else {
@@ -185,7 +209,8 @@ final class SnippetCoordinator {
         let result = SnippetTemplateEngine.expand(
             record,
             snippets: records,
-            context: context)
+            context: context,
+            userArguments: userArguments)
         if !result.missingArguments.isEmpty {
             promptSnippetArguments(
                 record: record,
@@ -196,11 +221,13 @@ final class SnippetCoordinator {
                 expectedKeyword: expectedKeyword,
                 keywordLength: keywordLength,
                 automaticGeneration: automaticGeneration,
-                confirmation: confirmation)
+                confirmation: confirmation,
+                userArguments: userArguments)
             return
         }
         completeSnippetExpansion(
             result,
+            recordID: record.id,
             target: target,
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
@@ -217,7 +244,8 @@ final class SnippetCoordinator {
         expectedKeyword: String?,
         keywordLength: Int,
         automaticGeneration: UInt?,
-        confirmation: String?
+        confirmation: String?,
+        userArguments: [String: String]
     ) {
         listener.isPromptingForArguments = true
         defer { listener.isPromptingForArguments = false }
@@ -237,9 +265,10 @@ final class SnippetCoordinator {
             record,
             snippets: records,
             context: context,
-            userArguments: arguments)
+            userArguments: userArguments.merging(arguments) { _, prompted in prompted })
         completeSnippetExpansion(
             result,
+            recordID: record.id,
             target: target,
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
@@ -249,6 +278,7 @@ final class SnippetCoordinator {
 
     private func completeSnippetExpansion(
         _ result: SnippetTemplateEngine.ExpansionResult,
+        recordID: StoredSnippet.ID,
         target: InjectionTarget?,
         expectedKeyword: String?,
         keywordLength: Int,
@@ -262,8 +292,9 @@ final class SnippetCoordinator {
             keywordLength: keywordLength,
             automaticGeneration: automaticGeneration,
             onDelivered: { [weak self] in
-                guard let self, let confirmation else { return }
-                self.showMessage(confirmation)
+                guard let self else { return }
+                self.store.recordUse(id: recordID)
+                if let confirmation { self.showMessage(confirmation) }
             })
     }
 }

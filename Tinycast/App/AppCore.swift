@@ -262,7 +262,14 @@ final class AppCore {
             hotKeys.doubleTapMonitor.healthTicker = healthTicker
             snippetListener.healthTicker = healthTicker
 
-            hotKeys.onTogglePalette = { [weak self] in self?.paletteCoordinator.togglePalette() }
+            hotKeys.onTogglePalette = { [weak self] in
+                guard let self else { return }
+                if self.snippetCoordinator.isEditingSnippet {
+                    self.snippetCoordinator.toggleEditor()
+                } else {
+                    self.paletteCoordinator.togglePalette()
+                }
+            }
             hotKeys.onRunCommand = { [weak self] id in self?.launcherCoordinator.runCommand(id) }
             hotKeys.onRunCustomCommand = { [weak self] id in
                 self?.customCommandCoordinator.runCustomCommand(id: id)

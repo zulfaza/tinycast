@@ -508,6 +508,9 @@ enum SettingsSearchCatalog {
             .extensionsInstall, "Search extensions",
             keywords: ["store", "browse", "install", "registry"]),
         .init(
+            .extensionsDeveloper, "Developer mode",
+            keywords: ["debug", "logging", "trace", "diagnostics"]),
+        .init(
             group: .extensionsInstall, "Registries",
             keywords: ["github", "source", "store"]),
         .init(

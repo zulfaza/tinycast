@@ -39,6 +39,25 @@ struct ExtensionIconTests {
         expect(icon.size.width > 0, "a missing icon falls back to the puzzle-piece tile")
     }
 
+    static func listPathFallbackIsSelective() {
+        let pathLabel = RenderNode(
+            id: 3, type: "List.Item.Detail.Metadata.Label",
+            props: ["title": .string("Path"), "text": .string("/Applications/Example.app/Contents/MacOS/Example")])
+        let detail = RenderNode(
+            id: 2, type: "List.Item.Detail",
+            props: ["metadata": .node(RenderNode(id: 4, type: "List.Item.Detail.Metadata", children: [pathLabel]))])
+        let withPath = RenderNode(id: 1, type: "List.Item", props: ["detail": .node(detail)])
+        let ordinary = RenderNode(id: 5, type: "List.Item", props: ["title": .string("No icon")])
+
+        expect(
+            ExtensionImage.listIcon(withPath, assetsPath: nil, isDark: true)?.source
+                == .fileIcon("/Applications/Example.app"),
+            "Path metadata infers the enclosing app icon")
+        expect(
+            ExtensionImage.listIcon(ordinary, assetsPath: nil, isDark: true) == nil,
+            "iconless rows do not reserve a placeholder slot")
+    }
+
     /// No SVG renderer knows a Raycast colour name, so the shape draws nothing.
     static func paletteColorsInSVGResolve() async {
         // The usage-ring shape every quota extension draws: a track and an arc, each named.
@@ -220,6 +239,7 @@ struct ExtensionIconTests {
     static func main() async {
         artworkIsNormalized()
         missingFileFallsBack()
+        listPathFallbackIsSelective()
         await inlineDataURLsDecode()
         await paletteColorsInSVGResolve()
 

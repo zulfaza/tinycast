@@ -67,7 +67,8 @@ struct RootPaletteView: View {
                 openArgumentOptions: openArgumentOptions)
         case .snippets:
             return SnippetsScreen(
-                store: snippets, core: core, vm: vm, openActions: openActions)
+                store: snippets, core: core, vm: vm, openActions: openActions,
+                openArgumentOptions: openArgumentOptions)
         case .emoji:
             return EmojiScreen(
                 index: emojiIndex, frequent: frequentEmoji, core: core, vm: vm,
@@ -265,7 +266,7 @@ struct RootPaletteView: View {
                 .background(
                     WindowReader {
                         hostWindow = $0
-                        installHeaderArrowHandler(in: $0)
+                        installHeaderKeyHandlers(in: $0)
                     }
                 )
                 // The window's frame is the size source, so the glass and clip stay matched.
@@ -364,7 +365,10 @@ struct RootPaletteView: View {
             .onChange(of: menuSelection) { syncMenuPanel(presenting: false) }
             .onDisappear {
                 menuPanel.hide()
-                (hostWindow as? PalettePanel)?.onHeaderFieldBoundaryArrow = nil
+                guard let panel = hostWindow as? PalettePanel else { return }
+                panel.onHeaderFieldBoundaryArrow = nil
+                panel.onHeaderTab = nil
+                panel.onHeaderOptionArrow = nil
             }
             .onAppear { searchFocused = !screen.hidesSearchField }
             .modifier(SearchFieldHiding(hidden: hidesSearchField, apply: applySearchFieldHiding))
@@ -430,7 +434,9 @@ struct RootPaletteView: View {
                     guard !vm.isComposing else { return .ignored }
                     // The fallback for a hidden-field screen with no control focused to answer.
                     let answersWithoutFocus = screen.hidesSearchField && screen.rows.isEmpty
-                    guard searchFocused || answersWithoutFocus else { return .ignored }
+                    guard searchFocused || argumentFocused != nil || answersWithoutFocus else {
+                        return .ignored
+                    }
                     activateSelection()
                     return .handled
                 }
@@ -474,6 +480,7 @@ struct RootPaletteView: View {
             .onKeyPress(keys: [.tab], phases: .down) { press in
                 // ⇥ inside an open list belongs to the list, not to the form's field order.
                 if vm.isControlListOpen { return .handled }
+                guard !vm.isComposing else { return .ignored }
                 if !menuOpen { advanceTabFocus(backwards: press.modifiers.contains(.shift)) }
                 return .handled
             }
@@ -1063,7 +1070,7 @@ struct RootPaletteView: View {
     }
 
     /// Right at an inline field's end and Left at its start continue the same ring as Tab.
-    private func installHeaderArrowHandler(in window: NSWindow?) {
+    private func installHeaderKeyHandlers(in window: NSWindow?) {
         guard let panel = window as? PalettePanel else { return }
         panel.onHeaderFieldBoundaryArrow = { boundary in
             guard !menuOpen, !vm.isControlListOpen, !isCollapsed,
@@ -1077,6 +1084,20 @@ struct RootPaletteView: View {
             case .trailing:
                 advanceTabFocus(backwards: false)
             }
+            return true
+        }
+        panel.onHeaderTab = { backwards in
+            guard !menuOpen, !vm.isControlListOpen, !vm.isComposing, !isCollapsed,
+                let accessory = headerAccessory, !accessory.fieldNames.isEmpty
+            else { return false }
+            advanceTabFocus(backwards: backwards)
+            return true
+        }
+        panel.onHeaderOptionArrow = { delta in
+            guard !menuOpen, !vm.isControlListOpen, !vm.isComposing, !isCollapsed,
+                let field = argumentFocused,
+                headerAccessory?.moveOption(field, delta) == true
+            else { return false }
             return true
         }
     }

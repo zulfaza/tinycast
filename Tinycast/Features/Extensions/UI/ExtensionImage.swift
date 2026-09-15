@@ -125,6 +125,24 @@ enum ExtensionImage {
         return text.count <= 4 ? .glyph(text) : nil
     }
 
+    static func listIcon(_ node: RenderNode, assetsPath: String?, isDark: Bool) -> Resolved? {
+        if let resolved = resolve(node.props["icon"], assetsPath: assetsPath, isDark: isDark) {
+            return resolved
+        }
+        guard let path = inferredFileIconPath(node) else { return nil }
+        return Resolved(source: .fileIcon(path))
+    }
+
+    private static func inferredFileIconPath(_ node: RenderNode) -> String? {
+        guard let metadata = node.node("detail")?.node("metadata"),
+            let path = metadata.children.first(where: {
+                $0.type == "List.Item.Detail.Metadata.Label" && $0.string("title") == "Path"
+            })?.string("text"), path.hasPrefix("/")
+        else { return nil }
+        guard let appMarker = path.range(of: ".app/", options: .caseInsensitive) else { return path }
+        return String(path[..<appMarker.lowerBound]) + ".app"
+    }
+
     /// Resolved once per appearance: the conversion is main-actor work a decode must skip.
     static func svgPalette(isDark: Bool) -> [String: String] {
         isDark ? darkSVGPalette : lightSVGPalette

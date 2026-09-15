@@ -75,7 +75,7 @@ same either way. A bare `JSContext` has the full modern language (checked: `Obje
 `Array.fromAsync`, `Intl`, lookbehind regex) and nothing else, so the runtime supplies `console`,
 timers, `fetch`, `URL`, `URLSearchParams`, `Blob`/`File`/`FormData`, `DOMException`,
 `TextEncoder`/`TextDecoder`, `AbortController`, `atob`/`btoa`,
-`ReadableStream`/`WritableStream`/`TransformStream` and `structuredClone` itself.
+`Event`/`EventTarget`, `ReadableStream`/`WritableStream`/`TransformStream` and `structuredClone` itself.
 
 ## The JS runtime
 
@@ -567,8 +567,10 @@ each async form reporting the child's real `pid` for `process.kill` — Timers p
 `crypto` (hashes, HMAC, PBKDF2, AES-CBC/ECB, random, UUID), `zlib` (gzip/zlib/raw deflate, both
 directions), `http`/`https` (`request` and `get`, buffered over the same URLSession bridge as
 `fetch`), `stream` (`Readable`, `Writable`, `Duplex`, `Transform`, `PassThrough`, `pipeline`,
-`finished`, plus `stream/promises` and `stream/web`), `util`, `events`, `buffer`, `url`, `querystring`, `punycode`, `assert`,
-`string_decoder`, `timers`. Every other built-in resolves to a stub that throws only when used, so a
+`finished`, plus `stream/promises`, `stream/web` and stream-state predicates), `net`'s IP predicates
+and HTTP socket bridge, `util`, `events`, `buffer` (`Buffer`, `Blob`), `url`, `querystring`, `punycode`,
+`assert`, `string_decoder`, `timers`, `async_hooks`, `diagnostics_channel`. Every other built-in
+resolves to a stub that throws only when used, so a
 bundle that merely references `dgram` or `http2` still loads.
 
 **Streams** — the stream core is Node's real contract, not a stand-in: an extension that ships
@@ -591,6 +593,11 @@ A bundle that ships its own HTTP client rather than calling `fetch` — node-fet
 shim answers it: one request when the body ends, one response chunk when the bridge replies. The
 transport decodes for us, so the response drops `content-encoding` and `content-length` rather than
 have the client gunzip plaintext.
+
+The socket bridge caps headers at 16 KiB, bodies at 8 MiB, and each buffered request/response at
+those limits plus 64 KiB for framing. Chunked request bodies are decoded within the same bounds;
+malformed, oversized, extra, or overlapping bytes fail deterministically rather than growing an
+unbounded buffer. The decoded request replaces `transfer-encoding` with its byte `content-length`.
 
 Two things decide whether it gets there. Axios enables that adapter only when
 `Object.prototype.toString.call(process)` reads `[object process]`, so `process` carries the tag; and
@@ -621,7 +628,7 @@ OAuth extensions it excluded are not counted yet — re-measure before quoting t
 | **WebSocket** | No polyfill yet; `URLSessionWebSocketTask` could back one. |
 | **Aborting a `fetch` already in flight** | `AbortSignal` is complete — `timeout`, `abort` and `any` included — and `fetch` checks it on both sides of the host call, so a caller gets its `AbortError`. The request itself still runs to completion: the signal isn't carried across the bridge, so nothing cancels the `URLSessionTask`. A timeout bounds the caller, not the network. |
 | **Streaming `child_process.spawn`** | `spawn` runs the child to completion and emits its output as one chunk (async-iterable, which is what `get-stream`/`execa` consume). True duplex streaming would need a bidirectional channel across the bridge. Extensions built on `execa`'s deeper stream API can still fail. |
-| **`net` / `tls`** | Resolve but throw on use. Nothing bridges a socket. |
+| **General `net` / `tls` sockets** | HTTP/1.1 written by bundled clients is bridged request-by-request. Arbitrary protocols, server sockets and duplex network streams remain unsupported. |
 | **Streaming HTTP** | The bridge answers a request with the whole body at once, so `http.request` delivers one chunk and `Response.body` replays bytes that already arrived. Server-sent events, network-level progress and backpressure onto the socket are all out of reach; `stream` itself is real enough to carry them the day the bridge is. |
 | **Tool/AI-extension entry points (`tools/`)** | Not surfaced. |
 
