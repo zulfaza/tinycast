@@ -75,7 +75,7 @@ same either way. A bare `JSContext` has the full modern language (checked: `Obje
 `Array.fromAsync`, `Intl`, lookbehind regex) and nothing else, so the runtime supplies `console`,
 timers, `fetch`, `URL`, `URLSearchParams`, `Blob`/`File`/`FormData`, `DOMException`,
 `TextEncoder`/`TextDecoder`, `AbortController`, `atob`/`btoa`,
-`Event`/`EventTarget`, `ReadableStream`/`WritableStream`/`TransformStream` and `structuredClone` itself.
+`ReadableStream`/`WritableStream`/`TransformStream` and `structuredClone` itself.
 
 ## The JS runtime
 
@@ -319,7 +319,7 @@ screens hold (see [palette.md](palette.md)).
   transition, anchored to the control that opened them.
 - **Feedback** — `showToast` stacks above the footer, `showHUD` is a centred pill, and `confirmAlert`
   goes through `DialogController` like every other question the app asks. Its dialog sits at
-  `.modalPanel`, above the palette's `.floating`, so a view command keeps its screen behind it — and
+  `.dialog`, above the palette's `.palette`, so a view command keeps its screen behind it — and
   the palette does not dismiss while it is up (`AppCore.isShowingDialog`), because dismissing pops to
   root, which would tear the command down before its `await confirmAlert(…)` ever returns.
 - **Command arguments** — a command declaring `arguments` shows inline fields sized to their
@@ -560,17 +560,15 @@ this). `ExtensionHostBridge` keeps those inside Tinycast: `raycast://extensions/
 runs that command when it's installed, anything else reopens the palette. Handing them to the workspace
 would launch Raycast itself.
 
-**Node built-ins** — `path`, `fs` (+ `fs/promises`, `createReadStream`/`createWriteStream`, and the
-descriptor calls `tar` unpacks through), `os`,
+**Node built-ins** — `path`, `fs` (+ `fs/promises`, `createReadStream`/`createWriteStream`, a snapshot-backed `opendir`, and
+the descriptor calls `tar` unpacks through), `os`,
 `child_process` (`exec`, `execFile`, `execSync`, `execFileSync`, `spawnSync`, and a buffered `spawn`,
 each async form reporting the child's real `pid` for `process.kill` — Timers pauses that way),
 `crypto` (hashes, HMAC, PBKDF2, AES-CBC/ECB, random, UUID), `zlib` (gzip/zlib/raw deflate, both
-directions), `http`/`https` (`request` and `get`, buffered over the same URLSession bridge as
-`fetch`), `stream` (`Readable`, `Writable`, `Duplex`, `Transform`, `PassThrough`, `pipeline`,
-`finished`, plus `stream/promises`, `stream/web` and stream-state predicates), `net`'s IP predicates
-and HTTP socket bridge, `util`, `events`, `buffer` (`Buffer`, `Blob`), `url`, `querystring`, `punycode`,
-`assert`, `string_decoder`, `timers`, `async_hooks`, `diagnostics_channel`. Every other built-in
-resolves to a stub that throws only when used, so a
+directions), `http`/`https` (`request`, `get` and `Agent`, buffered over the same URLSession bridge
+as `fetch`), `stream` (`Readable`, `Writable`, `Duplex`, `Transform`, `PassThrough`, `pipeline`,
+`finished`, plus `stream/promises` and `stream/web`), `util`, `events`, `buffer`, `url`, `querystring`, `punycode`, `assert`,
+`string_decoder`, `timers`. Every other built-in resolves to a stub that throws only when used, so a
 bundle that merely references `dgram` or `http2` still loads.
 
 **Streams** — the stream core is Node's real contract, not a stand-in: an extension that ships
@@ -588,20 +586,27 @@ host rather than returning a wrong path. Node's `windows` override is absent: Ti
 macOS, so drive-letter and UNC output would be unreachable. `url.pathToFileURL` escapes `?` and `#`
 so a filename holding either survives the round trip.
 
+The `fs` functions hand URL arguments to that same validator: a URL whose scheme is not `file:`
+throws `ERR_INVALID_URL_SCHEME` instead of degrading to its pathname, and `fs.existsSync` counts
+that as absence, like Node. Raycast's Visual Studio Code extension leans on the guard — a
+`vscode-remote://` workspace whose stripped pathname exists locally (an SSH host opened at `/`
+always does) would otherwise pass `isFolderEntry` and reach `fileURLToPath`, which took the whole
+Search Recent Projects command down.
+
 A bundle that ships its own HTTP client rather than calling `fetch` — node-fetch travels inside
 `@raycast/utils`, and axios has a Node adapter — reaches the network through `http.request`, so the
 shim answers it: one request when the body ends, one response chunk when the bridge replies. The
 transport decodes for us, so the response drops `content-encoding` and `content-length` rather than
 have the client gunzip plaintext.
 
-The socket bridge caps headers at 16 KiB, bodies at 8 MiB, and each buffered request/response at
-those limits plus 64 KiB for framing. Chunked request bodies are decoded within the same bounds;
-malformed, oversized, extra, or overlapping bytes fail deterministically rather than growing an
-unbounded buffer. The decoded request replaces `transfer-encoding` with its byte `content-length`.
-
 Two things decide whether it gets there. Axios enables that adapter only when
 `Object.prototype.toString.call(process)` reads `[object process]`, so `process` carries the tag; and
 follow-redirects inherits with `Writable.call(this)`, so `stream` hands out callable constructors.
+
+`http.Agent` is a real class whose `addRequest` does nothing, because the bridge owns every socket.
+A request calls it only for an `http.Agent` subclass, which is where axios-cookiejar-support's
+http-cookie-agent reads and writes its jar — Hide My Email is the reference case. URLSession folds
+repeated `Set-Cookie` headers into one line, so the response splits it back into Node's array.
 
 **Bundled helpers** — compiled Mach-O files and shebang scripts live in `assets/`. GitHub's raw-file
 downloads and some store zips lose their executable mode, so installation preserves Git tree mode
@@ -628,7 +633,7 @@ OAuth extensions it excluded are not counted yet — re-measure before quoting t
 | **WebSocket** | No polyfill yet; `URLSessionWebSocketTask` could back one. |
 | **Aborting a `fetch` already in flight** | `AbortSignal` is complete — `timeout`, `abort` and `any` included — and `fetch` checks it on both sides of the host call, so a caller gets its `AbortError`. The request itself still runs to completion: the signal isn't carried across the bridge, so nothing cancels the `URLSessionTask`. A timeout bounds the caller, not the network. |
 | **Streaming `child_process.spawn`** | `spawn` runs the child to completion and emits its output as one chunk (async-iterable, which is what `get-stream`/`execa` consume). True duplex streaming would need a bidirectional channel across the bridge. Extensions built on `execa`'s deeper stream API can still fail. |
-| **General `net` / `tls` sockets** | HTTP/1.1 written by bundled clients is bridged request-by-request. Arbitrary protocols, server sockets and duplex network streams remain unsupported. |
+| **`net` / `tls`** | Resolve but throw on use. Nothing bridges a socket. |
 | **Streaming HTTP** | The bridge answers a request with the whole body at once, so `http.request` delivers one chunk and `Response.body` replays bytes that already arrived. Server-sent events, network-level progress and backpressure onto the socket are all out of reach; `stream` itself is real enough to carry them the day the bridge is. |
 | **Tool/AI-extension entry points (`tools/`)** | Not surfaced. |
 

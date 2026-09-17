@@ -26,6 +26,7 @@ struct SettingsBackup: Codable {
         var hyperKeyIncludesShift: Bool?
         var hyperKeyQuickPress: String?
         var emojiSkinTone: String?
+        var emojiGridColumns: Int?
         var showInMenuBar: Bool?
         var popToRootSeconds: Int?
         var escapeKeyBehavior: String?
@@ -129,6 +130,7 @@ extension SettingsBackup {
             hyperKeyIncludesShift: s.hyperKeyIncludesShift,
             hyperKeyQuickPress: s.hyperKeyQuickPress.rawValue,
             emojiSkinTone: s.emojiSkinTone.rawValue,
+            emojiGridColumns: s.emojiGridColumns.rawValue,
             showInMenuBar: UserDefaults.standard.object(forKey: SettingsKey.showInMenuBar) == nil
                 ? true : UserDefaults.standard.bool(forKey: SettingsKey.showInMenuBar),
             popToRootSeconds: s.popToRootTimeout.rawValue,
@@ -300,6 +302,10 @@ extension SettingsBackup {
         }
         if let raw = s.emojiSkinTone, let tone = EmojiSkinTone(rawValue: raw) {
             settings.emojiSkinTone = tone
+            count += 1
+        }
+        if let raw = s.emojiGridColumns, let columns = EmojiGridColumns(rawValue: raw) {
+            settings.emojiGridColumns = columns
             count += 1
         }
         if let show = s.showInMenuBar {

@@ -23,8 +23,7 @@ final class DialogPanel: NSPanel {
             defer: false
         )
         isFloatingPanel = true
-        // Above the palette, so a confirmation is never buried under its trigger.
-        level = .modalPanel
+        level = .dialog
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isMovableByWindowBackground = false
         titleVisibility = .hidden
@@ -48,10 +47,10 @@ final class DialogPanel: NSPanel {
             onKey(.cancel)
         case kVK_Return, kVK_ANSI_KeypadEnter:
             onKey(.confirm)
-        case kVK_LeftArrow,
+        case kVK_LeftArrow where handlesArrowKeys,
             kVK_DownArrow where handlesArrowKeys:
             onKey(.decrement)
-        case kVK_RightArrow,
+        case kVK_RightArrow where handlesArrowKeys,
             kVK_UpArrow where handlesArrowKeys:
             onKey(.increment)
         default:

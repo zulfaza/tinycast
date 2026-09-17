@@ -12,6 +12,7 @@ struct AppEntry: Identifiable, Hashable, Sendable {
         case windowCommand
         case windowLayout
         case quicklink
+        case appleShortcut
         case extensionCommand
         case meeting
 
@@ -67,6 +68,12 @@ struct AppEntry: Identifiable, Hashable, Sendable {
                     label: "Quicklink", sectionTitle: "Quicklinks",
                     openVerb: "Open Quicklink", canHideFromSearch: false,
                     canRevealInFinder: false, isSymbolIcon: true)
+            case .appleShortcut:
+                // File-backed so every row draws the Shortcuts app's own icon.
+                return KindDescriptor(
+                    label: "Apple Shortcut", sectionTitle: "Apple Shortcuts",
+                    openVerb: "Run Shortcut", canHideFromSearch: true,
+                    canRevealInFinder: false, isSymbolIcon: false)
             case .extensionCommand:
                 // The label is per-entry, the owning extension's title; this is the fallback.
                 return KindDescriptor(
@@ -168,11 +175,16 @@ struct AppEntry: Identifiable, Hashable, Sendable {
         case .systemAction:
             return SystemActionCatalog.action(forEntryID: id).map { .systemAction(id: $0.id) }
         case .windowCommand:
-            return WindowCommandCatalog.command(forEntryID: id).map { .windowCommand(id: $0.id) }
+            if let command = WindowCommandCatalog.command(forEntryID: id) {
+                return .windowCommand(id: command.id)
+            }
+            return CustomWindowSize.id(fromEntryID: id).map { .customWindowSize(id: $0) }
         case .windowLayout:
             return WindowLayout.id(fromEntryID: id).map { .windowLayout(id: $0) }
         case .quicklink:
             return Quicklink.id(fromEntryID: id).map { .quicklink(id: $0) }
+        case .appleShortcut:
+            return AppleShortcut.id(fromEntryID: id).map { .appleShortcut(id: $0) }
         case .snippet, .extensionCommand, .meeting:
             return nil
         }
@@ -202,10 +214,11 @@ struct AppEntry: Identifiable, Hashable, Sendable {
             return CommandCatalog.command(for: self)?.sfSymbol ?? CustomQuickAction.sfSymbol
         case .systemAction: return SystemActionCatalog.action(forEntryID: id)?.sfSymbol ?? "questionmark"
         case .windowCommand:
-            return WindowCommandCatalog.command(forEntryID: id)?.sfSymbol ?? "questionmark"
+            return WindowCommandCatalog.command(forEntryID: id)?.sfSymbol
+                ?? CustomWindowSize.sfSymbol
         case .windowLayout: return WindowLayout.sfSymbol
         case .meeting: return "video.fill"
-        case .application, .systemSettings, .extensionCommand: return "questionmark"
+        case .application, .systemSettings, .appleShortcut, .extensionCommand: return "questionmark"
         }
     }
 
@@ -228,6 +241,14 @@ extension AppEntry {
             bundleID: nil, kind: .windowLayout, symbolName: layout.iconSymbol)
     }
 
+    /// A custom size shares the window commands' kind and section, as custom Quick Actions do.
+    init(_ size: CustomWindowSize) {
+        self.init(
+            id: size.entryID, name: size.name,
+            url: URL(string: "tinycast://window-size/" + size.id.uuidString)!,
+            bundleID: nil, kind: .windowCommand)
+    }
+
     /// The one row a custom Quick Action draws, wherever it is offered from.
     init(_ action: CustomQuickAction) {
         self.init(
@@ -244,6 +265,13 @@ extension AppEntry {
             bundleID: nil, kind: .quicklink,
             symbolName: quicklink.iconSymbol
                 ?? QuicklinkDestination.detect(quicklink.link)?.defaultSymbol)
+    }
+
+    /// No bundle id: that would key every shortcut's alias and ranking to the Shortcuts app.
+    init(_ shortcut: AppleShortcut, applicationURL: URL) {
+        self.init(
+            id: shortcut.entryID, name: shortcut.name, url: applicationURL, bundleID: nil,
+            kind: .appleShortcut)
     }
 }
 
@@ -310,8 +338,10 @@ final class AppIndex {
     private var discoveredEntries: [AppEntry] = []
     private var customCommandEntries: [AppEntry] = []
     private var windowCommandEntries: [AppEntry] = []
+    private var customWindowSizeEntries: [AppEntry] = []
     private var windowLayoutEntries: [AppEntry] = []
     private var quicklinkEntries: [AppEntry] = []
+    private var appleShortcutEntries: [AppEntry] = []
     private var customQuickActionEntries: [AppEntry] = []
     private var extensionEntries: [AppEntry] = []
     private var meetingEntries: [AppEntry] = []
@@ -394,6 +424,13 @@ final class AppIndex {
         publishEntries()
     }
 
+    /// Discovered from the Shortcuts app, so it arrives already built and sorted.
+    func setAppleShortcuts(_ entries: [AppEntry]) {
+        guard entries != appleShortcutEntries else { return }
+        appleShortcutEntries = entries
+        publishEntries()
+    }
+
     /// Events move on their own, so this comes from the store's change hook, not an edit.
     func setMeetings(_ entries: [AppEntry]) {
         guard entries != meetingEntries else { return }
@@ -413,6 +450,14 @@ final class AppIndex {
         let entries = visible ? Self.allWindowCommandEntries : []
         guard entries != windowCommandEntries else { return }
         windowCommandEntries = entries
+        publishEntries()
+    }
+
+    /// Replaces the custom-size slice, which shares its section with the window commands.
+    func setCustomWindowSizes(_ sizes: [CustomWindowSize]) {
+        let entries = sizes.sorted(by: CustomWindowSize.precedes).map(AppEntry.init)
+        guard entries != customWindowSizeEntries else { return }
+        customWindowSizeEntries = entries
         publishEntries()
     }
 
@@ -548,9 +593,10 @@ final class AppIndex {
         let updated =
             Self.named(meetingEntries) + discoveredEntries
             + Self.named(
-                extensionEntries + quicklinkEntries + snippetEntries + Self.systemActionEntries
-                    + windowLayoutEntries + windowCommandEntries + customCommandEntries
-                    + quickActionEntries + commandEntries)
+                extensionEntries + quicklinkEntries + appleShortcutEntries + snippetEntries
+                    + Self.systemActionEntries + windowLayoutEntries + windowCommandEntries
+                    + customWindowSizeEntries + customCommandEntries + quickActionEntries
+                    + commandEntries)
         guard updated != apps else { return }
         apps = updated
         entriesRevision &+= 1

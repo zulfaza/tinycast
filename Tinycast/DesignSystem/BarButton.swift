@@ -46,6 +46,7 @@ struct HeaderMenuButton: View {
     let help: String
     let action: () -> Void
     @Environment(\.metrics) private var metrics
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         title: String, icon: PopoverMenuIcon, isOpen: Bool, help: String,
@@ -87,9 +88,11 @@ struct HeaderMenuButton: View {
                     .font(metrics.typography.bar)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                // Points at the menu it opens, the way a native pop-up's chevron does.
-                Image(systemName: isOpen ? "chevron.up" : "chevron.down")
+                // One glyph rotates rather than swapping, so opening the menu cannot shift the layout.
+                Image(systemName: "chevron.down")
                     .font(metrics.typography.disclosure)
+                    .rotationEffect(.degrees(isOpen ? 180 : 0))
+                    .animation(reduceMotion ? nil : Theme.MenuMotion.chevronAnimation, value: isOpen)
             }
             .foregroundStyle(Theme.Colors.textSecondary)
         }

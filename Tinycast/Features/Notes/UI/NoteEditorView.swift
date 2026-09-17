@@ -81,6 +81,7 @@ struct NoteEditorView: NSViewRepresentable {
             isInstalling = true
             NoteEditorView.install(input.source, in: textView)
             textView.setSelectedRange(NSRange(location: selectionLocation, length: 0))
+            textView.refreshTasks()
             isInstalling = false
             textView.refreshCompletion()
             if resetUndo { editorUndoManager.removeAllActions() }
@@ -99,6 +100,7 @@ struct NoteEditorView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard !isInstalling, let textView else { return }
+            textView.updateTasks()
             let source = textView.string
             guard source != input.source else { return }
             input = NoteEditorInput(id: input.id, source: source, epoch: input.epoch)
@@ -156,7 +158,7 @@ struct NoteEditorView: NSViewRepresentable {
         textView.typingAttributes = baseAttributes
     }
 
-    private static let baseAttributes: [NSAttributedString.Key: Any] = [
+    static let baseAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.preferredFont(forTextStyle: .body),
         .foregroundColor: NSColor(Theme.Colors.noteText)
     ]

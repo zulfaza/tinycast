@@ -27,6 +27,7 @@ struct InterfaceMetrics: Equatable, Sendable {
         var xxxl: CGFloat { scaledPoints(Theme.Spacing.xxxl, scale) }
         var sectionHeaderBottom: CGFloat { scaledPoints(Theme.Spacing.sectionHeaderBottom, scale) }
         var sectionSpacing: CGFloat { scaledPoints(Theme.Spacing.sectionSpacing, scale) }
+        var emojiSectionSpacing: CGFloat { scaledPoints(Theme.Spacing.emojiSectionSpacing, scale) }
         var chatTranscriptBottom: CGFloat { scaledPoints(Theme.Spacing.chatTranscriptBottom, scale) }
         var chatFollowTailSlack: CGFloat { scaledPoints(Theme.Spacing.chatFollowTailSlack, scale) }
     }
@@ -36,6 +37,7 @@ struct InterfaceMetrics: Equatable, Sendable {
 
         var panel: CGFloat { scaledPoints(Theme.Radius.panel, scale) }
         var row: CGFloat { scaledPoints(Theme.Radius.row, scale) }
+        var emojiCell: CGFloat { scaledPoints(Theme.Radius.emojiCell, scale) }
         var menu: CGFloat { scaledPoints(Theme.Radius.menu, scale) }
         var menuRow: CGFloat { scaledPoints(Theme.Radius.menuRow, scale) }
         var barControl: CGFloat { scaledPoints(Theme.Radius.barControl, scale) }
@@ -69,6 +71,8 @@ struct InterfaceMetrics: Equatable, Sendable {
 
         var menuWidth: CGFloat { scaledPoints(Theme.Size.menuWidth, scale) }
         var clipboardFilterMenuWidth: CGFloat { scaledPoints(Theme.Size.clipboardFilterMenuWidth, scale) }
+        var fileSearchFilterMenuWidth: CGFloat { scaledPoints(Theme.Size.fileSearchFilterMenuWidth, scale) }
+        var emojiCategoryMenuWidth: CGFloat { scaledPoints(Theme.Size.emojiCategoryMenuWidth, scale) }
         var menuIcon: CGFloat { scaledPoints(Theme.Size.menuIcon, scale) }
         var menuBrandIcon: CGFloat { scaledPoints(Theme.Size.menuBrandIcon, scale) }
         var barBrandIcon: CGFloat { scaledPoints(Theme.Size.barBrandIcon, scale) }
@@ -83,8 +87,8 @@ struct InterfaceMetrics: Equatable, Sendable {
         var clipboardListWidth: CGFloat { scaledPoints(Theme.Size.clipboardListWidth, scale) }
         var clipboardMediaHeight: CGFloat { scaledPoints(Theme.Size.clipboardMediaHeight, scale) }
         var clipboardPreviewPixel: CGFloat { scaledPoints(Theme.Size.clipboardPreviewPixel, scale) }
+        var emojiGridInset: CGFloat { scaledPoints(Theme.Size.emojiGridInset, scale) }
         var emojiCell: CGFloat { scaledPoints(Theme.Size.emojiCell, scale) }
-        var argumentPromptWidth: CGFloat { scaledPoints(Theme.Size.argumentPromptWidth, scale) }
 
         var markdownListMarker: CGFloat { scaledPoints(Theme.Size.markdownListMarker, scale) }
         var markdownQuoteBar: CGFloat { scaledPoints(Theme.Size.markdownQuoteBar, scale) }

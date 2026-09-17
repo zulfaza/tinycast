@@ -63,7 +63,7 @@ Add a token rather than a magic number when introducing a new value.
 ### Interface Size (`InterfaceMetrics`)
 
 `AppSettings.interfaceSize` scales the palette and the surfaces that float with it — the ⌘K menu, the
-extension list panel, Quick Actions, the snippet prompt, dialogs and HUDs. Settings, Onboarding,
+extension list panel, Quick Actions, dialogs and HUDs. Settings, Onboarding,
 Support, Update, About and Notes never scale.
 
 `DesignSystem/InterfaceMetrics.swift` stores **only a scale** and derives every value from the `Theme`
@@ -91,7 +91,8 @@ Row content insets are `md`; list horizontal inset is `md`; the search icon alig
 
 Section-header rhythm has two dedicated tokens: `sectionHeaderBottom` (header → first row) and
 `sectionSpacing` (gap above every header **except the list's first**, which reads as the previous
-section's closing padding). See "Section headers" below.
+section's closing padding). The emoji grid uses the roomier `emojiSectionSpacing` between its tile
+groups. See "Section headers" below.
 
 ### Radius (`Theme.Radius`)
 
@@ -147,7 +148,9 @@ panel, the shortcut-recorder callout and the Notes switcher, and `menuRow` is de
 
 `panelWidth 750` · `panelHeight 475` · `headerHeight 44` · `bottomBarHeight 52` · `barButtonHeight 28` ·
 `rowIcon 24` · `keyCap 18` · `recorderKeyCap 16` · `menuButton 36` · `clipboardListWidth 290` ·
-`menuWidth 276` · `clipboardFilterMenuWidth 200` · `menuIcon 20` ·
+`menuWidth 276` · `clipboardFilterMenuWidth 200` · `fileSearchFilterMenuWidth 200` ·
+`emojiCategoryMenuWidth 220` · `menuIcon 20` ·
+`emojiGridInset 16` ·
 `menuOverflowFade 30` ·
 `settingsSidebar 215` · `settingsRowIcon 20` · `dialogWidth 420` · `dialogIcon 32` · `hudWidth 200` ·
 `hudHeight 100` · `volumeTrackHeight 6` · `volumeKnob 16` · `volumeReadout 38`
@@ -222,7 +225,7 @@ feature-local. See [features/themes.md](features/themes.md).
 
 Source: `Palette/PalettePanel.swift`, `Palette/RootPaletteView.swift`.
 
-- **`PalettePanel`** is a borderless `NSPanel`: `isOpaque = false`, `backgroundColor = .clear`, `.floating` level, `hasShadow`, `animationBehavior = .none`. The two more transparent Dark detents turn off the native shadow and its black outline, adding a one-point white gradient border with a brighter upper edge. It hosts SwiftUI via `NSHostingView`. `PaletteWindowController` centers it slightly above screen center (`+8%`) and dismisses it on `windowDidResignKey`.
+- **`PalettePanel`** is a borderless `NSPanel`: `isOpaque = false`, `backgroundColor = .clear`, `.palette` level (one above `.modalPanel`, so other apps' open panels never cover it), `hasShadow`, `animationBehavior = .none`. The two more transparent Dark detents turn off the native shadow and its black outline, adding a one-point white gradient border with a brighter upper edge. It hosts SwiftUI via `NSHostingView`. `PaletteWindowController` centers it slightly above screen center (`+8%`) and dismisses it on `windowDidResignKey`.
 - **The results layer fills the whole panel.** The header and bottom bar attach via `.safeAreaInset(edge: .top/.bottom)` as transparent overlays that float _over_ the list. The list underlaps them and dissolves at the edges.
 - **Header** (`headerHeight 44`): a back-chevron _or_ mode glyph, then the plain `TextField` (no border/background). Sub-screens (Clipboard, Calculator History) show the back chevron; the launcher shows a magnifying glass. The search icon aligns horizontally with row content.
 - **Compact keyboard entry:** pressing `↓` in the collapsed launcher expands the results and selects the first row without replacing or defocusing the shared search field.
@@ -263,9 +266,9 @@ remain click-only controls. Escape closes the switcher before hiding, while Comm
 control order the panel out. Show Notes only shows or focuses; focus loss leaves the panel visible.
 
 The editor is one native TextKit 2 surface. Its string is the canonical Markdown source, using one
-system font and the `noteText` color. Markdown markers remain visible and receive no parsing, rendering,
-formatting controls, task overlays, or link behavior. AppKit owns editing, undo, selection, Find, and
-marked text.
+system font and the `noteText` color. Task markers render as native accessible checkboxes positioned
+with TextKit 2 segment geometry, and completed task text is dimmed and struck through. Other Markdown
+markers and fenced code stay literal. AppKit owns editing, undo, selection, Find, and marked text.
 
 The switcher is its own glass panel over the editor, sized to its list up to a 240-point ceiling and
 never resizing the note window. Its plain search field and
@@ -356,7 +359,7 @@ Glass is **only** for floating controls, never the main surface.
 
 - `View.frosted(in:)` = `glassEffect(.regular.interactive().tint(glassFrost), in:)` + `.tint(.clear)` — interactive lensing with a whitish frost tint (`glassFrost`) so the glass reads brighter than clear. Used on the action-group capsule, the menu circle, `PopoverMenu` and a dialog's buttons — always _inside_ a window that already has a `VisualEffectView` behind it. Neither HUD uses it: on a panel of its own, glass has no backdrop to lens and falls back to an opaque backing that reads as a dark edge, so both take the panel recipe instead (see "Dialogs & HUD"). Tune the frost amount via the `glassFrost` token, not per call site.
 - **Menus are in-window overlays, not system popovers.** `.contextMenu`/`NSMenu` stall clicks for seconds inside a `LazyVStack` and spill outside the panel. Use `PopoverMenu` anchored to a corner via `.overlay`, inset `menuInset` (8pt) so its own corner isn't clipped by the panel's. A menu hung off a control instead of a corner — the clipboard type filter, `.topTrailing` — insets by that control's own metrics so their edges line up.
-- **A menu's `width` is fixed, never intrinsic**, so it can't jitter as its rows change: `menuWidth 276` by default, or a token of its own where that reads too wide (`clipboardFilterMenuWidth 200`).
+- **A menu's `width` is fixed, never intrinsic**, so it can't jitter as its rows change. Every header menu states its own at its `RootPaletteView.menuContent` case — `menuWidth 276`, or a token of its own where that reads too wide (`clipboardFilterMenuWidth`, `fileSearchFilterMenuWidth`, `emojiCategoryMenuWidth`) — so retuning one never moves another.
 - **`PopoverMenu`** uses `glassEffect(.regular)` with `menuPanel 16` corners and **no hand-tuned shadow** — Tahoe glass carries its own elevation; adding a drop shadow reads heavy and non-native. A footer menu raises only its attached bottom corner to the controls' 18-point radius, so the two silhouettes meet exactly.
 - `PopoverMenuRow`: leading glyph, label, trailing shortcut glyph, `menuHover` fill on hover, `menuRow 10` corner. Menus animate in with opacity and scale from the anchored corner, stretching briefly to 1.003 before settling; `Theme.MenuMotion` owns the entry, settle and shorter exit timings.
 - The glyph is a `PopoverMenuIcon`: `.symbol` (SF Symbol, `monochrome`, `menuSymbol` — or **red** when `isDestructive`) or `.file` (a real app icon via `IconCache`, used by the paste rows to show the paste target). `PopoverMenuItem` keeps a `systemImage:` convenience init, so symbol rows read exactly as before.
@@ -436,7 +439,7 @@ sole owner rule) and is the only presenter, so every confirmation in the app loo
   afterwards, so confirming Restart is never held up by an animation. The pill fades without the
   scale — a growing capsule reads bouncy.
 - **Non-activating**, like the palette: the dialog takes key focus for its own keys without pulling app
-  focus off whatever the user was in. It sits at `.modalPanel`, above the palette's `.floating`, and is
+  focus off whatever the user was in. It sits at `.dialog`, above the palette's `.palette`, and is
   centred on the **cursor's** display with the same slight optical lift the palette uses.
 - **`VolumeSlider`** is hand-drawn (track `volumeTrackHeight 6`, knob `volumeKnob 16`, `controlSurface`
   rail under a white-0.85 fill) with a monospaced-digit percentage in the same `volumeReadout 38` slot
@@ -517,7 +520,7 @@ per-scroll-view shim: chasing that flip after the fact is what caused the flash.
 
 `CameraPreviewPanel` is the third borderless surface, beside the dialog and the notes panel. It takes
 the same recipe — `panelScrim`, then `VisualEffectView`, then the clip — and the same optical lift a
-dialog takes, but sits at `.floating` rather than `.modalPanel` so a failure report still lands on
+dialog takes, but sits at `.floating` rather than `.dialog` so a failure report still lands on
 top of it.
 
 `AVCaptureVideoPreviewLayer` is hosted in one `NSViewRepresentable` and nothing else; the title,
@@ -528,8 +531,9 @@ it would couple two unrelated surfaces.
 ## Dialog accessories
 
 A dialog carries at most one control beyond its buttons, and `DialogAccessory` makes that structural
-rather than a convention — `.volume` for the Set Volume prompt, `.eventDraft` for New Event. Two
-things follow from the enum:
+rather than a convention — `.volume` for the Set Volume prompt, `.eventDraft` for New Event,
+`.snippetArguments` for a snippet's `{argument}` values. Text fields take `dialogTextField()` and
+choices are `DialogChip`s, never a menu `Picker`. Two things follow from the enum:
 
 - **Arrow keys belong to the accessory, not the panel.** `DialogPanel.handlesArrowKeys` is set from
   `DialogAccessory.claimsArrowKeys`, so the slider still steps on ←/→ while the New Event title field
@@ -631,9 +635,18 @@ system-drawn and a pane reads exactly as macOS System Settings does.
   `TextField` descendant would inherit as an invisible caret.
   `.searchable(placement: .sidebar)` renders nothing here — it needs a SwiftUI `NavigationSplitView`,
   and this sidebar is an `NSHostingController` in a real `NSSplitViewController`.
-- **A `Form` realizes every row it is handed.** `LauncherItemsSection` therefore holds its items in
-  a `LazyVStack` inside one Form row — 400 apps cost 55 ms and 69 views that way against 750 ms and
-  2040 eager. Any other unbounded list must do the same.
+- **A `Form` realizes every row it is handed, and a lazy stack rebuilds a row's AppKit controls.**
+  Handed 400 apps directly, a `Form` took 750 ms and 2040 views; a `LazyVStack` in one Form row
+  fixed that, but tears a row's `TextField` and checkbox — both `NSView`s — down when the row scrolls
+  off and builds them again when one scrolls on, about 7 ms and 4 ms on macOS 27. A fast scrollbar
+  drag replaces a screenful of rows per update, so the list froze for 100–400 ms at a time.
+  `LauncherItemsSection` therefore holds its items in `LauncherItemsTable`, an `NSTableView` filling
+  one Form row: it keeps a screenful of cells and hands each a new entry, and each cell hosts the
+  SwiftUI `LauncherItemRow`, so a reused row's controls update in place. A hosted row inherits nothing
+  from the pane, so the table injects the stores the row reads, and moves Tab on to the next row's
+  alias field itself; rows are a fixed 54 pt. A negative `.padding` doesn't move an AppKit view, so the
+  table hangs 15 pt past its own view into the Form row's padding, where the lazy stack's rows sat.
+  A long list whose rows hold no AppKit control can stay a `LazyVStack`.
 
 ### The window-layout editor
 
@@ -677,7 +690,9 @@ shortcut"), live held modifiers, and conflict (rejected caps + owner, orange).
 
 - **An ancestor draws it.** The open recorder publishes its bounds via `ShortcutRecorderAnchorKey`;
   `.shortcutRecorderPopoverHost()` sits on `SettingsDetailView` — one host above every pane's
-  `Form`, and on `OnboardingView`. An overlay on the row would be clipped by the scroll view.
+  `Form`, and on `OnboardingView`. An overlay on the row would be clipped by the scroll view. A
+  recorder in a `LauncherItemsTable` cell sits in its own hosting view, where the preference stops,
+  so the cell reports the recorder's frame and `LauncherItemsSection` republishes it as the anchor.
 - **`shortcutPopover.width` is load-bearing.** The callout centres on the recorder only while it
   fits either side of it; wider than that and the clamp kicks in and skews the caret.
   `Tests/callout-test.swift` pins this.
