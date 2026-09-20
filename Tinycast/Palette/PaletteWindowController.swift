@@ -43,6 +43,16 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
+    /// Returns a frame sharing the palette's current anchor, or its normal home when hidden.
+    func frameForAuxiliaryPanel(size: CGSize) -> NSRect {
+        guard let screen = targetScreen() ?? NSScreen.main ?? NSScreen.screens.first else {
+            return NSRect(origin: .zero, size: size)
+        }
+        let anchor = resolveAnchor() ?? defaultAnchor(on: screen)
+        return NSRect(
+            x: anchor.x, y: anchor.y - size.height, width: size.width, height: size.height)
+    }
+
     /// What the palette covered when it was summoned, for anything it expands into on dismissal.
     var previousTarget: InjectionTarget? {
         InjectionTarget.behindPalette(ownWindow: previousOwnWindow, app: previousApp)

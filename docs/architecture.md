@@ -134,6 +134,8 @@ driven imperatively from AppKit.
   literal source, switches among local Markdown files and stays visible on focus loss. The displayed
   string is the canonical file source; there is no source/display mapping.
   See [features/notes.md](features/notes.md).
+- **Snippet editor** — a feature-owned, borderless `NSPanel` managed by `SnippetCoordinator`. Create
+  and Edit open it directly; Settings remains independent.
 - **The main menu** — shaped by `TinycastApp`'s `.commands`, which rebinds ⌘Q to Close Settings. It is
   only ever on screen while a titled window is open, so it is Settings' menu bar. It must stay
   declarative.

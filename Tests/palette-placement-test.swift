@@ -206,6 +206,13 @@ struct PalettePlacementTests {
         expect(header.maxX, parent.maxX - inset * 2, "a header menu follows its trailing control")
         expect(header.maxY, parent.maxY - headerExtent, "a header menu opens below the field")
 
+        let fieldFrame = CGRect(x: 72, y: 18, width: 164, height: 26)
+        let field = MenuPanelCorner.belowHeaderField(fieldFrame).frame(
+            contentSize: content, parentFrame: parent, inset: inset,
+            headerExtent: headerExtent)
+        expect(field.minX, parent.minX + fieldFrame.minX, "an argument menu follows its field")
+        expect(field.maxY, parent.maxY - fieldFrame.maxY, "an argument menu opens below its field")
+
         let scale = Theme.MenuMotion.maximumScale
         let leadingCanvas = MenuPanelCorner.bottomLeading.scaledFrame(leading, by: scale)
         let trailingCanvas = MenuPanelCorner.bottomTrailing.scaledFrame(trailing, by: scale)

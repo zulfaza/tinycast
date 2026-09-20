@@ -38,6 +38,8 @@ struct RootPaletteView: View {
     @State private var menuSelection = 0
     /// The argument field whose choices are up, so `menuContent` can rebuild the same menu.
     @State private var argumentOptionsField: String?
+    /// Option selectors report their header-space frames so their menu can follow the field.
+    @State private var headerFieldFrames: [String: CGRect] = [:]
     @State private var menuPanel = MenuPanelController()
     /// The palette's own window, reported by `WindowReader`; the menu hangs off its frame.
     @State private var hostWindow: NSWindow?
@@ -395,8 +397,10 @@ struct RootPaletteView: View {
                 scroll = ScrollIntent(kind: .top)
                 fileSearch.search(vm.query, filter: vm.fileSearchFilter)
             }
+            .onChange(of: vm.selection) { headerFieldFrames = [:] }
             .onChange(of: vm.mode) {
                 vm.selection = 0
+                headerFieldFrames = [:]
                 vm.clipboardFilter = .all
                 vm.fileSearchFilter = .all
                 vm.emojiCategoryFilter = .all
@@ -446,7 +450,10 @@ struct RootPaletteView: View {
             .onChange(of: vm.menuQuery) { menuQueryChanged() }
             .onDisappear {
                 menuPanel.hide()
-                (hostWindow as? PalettePanel)?.onHeaderFieldBoundaryArrow = nil
+                if let panel = hostWindow as? PalettePanel {
+                    panel.onHeaderFieldBoundaryArrow = nil
+                    panel.onHeaderOptionArrow = nil
+                }
             }
             .onAppear { searchFocused = !screen.hidesSearchField }
             .modifier(SearchFieldHiding(hidden: hidesSearchField, apply: applySearchFieldHiding))
@@ -647,6 +654,9 @@ struct RootPaletteView: View {
             headerField
             if let accessory = headerAccessory {
                 accessory.view
+                    .onPreferenceChange(PaletteHeaderFieldFramesKey.self) {
+                        headerFieldFrames = $0
+                    }
                 Spacer(minLength: 0)
             }
             if tabOpensChat {
@@ -1160,7 +1170,10 @@ struct RootPaletteView: View {
         switch openMenu {
         case .app: .bottomLeading
         case .actions: .bottomTrailing
-        case .argumentOptions: .belowHeaderTrailing
+        case .argumentOptions:
+            argumentOptionsField.flatMap { headerFieldFrames[$0] }
+                .map(MenuPanelCorner.belowHeaderField)
+                ?? .belowHeaderTrailing
         case .clipboardFilter, .fileSearchFilter, .emojiCategory, .aiModel, .aiReasoning,
             .extensionAccessory:
             .belowHeaderTrailing
@@ -1298,6 +1311,12 @@ struct RootPaletteView: View {
                 advanceTabFocus(backwards: false)
             }
             return true
+        }
+        panel.onHeaderOptionArrow = { delta in
+            guard !menuOpen, !vm.isControlListOpen, !isCollapsed,
+                let field = argumentFocused, let accessory = headerAccessory
+            else { return false }
+            return accessory.moveOption(field, delta)
         }
     }
 

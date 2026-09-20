@@ -96,8 +96,16 @@ private extension MenuPanelCorner {
         switch self {
         case .bottomLeading: .bottomLeading
         case .bottomTrailing: .bottomTrailing
-        case .belowHeaderTrailing: .none
+        case .belowHeaderTrailing, .belowHeaderField: .none
         }
+    }
+}
+
+struct PaletteHeaderFieldFramesKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
     }
 }
 
