@@ -40,10 +40,10 @@ enum SnippetArgumentsAccessory {
                 guard let argument = arguments.first(where: { $0.name == name }),
                     !argument.options.isEmpty
                 else { return false }
-                let current = value(argument).wrappedValue
-                let index = argument.options.firstIndex(of: current) ?? (delta < 0 ? 0 : -1)
-                let next = (index + delta + argument.options.count) % argument.options.count
-                value(argument).wrappedValue = argument.options[next]
+                guard let next = SnippetArgumentOptionCycle.next(
+                    options: argument.options, current: value(argument).wrappedValue, delta: delta)
+                else { return false }
+                value(argument).wrappedValue = next
                 return true
             },
             placement: .besideSearchField,
@@ -87,6 +87,14 @@ enum SnippetArgumentsAccessory {
                     icon: value.wrappedValue == option ? .symbol("checkmark") : .blank
                 ) { value.wrappedValue = option }
             })
+    }
+}
+
+private enum SnippetArgumentOptionCycle {
+    static func next(options: [String], current: String, delta: Int) -> String? {
+        guard !options.isEmpty else { return nil }
+        let index = options.firstIndex(of: current) ?? (delta < 0 ? 0 : -1)
+        return options[(index + delta + options.count) % options.count]
     }
 }
 
@@ -134,17 +142,23 @@ private struct SnippetArgumentsRow: View {
                     .focusEffectDisabled()
                     .focused($focused, equals: argument.name)
                     .onKeyPress(.return) {
-                        onSubmit()
+                        openOptions(argument.name)
                         return .handled
+                    }
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: PaletteHeaderFieldFramesKey.self,
+                                value: [argument.name: proxy.frame(in: .global)])
+                        }
                     }
                     .onKeyPress(keys: [.upArrow, .downArrow], phases: [.down, .repeat]) { press in
                         let step = press.key == .upArrow ? -1 : 1
-                        let current = value(argument).wrappedValue
-                        let index = argument.options.firstIndex(of: current)
-                            ?? (step < 0 ? 0 : -1)
-                        let next = (index + step + argument.options.count)
-                            % argument.options.count
-                        value(argument).wrappedValue = argument.options[next]
+                        guard let next = SnippetArgumentOptionCycle.next(
+                            options: argument.options, current: value(argument).wrappedValue,
+                            delta: step)
+                        else { return .ignored }
+                        value(argument).wrappedValue = next
                         return .handled
                     }
                 }

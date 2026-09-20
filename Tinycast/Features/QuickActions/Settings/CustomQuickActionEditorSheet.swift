@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct CustomQuickActionEditRequest: Identifiable {
+struct CustomQuickActionSheetEditRequest: Identifiable {
     let id = UUID()
     let action: CustomQuickAction?
 }
@@ -29,7 +29,7 @@ struct CustomQuickActionEditorSheet: View {
     private static let placeholder =
         "Make the text more concise, keeping the writer's voice and meaning."
 
-    init(request: CustomQuickActionEditRequest, model: AIModelSelection?) {
+    init(request: CustomQuickActionSheetEditRequest, model: AIModelSelection?) {
         existing = request.action
         _name = State(initialValue: request.action?.name ?? "")
         _iconSymbol = State(initialValue: request.action?.iconSymbol)

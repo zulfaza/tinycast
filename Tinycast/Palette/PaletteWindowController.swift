@@ -8,7 +8,7 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
     private var panel: PalettePanel?
     private(set) var previousApp: NSRunningApplication?
     /// Our key window at summon time, so hiding hands focus back to Settings, not a stale app.
-    private weak var previousOwnWindow: NSWindow?
+    private(set) weak var previousOwnWindow: NSWindow?
     private var popToRootTimer: Timer?
     // Reopen beat the timeout, so select the preserved query.
     private var queryWasPreserved = false
@@ -43,6 +43,16 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
+    /// Returns a frame sharing the palette's current anchor, or its normal home when hidden.
+    func frameForAuxiliaryPanel(size: CGSize) -> NSRect {
+        guard let screen = targetScreen() ?? NSScreen.main ?? NSScreen.screens.first else {
+            return NSRect(origin: .zero, size: size)
+        }
+        let anchor = resolveAnchor() ?? defaultAnchor(on: screen)
+        return NSRect(
+            x: anchor.x, y: anchor.y - size.height, width: size.width, height: size.height)
+    }
+
     /// What the palette covered when it was summoned, for anything it expands into on dismissal.
     var previousTarget: InjectionTarget? {
         InjectionTarget.behindPalette(ownWindow: previousOwnWindow, app: previousApp)
@@ -52,14 +62,12 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
         Signposts.interval("PaletteWindowController.show") {
             // Summoned over one of our own windows: there is no external paste or focus target.
             let frontmost = NSWorkspace.shared.frontmostApplication
-            if frontmost?.processIdentifier == NSRunningApplication.current.processIdentifier {
-                previousApp = nil
-                // Never the palette itself: a mode switch re-shows it while it already holds key.
-                if let key = NSApp.keyWindow, key !== panel { previousOwnWindow = key }
-            } else {
-                previousApp = frontmost
-                previousOwnWindow = nil
-            }
+            let ownPID = NSRunningApplication.current.processIdentifier
+            previousApp = frontmost?.processIdentifier == ownPID ? nil : frontmost
+            // Recorded even when another app is frontmost: our panels take key without activating.
+            let key = NSApp.keyWindow
+            // A mode switch re-shows the palette while it holds key; keep what it recorded then.
+            if key !== panel { previousOwnWindow = key }
             // Once per summon, and from `previousApp`, so the label names the paste target.
             core.palette.pasteTarget = PasteTarget(app: previousApp)
             let panel = ensurePanel()
@@ -102,6 +110,19 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
         else { return nil }
         return ASCIIKeyboardLayout.character(for: event)?.lowercased()
             ?? event.charactersIgnoringModifiers?.lowercased()
+    }
+
+    /// Shift is allowed, since ⌘+ is a shifted = on most layouts; the base key decides.
+    private static func emojiGridZoom(from event: NSEvent) -> EmojiGridZoom? {
+        guard !event.isARepeat, event.modifierFlags.isDisjoint(with: [.option, .control]) else {
+            return nil
+        }
+        switch ASCIIKeyboardLayout.character(for: event) {
+        case "0": return .actualSize
+        case "=", "+": return .zoomIn
+        case "-": return .zoomOut
+        default: return nil
+        }
     }
 
     /// A local monitor sees the key before menu dispatch; returning nil swallows it.
@@ -209,6 +230,7 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
     /// Not for one of our own dialogs: hiding would tear down a command mid-`confirmAlert`.
     func windowDidResignKey(_ notification: Notification) {
         guard isVisible, !core.isShowingDialog else { return }
+        if core.palette.menuOpen { return }
         core.paletteCoordinator.hidePalette(restoreFocus: false)
     }
 
@@ -306,14 +328,6 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
             guard let core = self?.core, core.palette.query.isEmpty else { return false }
             // A form field owns the key: the text it deletes is the field's, not a query's.
             if core.palette.isEditingField { return false }
-            // The argument form steps back through the answers first, one key per field.
-            if core.palette.mode == .customCommandArguments,
-                let previous = core.customCommandArguments.retreat()
-            {
-                core.palette.query = previous
-                core.palette.selection = 0
-                return true
-            }
             if core.palette.mode == .extensionCommand {
                 core.extensionCoordinator.exitExtensionScreen()
                 return true
@@ -335,7 +349,12 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
         }
         // Handled at the panel: the field editor or a missing main menu eats these first.
         panel.onCommandShortcut = { [weak self] event in
-            guard let self, Self.commandCharacter(from: event) != nil else { return false }
+            guard let self else { return false }
+            if self.core.palette.mode == .emoji, let zoom = Self.emojiGridZoom(from: event) {
+                self.core.palette.noteEmojiGridZoom(zoom)
+                return true
+            }
+            guard Self.commandCharacter(from: event) != nil else { return false }
             if self.core.palette.mode == .launcher || self.core.palette.mode == .clipboard,
                 let index = FavoriteSlots.index(forKeyCode: event.keyCode)
             {

@@ -8,14 +8,14 @@ final class SettingsCoordinator {
     private unowned let core: AppCore
     /// The open window's session; the window's chrome and view tree own it, so this self-nils.
     private weak var navigation: SettingsNavigationState?
+    /// The same session owns its transient editor stack; no panel survives the Settings window.
+    private weak var editorPresenter: SettingsEditorPresenter?
 
     init(core: AppCore) {
         self.core = core
-        let window = AppWindowController(
+        window = AppWindowController(
             title: "Settings", contentSize: Theme.Size.settingsWindow, resizable: true,
             autosaveName: "SettingsWindow", activation: core.activationPolicy)
-        window.onWindowClosed = { [weak core] in core?.pendingSnippetEdit = nil }
-        self.window = window
     }
 
     /// A fresh window mounts on `tab`; an open one navigates to it, recording the jump in history.
@@ -26,41 +26,27 @@ final class SettingsCoordinator {
             return
         }
         let navigation = SettingsNavigationState(tab: tab ?? .general)
+        let editorPresenter = SettingsEditorPresenter(core: core, navigation: navigation)
         self.navigation = navigation
+        self.editorPresenter = editorPresenter
+        var split: SettingsSplitViewController?
         window.show(chrome: SettingsToolbarController(navigation: navigation)) {
-            SettingsSplitViewController(
-                sidebar: inject(SettingsSidebarView(), navigation),
-                detail: inject(SettingsDetailView(), navigation))
+            let controller = SettingsSplitViewController(
+                sidebar: inject(SettingsSidebarView(), navigation, editorPresenter),
+                detail: inject(SettingsDetailView(), navigation, editorPresenter))
+            split = controller
+            return controller
         }
+        editorPresenter.attach(to: split?.view.window)
     }
 
     /// Both columns are hosted separately, so each needs the whole environment.
-    private func inject(_ view: some View, _ navigation: SettingsNavigationState) -> some View {
-        view
-            .environment(navigation)
-            .environment(core)
-            .environment(core.settings)
-            .environment(core.appIndex)
-            .environment(core.hotKeys)
-            .environment(core.visibility)
-            .environment(core.aliases)
-            .environment(core.fallbacks)
-            .environment(core.customCommands)
-            .environment(core.snippetsStore)
-            .environment(core.emojiKeywords)
-            .environment(core.emojiIndex)
-            .environment(core.customThemes)
-            .environment(core.quicklinks)
-            .environment(core.windowLayouts)
-            .environment(core.calendarStore)
-            .environment(core.aiSettings)
-            .environment(core.mcpSettings)
-            .environment(core.quickActionSettings)
-            .environment(core.customQuickActions)
-            .environment(core.chatGPTSubscription)
-            .environment(core.installedAI)
-            // Propagates down so the window's materials show through, not each list's backing.
-            .scrollContentBackground(.hidden)
+    private func inject(
+        _ view: some View, _ navigation: SettingsNavigationState,
+        _ editorPresenter: SettingsEditorPresenter
+    ) -> some View {
+        view.settingsEnvironment(
+            core: core, navigation: navigation, editorPresenter: editorPresenter)
     }
 
     func showAbout() {
@@ -73,16 +59,17 @@ final class SettingsCoordinator {
 
     /// ⌘Q and the window's close button land here; the app itself keeps running.
     func closeSettings() {
+        editorPresenter?.dismissAll()
         window.close()
     }
 
-    func hide() {
-        window.hide()
+    func focusExisting() -> Bool {
+        window.focus()
     }
 
     var isVisible: Bool { window.isVisible }
 
-    func focusExisting() -> Bool {
-        window.focus()
+    func hide() {
+        window.hide()
     }
 }

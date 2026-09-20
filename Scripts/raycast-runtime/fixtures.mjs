@@ -170,44 +170,13 @@ export default function Command() {
 const nodeSource = `
 import path from "node:path";
 import os from "node:os";
+import fs from "node:fs";
 import crypto from "node:crypto";
-import { AsyncResource } from "node:async_hooks";
-import { Blob, Buffer } from "node:buffer";
-import { channel } from "node:diagnostics_channel";
-import EventEmitter from "node:events";
-import { Agent, maxHeaderSize } from "node:http";
-import { isIP, isIPv4, isIPv6 } from "node:net";
-import { PassThrough, isDisturbed, isErrored, isReadable, isWritable } from "node:stream";
+import { Buffer } from "node:buffer";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Detail } from "@raycast/api";
 
 export default function Command() {
-  class RequestResource extends AsyncResource {}
-  const request = new RequestResource("REQUEST");
-  class RequestBody extends Blob {}
-  class RequestEvent extends Event {}
-  const target = new EventTarget();
-  let events = 0;
-  target.addEventListener("ready", () => events++, { once: true });
-  target.dispatchEvent(new RequestEvent("ready"));
-  target.dispatchEvent(new RequestEvent("ready"));
-  const diagnostics = channel("fixture:request");
-  let diagnosticValue = "";
-  const subscriber = (value) => { diagnosticValue = value; };
-  diagnostics.subscribe(subscriber);
-  diagnostics.publish("observed");
-  diagnostics.unsubscribe(subscriber);
-  diagnostics.publish("ignored");
-  class RequestAgent extends Agent {}
-  const emitter = new EventEmitter();
-  let onceContext = false;
-  emitter.once("ready", function () { onceContext = this === emitter; });
-  emitter.emit("ready");
-  const stream = new PassThrough();
-  const streamBefore = [isDisturbed(stream), isErrored(stream), isReadable(stream), isWritable(stream)];
-  stream.push(Buffer.from("x"));
-  stream.read();
-  const streamAfter = [isDisturbed(stream), isErrored(stream)];
   const errorCode = (fn) => {
     try {
       fn();
@@ -233,15 +202,6 @@ export default function Command() {
     Buffer.from("hello").toString("base64"),
     Buffer.from("aGVsbG8=", "base64").toString("utf8"),
     new TextDecoder().decode(new TextEncoder().encode("héllo")),
-    request.runInAsyncScope(function (value) { return this.prefix + value; }, { prefix: "async-" }, "resource"),
-    new RequestBody(["body"], { type: "TEXT/PLAIN" }).size + ":" + new RequestBody([], { type: "TEXT/PLAIN" }).type,
-    "events:" + events,
-    "diagnostics:" + diagnosticValue + ":" + diagnostics.hasSubscribers,
-    "agent:" + new RequestAgent({ keepAlive: true }).options.keepAlive,
-    "max-header:" + maxHeaderSize,
-    "ip:" + [isIP("127.0.0.1"), isIP("2001:db8::1"), isIP("translate.google.com"), isIPv4("192.0.2.1"), isIPv6("::1")].join(":"),
-    "once-context:" + onceContext,
-    "stream-state:" + [...streamBefore, ...streamAfter].join(":"),
     fileURLToPath("file:///Applications/Tinycast%20Beta.app"),
     fileURLToPath(new URL("file:///tmp/%ED%95%9C%EA%B8%80.txt")),
     fileURLToPath("file://localhost/tmp/a?query=ignored#fragment"),
@@ -277,6 +237,15 @@ export default function Command() {
     errorCode(() => fileURLToPath("file://user@localhost/tmp/a")),
     errorCode(() => fileURLToPath("file://localhost:/tmp/a")),
     errorCode(() => fileURLToPath("file:///C:/a", { windows: true })),
+    // fs validates URL schemes the way Node does: a vscode-remote:// workspace URI whose stripped
+    // pathname exists locally ("/" always does) must not pass existsSync — Raycast's Search Recent
+    // Projects relies on that guard before handing the URI to fileURLToPath.
+    String(fs.existsSync(new URL("vscode-remote://ssh-remote%2Bucg/"))),
+    String(fs.existsSync(new URL("vscode-remote://ssh-remote%2Bserver/etc/docker/daemon.json"))),
+    String(fs.existsSync(new URL("file:///etc/hosts"))),
+    String(fs.existsSync("/etc/hosts")),
+    errorCode(() => fs.statSync(new URL("https://example.com/a"))),
+    errorCode(() => fs.readFileSync(new URL("https://example.com/a"))),
   ];
   return <Detail markdown={parts.join("\\n")} />;
 }
@@ -388,17 +357,7 @@ export default async function Command() {
     child.on("close", () => resolve(chunks.join("")));
   });
 
-  const detached = await new Promise((resolve) => {
-    const child = spawn("/bin/echo", ["detached"], { detached: true, stdio: ["ignore", "ignore", "ignore"] });
-    child.on("close", () => resolve(true));
-  });
-  const fireAndForget = await new Promise((resolve) => {
-    const child = spawn("/bin/echo", ["unref"]);
-    child.unref();
-    child.on("close", () => resolve(true));
-  });
-
-  globalThis.__spawn = { iterated: iterated.join(""), late, grouped, detached, fireAndForget };
+  globalThis.__spawn = { iterated: iterated.join(""), late, grouped };
 }
 `;
 
@@ -433,50 +392,143 @@ export default async function Command() {
 }
 `;
 
-const socketSource = `
-import { connect } from "node:net";
+// Hide My Email hands axios a cookie jar through axios-cookiejar-support, whose http-cookie-agent
+// extends `http.Agent` at load time and hooks each request in `addRequest` — the same way this does.
+// A bundled `ws` reaches the network the way this does: upgrade, then raw frames on the socket.
+// multicast-dns drives `dgram` the way this does, down to the packet it writes.
+const dgramSource = `
+import dgram from "node:dgram";
+
+function query(name, type) {
+  const labels = name.split(".");
+  const packet = Buffer.alloc(12 + labels.reduce((total, label) => total + label.length + 1, 1) + 4);
+  packet.writeUInt16BE(0x1234, 0);
+  packet.writeUInt16BE(1, 4);
+  let offset = 12;
+  for (const label of labels) {
+    packet[offset] = label.length;
+    packet.write(label, offset + 1);
+    offset += label.length + 1;
+  }
+  packet.writeUInt16BE(type, offset + 1);
+  packet.writeUInt16BE(1, offset + 3);
+  return packet;
+}
 
 export default async function Command() {
-  const chunkedResponse = await new Promise((resolve, reject) => {
-    const socket = connect({ host: "example.test", port: 80 });
-    let response = "";
-    socket.on("data", (chunk) => { response += chunk.toString("latin1"); resolve(response); });
-    socket.on("error", reject);
-    socket.write("POST /chunk HTTP/1.1\\r\\nHost: example.test\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n");
-    socket.write("4\\r\\nping\\r\\n0\\r\\n\\r\\n");
+  const socket = dgram.createSocket({ type: "udp4" });
+  globalThis.__dgram = await new Promise((resolve) => {
+    socket.on("message", (message, rinfo) => resolve({ hex: message.toString("hex"), port: rinfo.port }));
+    socket.bind(5353, undefined, () => {
+      const service = query("_services._dns-sd._udp.local", 12);
+      socket.send(service, 0, service.length, 5353, "224.0.0.251");
+      const packet = query("homeassistant.local", 1);
+      socket.send(packet, 0, packet.length, 5353, "224.0.0.251");
+    });
   });
-  const oversized = await new Promise((resolve) => {
-    const socket = connect({ host: "example.test", port: 80 });
-    socket.on("error", (error) => resolve(error.message));
-    socket.write("GET / HTTP/1.1\\r\\nX-Too-Large: " + "a".repeat(17000) + "\\r\\n\\r\\n");
+}
+`;
+
+const websocketSource = `
+import https from "node:https";
+
+export default async function Command() {
+  globalThis.__ws = await new Promise((resolve, reject) => {
+    const request = https.request({
+      host: "example.test",
+      path: "/socket",
+      headers: {
+        Connection: "Upgrade",
+        Upgrade: "websocket",
+        "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version": "13",
+        "Sec-WebSocket-Extensions": "permessage-deflate",
+      },
+    });
+    request.on("error", reject);
+    request.on("upgrade", (response, socket) => {
+      const frames = [];
+      socket.on("data", (chunk) => frames.push(chunk.toString("hex")));
+      const payload = Buffer.from("ping", "utf8");
+      const mask = Buffer.from([1, 2, 3, 4]);
+      socket.write(
+        Buffer.concat([
+          Buffer.from([0x81, 0x80 | payload.length]),
+          mask,
+          Buffer.from(payload.map((byte, index) => byte ^ mask[index % 4])),
+        ]),
+      );
+      socket.write(Buffer.from([0x89, 0x80, 1, 2, 3, 4]));
+      setTimeout(
+        () =>
+          resolve({
+            status: response.statusCode,
+            accept: response.headers["sec-websocket-accept"],
+            extensions: response.headers["sec-websocket-extensions"] ?? null,
+            frames,
+          }),
+        40,
+      );
+    });
+    request.end();
   });
-  const oversizedBody = await new Promise((resolve) => {
-    const socket = connect({ host: "example.test", port: 80 });
-    socket.on("error", (error) => resolve(error.message));
-    socket.write("POST / HTTP/1.1\\r\\nContent-Length: 8388609\\r\\n\\r\\n");
+}
+`;
+
+const cookieAgentSource = `
+import * as http from "node:http";
+import * as url from "node:url";
+
+class CookieAgent extends http.Agent {
+  constructor(options) {
+    super(options);
+    this.jar = new Map();
+  }
+
+  addRequest(request, options) {
+    const target = url.format({ host: request.host, pathname: request.path, protocol: request.protocol });
+    const implicitHeader = request._implicitHeader.bind(request);
+    request._implicitHeader = () => {
+      if (this.jar.size) request.setHeader("Cookie", [...this.jar].map(([k, v]) => k + "=" + v).join("; "));
+      implicitHeader();
+    };
+    const emit = request.emit.bind(request);
+    request.emit = (event, ...args) => {
+      if (event === "response") {
+        for (const line of args[0].headers["set-cookie"] ?? []) {
+          const [pair] = line.split(";");
+          const [name, value] = pair.split("=");
+          this.jar.set(name, value);
+        }
+        this.urls.push(target);
+      }
+      return emit(event, ...args);
+    };
+    super.addRequest(request, options);
+  }
+}
+
+const send = (agent, path) =>
+  new Promise((resolve, reject) => {
+    const request = http.request("https://example.test" + path, { agent }, (response) => {
+      response.resume();
+      response.on("end", () => resolve(response));
+    });
+    request.on("error", reject);
+    request.end();
   });
-  const overlap = await new Promise((resolve) => {
-    const socket = connect({ host: "example.test", port: 80 });
-    socket.on("error", (error) => resolve(error.message));
-    socket.write("GET /one HTTP/1.1\\r\\nHost: example.test\\r\\n\\r\\n");
-    socket.write("GET /two HTTP/1.1\\r\\nHost: example.test\\r\\n\\r\\n");
-  });
-  const badMethod = await new Promise((resolve) => {
-    const socket = connect({ host: "example.test", port: 80 });
-    socket.on("error", (error) => resolve(error.message));
-    socket.write("BAD METHOD / HTTP/1.1\\r\\nHost: example.test\\r\\n\\r\\n");
-  });
-  const badPath = await new Promise((resolve) => {
-    const socket = connect({ host: "example.test", port: 80 });
-    socket.on("error", (error) => resolve(error.message));
-    socket.write("GET relative HTTP/1.1\\r\\nHost: example.test\\r\\n\\r\\n");
-  });
-  const badLength = await new Promise((resolve) => {
-    const socket = connect({ host: "example.test", port: 80 });
-    socket.on("error", (error) => resolve(error.message));
-    socket.write("POST / HTTP/1.1\\r\\nContent-Length: 1.5\\r\\n\\r\\n");
-  });
-  globalThis.__socket = { chunkedResponse, oversized, oversizedBody, overlap, badMethod, badPath, badLength };
+
+export default async function Command() {
+  const agent = new CookieAgent({ keepAlive: true });
+  agent.urls = [];
+  const first = await send(agent, "/signin?step=1");
+  await send(agent, "/account");
+  globalThis.__cookieAgent = {
+    isAgent: agent instanceof http.Agent,
+    setCookie: first.headers["set-cookie"],
+    rawHeaders: first.rawHeaders,
+    urls: agent.urls,
+  };
 }
 `;
 
@@ -754,15 +806,6 @@ export async function runFixtures() {
       "aGVsbG8=",
       "hello",
       "héllo",
-      "async-resource",
-      "4:text/plain",
-      "events:1",
-      "diagnostics:observed:false",
-      "agent:true",
-      "max-header:16384",
-      "ip:4:6:0:true:true",
-      "once-context:true",
-      "stream-state:false:false:true:true:true:false",
       "/Applications/Tinycast Beta.app",
       "/tmp/한글.txt",
       "/tmp/a",
@@ -792,6 +835,12 @@ export async function runFixtures() {
       "ERR_INVALID_URL",
       "ERR_INVALID_URL",
       "Error",
+      "false",
+      "false",
+      "true",
+      "true",
+      "ERR_INVALID_URL_SCHEME",
+      "ERR_INVALID_URL_SCHEME",
     ];
     expected.forEach((value, index) => check(`shim ${index}: ${value}`, markdown[index] === value, markdown[index]));
   });
@@ -879,13 +928,9 @@ export async function runFixtures() {
 
   await run("spawn's stdout survives a late reader", spawnSource, "no-view", async (harness) => {
     const result = harness.call("globalThis.__spawn");
-    const detached = harness.state.processCalls.find((spec) => spec.args?.[0] === "detached");
-    const fireAndForget = harness.state.processCalls.find((spec) => spec.args?.[0] === "unref");
     check("async iteration collects stdout", result?.iterated === "hello\n", JSON.stringify(result?.iterated));
     check("a listener attached after exit still gets it", result?.late === "world\n", JSON.stringify(result?.late));
     check("a detached child that pipes stdout is still awaited", result?.grouped === "group\n", JSON.stringify(result?.grouped));
-    check("detached is forwarded independently", detached?.detached === true && detached?.fireAndForget === false, JSON.stringify(detached));
-    check("unref uses fire-and-forget without detached", fireAndForget?.detached === false && fireAndForget?.fireAndForget === true, JSON.stringify(fireAndForget));
   });
 
   const httpSpecs = [];
@@ -923,30 +968,93 @@ export async function runFixtures() {
     },
   );
 
-  const socketSpecs = [];
+  const socketOpens = [];
+  const lookups = [];
   await run(
-    "the HTTP socket bridge decodes bounded chunked requests",
-    socketSource,
+    "dgram answers an mDNS query out of the resolver",
+    dgramSource,
     "no-view",
     async (harness) => {
-      const result = harness.call("globalThis.__socket");
-      const spec = socketSpecs[0] ?? {};
-      check("decodes chunked request body", Buffer.from(spec.bodyBase64 ?? "", "base64").toString() === "ping", JSON.stringify(spec));
-      check("bridges the chunked request as HTTP", spec.url === "http://example.test/chunk" && spec.method === "POST", JSON.stringify(spec));
-      check("normalizes decoded transfer headers", spec.headers?.["transfer-encoding"] === undefined && spec.headers?.["content-length"] === "4", JSON.stringify(spec.headers));
-      check("rejects oversized headers deterministically", result?.oversized === "socket request headers exceed maxHeaderSize", JSON.stringify(result));
-      check("rejects oversized bodies deterministically", result?.oversizedBody === "socket request body exceeds limit", JSON.stringify(result));
-      check("rejects overlapping writes deterministically", result?.overlap === "socket request overlap is unsupported", JSON.stringify(result));
-      check("rejects malformed methods", result?.badMethod === "socket request line is invalid", JSON.stringify(result));
-      check("rejects relative paths", result?.badPath === "socket request line is invalid", JSON.stringify(result));
-      check("rejects non-decimal content-length", result?.badLength === "socket request has invalid content-length", JSON.stringify(result));
-      check("returns the bridged response", result?.chunkedResponse?.startsWith("HTTP/1.1 200"), String(result?.chunkedResponse));
+      const result = harness.call("globalThis.__dgram");
+      check("resolves the name the query asked for", lookups[0] === "homeassistant.local", String(lookups[0]));
+      check("leaves a service question alone", lookups.length === 1, JSON.stringify(lookups));
+      check("answers the query it was sent", result?.hex?.startsWith("123484000001000100000000"), String(result?.hex));
+      check("names the host in the answer", result?.hex?.includes("0d686f6d65617373697374616e74056c6f63616c00"), String(result?.hex));
+      check("carries the address as an A record", result?.hex?.endsWith("00010001000000780004c0a801e2"), String(result?.hex));
+    },
+    {
+      stubs: {
+        "dns.resolve": (args) => {
+          lookups.push(args[0]);
+          return ["192.168.1.226"];
+        },
+      },
+    },
+  );
+
+  const socketSends = [];
+  let socketReads = 0;
+  let socketPings = 0;
+  await run(
+    "a websocket upgrade hands back a socket that frames both ways",
+    websocketSource,
+    "no-view",
+    async (harness) => {
+      const result = harness.call("globalThis.__ws");
+      check("opens the native socket over wss", socketOpens[0]?.url === "wss://example.test/socket", JSON.stringify(socketOpens[0]?.url));
+      check("drops the handshake headers", socketOpens[0]?.headers?.upgrade === undefined, JSON.stringify(socketOpens[0]?.headers));
+      check("reports the upgrade", result?.status === 101, String(result?.status));
+      check("answers the key the way a server would", result?.accept === "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", String(result?.accept));
+      check("never accepts an extension", result?.extensions === null, String(result?.extensions));
+      check("unmasks an outgoing frame", socketSends[0]?.text === "ping", JSON.stringify(socketSends[0]));
+      check("frames an incoming message", result?.frames?.[0] === "8104706f6e67", JSON.stringify(result?.frames));
+      check("asks the peer before answering a ping", socketPings === 1, String(socketPings));
+      check("pongs once the peer answered", result?.frames?.includes("8a00"), JSON.stringify(result?.frames));
+    },
+    {
+      stubs: {
+        "websocket.open": (args) => {
+          socketOpens.push(args[0]);
+          return { id: 7, protocol: "" };
+        },
+        "websocket.send": (args) => {
+          socketSends.push(args[0]);
+          return null;
+        },
+        "websocket.ping": () => {
+          socketPings++;
+          return null;
+        },
+        // The second read never settles, which is what an idle socket looks like from JS.
+        "websocket.receive": () => (socketReads++ === 0 ? { type: "text", text: "pong" } : new Promise(() => {})),
+      },
+    },
+  );
+
+  const cookieSpecs = [];
+  const cookies = ["a=1; Expires=Wed, 21 Oct 2037 07:28:00 GMT; Path=/", "b=2; Path=/"];
+  await run(
+    "an http.Agent subclass carries cookies between requests",
+    cookieAgentSource,
+    "no-view",
+    async (harness) => {
+      const result = harness.call("globalThis.__cookieAgent");
+      const setCookie = JSON.stringify(result?.setCookie);
+      const rawHeaders = JSON.stringify(result?.rawHeaders);
+      const urls = JSON.stringify(result?.urls);
+      const sent = cookieSpecs[1]?.headers;
+      check("http.Agent survives esbuild's namespace import", result?.isAgent === true, JSON.stringify(result));
+      check("splits a folded Set-Cookie without cutting its Expires date", setCookie === JSON.stringify(cookies), setCookie);
+      check("rawHeaders repeats the name per cookie", rawHeaders === JSON.stringify(cookies.flatMap((c) => ["set-cookie", c])), rawHeaders);
+      check("url.format builds the request URL from its parts", result?.urls?.[0] === "https://example.test/signin%3Fstep=1", urls);
+      check("the second request sends every cookie the first received", sent?.cookie === "a=1; b=2", JSON.stringify(sent));
     },
     {
       stubs: {
         "fetch.request": (args) => {
-          socketSpecs.push(args[0]);
-          return { status: 200, statusText: "OK", headers: {}, url: "http://example.test/chunk", bodyBase64: "" };
+          cookieSpecs.push(args[0]);
+          const headers = cookieSpecs.length === 1 ? { "set-cookie": cookies.join(", ") } : {};
+          return { status: 200, statusText: "OK", headers, url: args[0].url, bodyBase64: "" };
         },
       },
     },

@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Identifies the editor to present; nil is "add", and the UUID keeps two opens distinct.
-struct QuicklinkEditRequest: Identifiable {
+private struct QuicklinkSheetEditRequest: Identifiable {
     let id = UUID()
     var quicklink: Quicklink?
 }

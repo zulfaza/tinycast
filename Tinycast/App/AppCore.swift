@@ -11,6 +11,7 @@ final class AppCore {
     let customCommands = CustomCommandStore()
     let quicklinks = QuicklinkStore()
     let windowLayouts = WindowLayoutStore()
+    let customWindowSizes = CustomWindowSizeStore()
     let clipboardStore = ClipboardStore()
     @ObservationIgnored private var clipboardTextIndexer: ClipboardTextIndexer?
     let clipboardManager: ClipboardManager
@@ -33,6 +34,8 @@ final class AppCore {
     let calcHistory = CalculatorHistoryStore()
     let currencyRates = CurrencyRateStore()
     let calendarStore = CalendarStore()
+    let dictionary = DictionarySession()
+    let regionNumberFormat = RegionNumberFormatMonitor()
     let meetingClock = MeetingClock()
     let updateChecker = UpdateCheckStore()
     let supportReminders: SupportReminderStore
@@ -40,6 +43,7 @@ final class AppCore {
     let emojiKeywords = EmojiKeywordStore()
     let frequentEmoji = FrequentEmojiStore()
     let customThemes = CustomThemeStore()
+    let pinnedEmoji = PinnedEmojiStore()
     let runningApps = RunningAppsMonitor()
     let palette = PaletteState()
     let fileSearch = FileSearchSession()
@@ -63,8 +67,6 @@ final class AppCore {
 
     /// Set when a quicklink editor should open with Settings; the pane consumes it.
     var pendingQuicklinkEdit: QuicklinkEditRequest?
-    /// Set when a snippet editor should open with Settings; the pane consumes it.
-    var pendingSnippetEdit: SnippetEditRequest?
     /// Set when a layout editor should open with Settings; the pane consumes it.
     var pendingWindowLayoutEdit: WindowLayoutEditRequest?
 
@@ -72,7 +74,6 @@ final class AppCore {
         store: snippetsStore, listener: snippetListener, injector: textInjector,
         clipboardStore: clipboardStore, appIndex: appIndex, settings: settings,
         windowController: windowController, paletteCoordinator: paletteCoordinator,
-        settingsCoordinator: settingsCoordinator,
         showMessage: { [unowned self] in self.showMessage($0) }, core: self)
     @ObservationIgnored private(set) lazy var quicklinkCoordinator = QuicklinkCoordinator(
         store: quicklinks, settings: settings,
@@ -102,7 +103,16 @@ final class AppCore {
         settingsCoordinator: settingsCoordinator, settings: settings, core: self)
     @ObservationIgnored private(set) lazy var windowCommandCoordinator = WindowCommandCoordinator(
         settings: settings, paletteCoordinator: paletteCoordinator, windowMover: windowMover,
-        spaceSwitcher: spaceSwitcher)
+        spaceSwitcher: spaceSwitcher, customSizes: customWindowSizes)
+    @ObservationIgnored private(set) lazy var customWindowSizeCoordinator =
+        CustomWindowSizeCoordinator(
+            store: customWindowSizes, settings: settings, appIndex: appIndex, hotKeys: hotKeys,
+            favorites: favorites, visibility: visibility, ranking: launcherRanking,
+            aliases: aliases, core: self)
+    @ObservationIgnored private(set) lazy var appleShortcutCoordinator = AppleShortcutCoordinator(
+        settings: settings, appIndex: appIndex, hotKeys: hotKeys, favorites: favorites,
+        visibility: visibility, ranking: launcherRanking, aliases: aliases,
+        paletteCoordinator: paletteCoordinator, core: self)
     @ObservationIgnored private(set) lazy var windowLayoutCoordinator = WindowLayoutCoordinator(
         store: windowLayouts, settings: settings, appIndex: appIndex, hotKeys: hotKeys,
         favorites: favorites, visibility: visibility, ranking: launcherRanking, aliases: aliases,
@@ -139,7 +149,8 @@ final class AppCore {
         calendarCoordinator: calendarCoordinator,
         core: self)
     @ObservationIgnored private(set) lazy var fallbackCoordinator = FallbackCoordinator(
-        store: fallbacks, quicklinks: quicklinks, settings: settings, core: self)
+        store: fallbacks, quicklinks: quicklinks, settings: settings,
+        visibility: visibility, core: self)
     @ObservationIgnored private(set) lazy var clipboardCoordinator = ClipboardCoordinator(
         clipboardStore: clipboardStore, clipboardManager: clipboardManager, settings: settings,
         appIndex: appIndex, palette: palette, windowController: windowController,
@@ -152,6 +163,8 @@ final class AppCore {
     @ObservationIgnored private(set) lazy var calendarCoordinator = CalendarCoordinator(
         store: calendarStore, clock: meetingClock, appIndex: appIndex, settings: settings,
         paletteCoordinator: paletteCoordinator, core: self)
+    @ObservationIgnored private(set) lazy var dictionaryCoordinator =
+        DictionaryCoordinator(paletteCoordinator: paletteCoordinator)
     @ObservationIgnored private(set) lazy var fileSearchCoordinator = FileSearchCoordinator(
         settings: settings, appIndex: appIndex, session: fileSearch, palette: palette,
         paletteCoordinator: paletteCoordinator, windowController: windowController, core: self)
@@ -181,8 +194,14 @@ final class AppCore {
     @ObservationIgnored private lazy var windowController = PaletteWindowController(core: self)
     @ObservationIgnored private lazy var messageHUD = MessageHUDController(settings: settings)
     @ObservationIgnored private lazy var clipboardEditor = ClipboardEditorWindowController(core: self)
+    private(set) var isShowingDialog = false
+    var isDimmingPaletteForDialog: Bool { isShowingDialog && paletteCoordinator.isVisible }
     /// Every confirmation, report and prompt; it also stops a held hotkey stacking them.
-    @ObservationIgnored private lazy var dialogs = DialogController(settings: settings)
+    @ObservationIgnored private lazy var dialogs = DialogController(
+        settings: settings,
+        onPresentationChanged: { [weak self] isPresenting in
+            self?.isShowingDialog = isPresenting
+        })
     private let healthTicker = HealthTicker()
 
     private init() {
@@ -219,6 +238,9 @@ final class AppCore {
             NSApp.setActivationPolicy(.accessory)
             applyAppearance()
             observeEffectiveAppearance()
+            pinnedEmoji.onPersistenceFailure = { [weak self] in
+                self?.showMessage("Couldn't save Emoji & Symbols pins", tone: .danger)
+            }
 
             appIndex.start(settings: settings)
             clipboardCoordinator.applyEnabled()
@@ -234,7 +256,7 @@ final class AppCore {
             customQuickActions.onChange = { [weak self] _ in
                 self?.quickActionCoordinator.applyCustomQuickActionsPresence()
             }
-            // Before `hotKeys.start` even when off: the prune reads it.
+            // Before `hotKeys.start` even when off: the prune reads it.o
             customQuickActions.load()
             quickActionCoordinator.applyEnabled()
             customCommands.onChange = { [weak self] _ in
@@ -320,6 +342,7 @@ final class AppCore {
                 customCommandIDs: Set(customCommands.commands.map(\.id)),
                 quicklinkIDs: Set(quicklinks.quicklinks.map(\.id)),
                 windowLayoutIDs: Set(windowLayouts.layouts.map(\.id)),
+                customWindowSizeIDs: Set(customWindowSizes.sizes.map(\.id)),
                 quickActionIDs: Set(customQuickActions.actions.map(\.id)))
             clipboardCoordinator.onRenameClip = { [weak self] item in
                 guard let self else { return }
@@ -409,6 +432,12 @@ final class AppCore {
             return customQuickActions.action(id: id)?.name
         case .windowLayout(let id):
             return windowLayouts.layout(id: id)?.name
+        case .customWindowSize(let id):
+            return customWindowSizes.size(id: id)?.name
+        case .appleShortcut(let id):
+            return appIndex.apps.first {
+                $0.kind == .appleShortcut && $0.id == AppleShortcut.entryID(for: id)
+            }?.name
         case .extensionCommand(let entryID):
             return appIndex.apps.first { $0.kind == .extensionCommand && $0.id == entryID }?.name
         case .togglePalette, .command, .systemAction, .windowCommand:
@@ -599,7 +628,6 @@ final class AppCore {
     private func invalidateThemeSurfaces() {
         for window in NSApp.windows where window.isVisible {
             window.contentView?.needsDisplay = true
-            window.displayIfNeeded()
         }
     }
 
@@ -652,7 +680,6 @@ final class AppCore {
             isRunningExtension: extensions.running != nil,
             isUninstalling: uninstall.isTrashing,
             isRecordingHotKey: hotKeys.recordingAction != nil,
-            isPromptingForArguments: customCommandArguments.isActive,
             isShowingDialog: isShowingDialog,
             isPaletteVisible: paletteCoordinator.isVisible)
     }
@@ -666,8 +693,11 @@ final class AppCore {
         await dialogs.notice(title: title, message: message, symbol: symbol, tone: tone)
     }
 
-    /// True while a dialog is up, so a surface behind one can tell it apart from losing focus.
-    var isShowingDialog: Bool { dialogs.isPresenting }
+    func fillSnippetArguments(
+        snippetName: String, arguments: [SnippetTemplateEngine.MissingArgument]
+    ) async -> [String: String]? {
+        await dialogs.fillSnippetArguments(snippetName: snippetName, arguments: arguments)
+    }
 
     /// `tone` styles the glyph, `confirmRole` the button; separate on purpose.
     func confirm(

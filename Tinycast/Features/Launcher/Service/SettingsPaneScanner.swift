@@ -12,7 +12,8 @@ enum SettingsPaneScanner {
         "com.apple.HeadphoneSettings": "Headphones"
     ]
     private static let iconOverrides: [String: EntryIcon] = [
-        "com.apple.Battery-Settings.extension": .contentType("com.apple.graphic-icon.battery")
+        "com.apple.Battery-Settings.extension": .contentType("com.apple.graphic-icon.battery"),
+        "com.apple.HeadphoneSettings": .symbol("headphones")
     ]
 
     /// Panes that shouldn't appear in the launcher at all (contextual/one-shot panes).

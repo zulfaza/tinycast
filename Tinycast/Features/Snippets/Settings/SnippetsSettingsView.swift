@@ -10,14 +10,12 @@ struct SnippetsSettingsView: View {
 
     var body: some View {
         @Bindable var settings = settings
-        @Bindable var core = core
         return Form {
             FeatureSwitchSection(
                 anchor: .snippetsSnippets,
                 enableTitle: "Enable snippets",
                 enableSubtitle:
                     "Reusable Markdown templates, expanded from the launcher or a typed keyword.",
-                launcherSubtitle: "Find your snippets in launcher search.",
                 // Enabling is also keyword-expansion consent, so it uses the confirming setter.
                 isEnabled: Binding(
                     get: { settings.snippetsEnabled },
@@ -51,10 +49,6 @@ struct SnippetsSettingsView: View {
         }
         .formStyle(.grouped)
         .settingsScrollTarget(.snippets)
-        // Presented from the pane, so the browser's Edit and Create rows can open it too.
-        .sheet(item: $core.pendingSnippetEdit) { request in
-            SnippetEditorSheet(record: request.record)
-        }
         .alert(item: $pendingDeletion) { record in
             Alert(
                 title: Text("Delete “\(record.snippet.name)”?"),
@@ -187,7 +181,7 @@ struct SnippetsSettingsView: View {
         }
 
         // The editor reports its own failures, so this covers the ones with no sheet behind.
-        if core.pendingSnippetEdit == nil, let operationError = snippetsStore.operationError {
+        if let operationError = snippetsStore.operationError {
             noticeSection(
                 "The snippet operation failed", operationError, tint: .red, retryHint: nil)
         }
@@ -237,12 +231,6 @@ struct SnippetsSettingsView: View {
     }
 }
 
-struct SnippetEditRequest: Identifiable {
-    let id = UUID()
-    /// nil for a snippet that has no file yet.
-    let record: StoredSnippet?
-}
-
 private struct SnippetSettingsRow: View {
     let record: StoredSnippet
     let canEdit: Bool
@@ -289,267 +277,5 @@ private struct SnippetSettingsRow: View {
         }
         if !canEdit { parts.append("Read-only shared library") }
         return parts.joined(separator: " · ")
-    }
-}
-
-private struct SnippetEditorSheet: View {
-    /// nil while adding; otherwise the record whose file (and revision) the save targets.
-    let record: StoredSnippet?
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(SnippetsStore.self) private var store
-    @FocusState private var isTemplateFocused: Bool
-    @State private var name: String
-    @State private var keyword: String
-    @State private var tags: String
-    @State private var text: String
-    @State private var selection: TextSelection?
-    @State private var isEnabled: Bool
-    @State private var showsConfirmation: Bool
-    @State private var errorMessage: String?
-    @State private var isSaving = false
-
-    init(record: StoredSnippet?) {
-        self.record = record
-        let snippet = record?.snippet
-        _name = State(initialValue: snippet?.name ?? "")
-        _keyword = State(initialValue: snippet?.keyword ?? "")
-        _tags = State(initialValue: snippet?.tags.joined(separator: ", ") ?? "")
-        _text = State(initialValue: snippet?.text ?? "")
-        _isEnabled = State(initialValue: snippet?.isEnabled ?? true)
-        _showsConfirmation = State(initialValue: snippet?.showsConfirmation ?? false)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-            Text(record == nil ? "Add Snippet" : "Edit Snippet")
-                .font(.title2.weight(.bold))
-
-            field(
-                title: "Name", placeholder: "Email Sign-off", text: $name,
-                hint: "Required. Shown in the library and launcher.")
-            field(
-                title: "Keyword", placeholder: "Optional, for example !notes", text: $keyword,
-                hint: "Optional. Type this to expand the snippet.")
-            field(
-                title: "Tags", placeholder: "Optional, comma-separated", text: $tags,
-                hint: "Optional. Filter browser results with #tag.")
-
-            templateEditor
-
-            VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                optionToggle(
-                    "Enabled", isOn: $isEnabled,
-                    detail: "Disabled snippets cannot be expanded.")
-                optionToggle(
-                    "Show confirmation", isOn: $showsConfirmation,
-                    detail: "Confirm on screen after this snippet is inserted.")
-            }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save", action: save)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(
-                        isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(Theme.Spacing.xxl)
-        .frame(width: Theme.Size.editorSheetWidth, height: 475)
-        .background(
-            SnippetEditorEventMonitor(
-                onEscape: { dismiss() }))
-        .onExitCommand(perform: dismiss.callAsFunction)
-    }
-
-    private var templateEditor: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack {
-                Text("Template")
-                    .font(.callout.weight(.medium))
-                Spacer()
-                placeholderMenu
-            }
-            TextEditor(text: $text, selection: $selection)
-                .font(.body.monospaced())
-                .scrollContentBackground(.hidden)
-                .padding(Theme.Spacing.sm)
-                .frame(height: Theme.Size.editorTextHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                        .fill(Theme.Colors.cardFill)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                        .strokeBorder(Theme.Colors.cardStroke, lineWidth: 1)
-                )
-                .focused($isTemplateFocused)
-                .accessibilityLabel("Snippet template")
-                .accessibilityHint("Enter the text Tinycast expands.")
-        }
-    }
-
-    /// Every placeholder the engine understands; parameters are in docs/features/snippets.md.
-    private var placeholderMenu: some View {
-        Menu("Insert…") {
-            Section("Text") {
-                placeholderItem("{cursor}")
-                placeholderItem("{clipboard}")
-                placeholderItem("{clipboard offset=1}")
-                placeholderItem("{selection}")
-                placeholderItem("{uuid}")
-            }
-            Section("Date & Time") {
-                placeholderItem("{date}")
-                placeholderItem("{time}")
-                placeholderItem("{datetime}")
-                placeholderItem("{day}")
-                placeholderItem("{date format=\"yyyy-MM-dd\"}")
-                placeholderItem("{date locale=\"fr-FR\"}")
-                placeholderItem("{time offset=\"+3h +30m\"}")
-            }
-            Section("Arguments") {
-                placeholderItem("{argument}")
-                placeholderItem("{argument name=\"Name\"}")
-                placeholderItem("{argument default=\"Default\"}")
-                placeholderItem("{argument options=\"One, Two\"}")
-            }
-            Section("Snippets") {
-                placeholderItem("{snippet:Name}")
-                placeholderItem("{snippet name=\"Name\"}")
-            }
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .accessibilityLabel("Insert a placeholder")
-    }
-
-    private func placeholderItem(_ token: String) -> some View {
-        Button(token) { insert(token) }
-    }
-
-    /// Replaces the selection or lands at the caret; appends when there is no usable one.
-    private func insert(_ token: String) {
-        if let selection, case .selection(let range) = selection.indices,
-            range.lowerBound >= text.startIndex, range.upperBound <= text.endIndex
-        {
-            text.replaceSubrange(range, with: token)
-        } else {
-            text += token
-        }
-        // Those indices belong to the replaced string, so they must not survive the next insert.
-        selection = nil
-        isTemplateFocused = true
-    }
-
-    private func field(
-        title: String, placeholder: String, text: Binding<String>, hint: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text(title)
-                .font(.callout.weight(.medium))
-            TextField(placeholder, text: text)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityLabel("Snippet \(title.lowercased())")
-                .accessibilityHint(hint)
-        }
-    }
-
-    private func optionToggle(
-        _ title: String, isOn: Binding<Bool>, detail: String
-    ) -> some View {
-        Toggle(isOn: isOn) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                Text(title)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .toggleStyle(.checkbox)
-    }
-
-    private var draft: Snippet {
-        Snippet(
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            text: text,
-            keyword: trimmedOrNil(keyword),
-            tags: tags.split(separator: ",").map(String.init),
-            isEnabled: isEnabled,
-            showsConfirmation: showsConfirmation)
-    }
-
-    private func trimmedOrNil(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func save() {
-        guard !isSaving else { return }
-        isSaving = true
-        Task {
-            defer { isSaving = false }
-            do {
-                // Saving keeps the revision, so an edit in between conflicts, not clobbers.
-                if var updated = record {
-                    updated.snippet = draft
-                    try await store.save(updated)
-                } else {
-                    try await store.create(draft)
-                }
-                dismiss()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-}
-
-private struct SnippetEditorEventMonitor: NSViewRepresentable {
-    let onEscape: () -> Void
-
-    @MainActor
-    final class Coordinator {
-        var monitor: Any?
-
-        isolated deinit {
-            if let monitor { NSEvent.removeMonitor(monitor) }
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
-            [weak view] event in
-            guard let window = view?.window, event.window === window else { return event }
-            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            if event.keyCode == 53, modifiers.isEmpty {
-                onEscape()
-                return nil
-            }
-            return event
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        if let monitor = coordinator.monitor {
-            NSEvent.removeMonitor(monitor)
-            coordinator.monitor = nil
-        }
     }
 }

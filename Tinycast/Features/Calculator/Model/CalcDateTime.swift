@@ -69,8 +69,6 @@ enum CalcDateTime {
         return nil
     }
 
-    private static let bareMomentWords: Set<String> = ["now", "today", "tomorrow", "yesterday"]
-
     private static func calendarSummary(
         _ query: String, echo: String, now: Date, calendar: Calendar
     ) -> CalcResult? {
@@ -126,6 +124,8 @@ enum CalcDateTime {
             expression: echo, sourceBadge: String(year), targetBadge: "Work Hours",
             payload: .number(hours, suffix: " hr"))
     }
+
+    private static let bareMomentWords: Set<String> = ["now", "today", "tomorrow", "yesterday"]
 
     private static func clockRange(
         _ query: String, echo: String, now: Date, calendar: Calendar

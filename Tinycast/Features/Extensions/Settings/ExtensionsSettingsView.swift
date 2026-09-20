@@ -23,10 +23,7 @@ struct ExtensionsSettingsView: View {
             FeatureSwitchSection(
                 anchor: .extensionsExtensions,
                 enableTitle: "Enable extensions",
-                enableSubtitle:
-                    "Run Raycast extensions natively. A running command holds a JavaScript engine "
-                    + "in memory until you leave it.",
-                launcherSubtitle: "List every extension's commands in launcher search.",
+                enableSubtitle: "Run Raycast extensions natively.",
                 // Enabling is consent to run third-party code, so the setter confirms.
                 isEnabled: Binding(
                     get: { settings.extensionsEnabled },
@@ -34,9 +31,9 @@ struct ExtensionsSettingsView: View {
                 showsInLauncher: $settings.extensionsShowInLauncher)
 
             Group {
-                compatibility
                 install
                 library
+                compatibility
             }
             .settingsEnabled(settings.extensionsEnabled)
 
@@ -53,9 +50,9 @@ struct ExtensionsSettingsView: View {
         .onChange(of: settings.extensionsShowInLauncher) {
             core.extensionCoordinator.applyExtensionsLauncherPresence()
         }
-        // By item: `isPresented` builds the sheet from a snapshot taken before the write.
-        .sheet(item: $importCandidates) { candidates in
-            ExtensionImportSheet(
+        // By item: `isPresented` builds the panel from a snapshot taken before the write.
+        .settingsEditorPanel(item: $importCandidates) { candidates in
+            ExtensionImportPanel(
                 candidates: candidates.entries,
                 onImport: { chosen in
                     importCandidates = nil
@@ -63,11 +60,11 @@ struct ExtensionsSettingsView: View {
                 },
                 onCancel: { importCandidates = nil })
         }
-        .sheet(isPresented: $browsingStore) {
-            ExtensionStoreSheet(onClose: { browsingStore = false })
+        .settingsEditorPanel(isPresented: $browsingStore) {
+            ExtensionStorePanel(onClose: { browsingStore = false })
         }
-        .sheet(isPresented: $editingRegistries) {
-            ExtensionRegistriesSheet(onClose: { editingRegistries = false })
+        .settingsEditorPanel(isPresented: $editingRegistries) {
+            ExtensionRegistriesPanel(onClose: { editingRegistries = false })
         }
         .onReceive(NotificationCenter.default.publisher(for: .tinycastSelectExtension)) { note in
             if let name = note.object as? String { expanded = name }
@@ -88,25 +85,16 @@ struct ExtensionsSettingsView: View {
                 EmptyView()
             } label: {
                 Label("What works", systemImage: "checkmark.circle")
-                Text(
-                    "List, detail, form and grid commands, and ones that just run. Preferences, "
-                        + "arguments, storage, the clipboard, toasts, HUDs and OAuth sign-in. "
-                        + "No-view commands refresh their subtitle on their manifest interval.")
+                Text("List, detail, form, grid and no-view commands, plus preferences, storage and OAuth.")
             }
             LabeledContent {
                 EmptyView()
             } label: {
                 Label("What doesn't, yet", systemImage: "xmark.circle")
-                Text(
-                    "Menu-bar commands, sign-ins routed through Raycast's own OAuth proxy, and "
-                        + "Raycast's AI, browser and window-management services.")
+                Text("Menu-bar commands, Raycast's OAuth proxy, and its AI, browser and window services.")
             }
         } header: {
             SettingsSectionHeader(.extensionsCompatibility)
-        } footer: {
-            Text("An extension that needs something missing says so when you run it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -116,7 +104,7 @@ struct ExtensionsSettingsView: View {
     private var library: some View {
         Section {
             if core.extensions.installed.isEmpty {
-                Text("Nothing installed yet — search for one under Install, below.")
+                Text("Nothing installed yet.")
                     .foregroundStyle(.secondary)
             } else {
                 if core.extensions.installed.count > 3 {
@@ -152,12 +140,6 @@ struct ExtensionsSettingsView: View {
                 Text(
                     core.extensions.installed.isEmpty
                         ? "Installed" : "Installed (\(core.extensions.installed.count))")
-            }
-        } footer: {
-            if let error {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
             }
         }
     }
@@ -206,7 +188,7 @@ struct ExtensionsSettingsView: View {
             }
             SettingsRow(
                 title: "Add from folder",
-                subtitle: "A folder holding package.json and the built command files.",
+                subtitle: "A folder with package.json and built commands.",
                 anchor: .extensionsInstall
             ) {
                 Image(systemName: "folder")
@@ -218,7 +200,7 @@ struct ExtensionsSettingsView: View {
             SettingsSectionHeader(.extensionsInstall)
         } footer: {
             if let error {
-                // Under the buttons that caused it: it used to sit beneath the list, far above.
+                // Under the buttons that caused it.
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -298,10 +280,10 @@ struct ExtensionsSettingsView: View {
         }
         if let importSummary { return importSummary }
         guard raycastAvailable else {
-            return "No Raycast install found in ~/.config — checked raycast and raycast-x."
+            return "No Raycast install found in ~/.config."
         }
         guard !pending.isEmpty else {
-            return "Copy what Raycast has already built. No Node or package manager needed."
+            return "Copies what Raycast has already built."
         }
         let names = pending.map(\.installed.title)
             .sorted { $0.sortKey.localizedCaseInsensitiveCompare($1.sortKey) == .orderedAscending }
@@ -603,7 +585,7 @@ private struct ExtensionRefreshRow: View {
     }
 
     private func detail(for info: ExtensionCommandMetadata) -> String {
-        var detail = "Runs every \(schedule) in the background."
+        var detail = "Every \(schedule)."
         if let lastRun = info.lastRun {
             detail += " Last refresh \(Self.relative.localizedString(for: lastRun, relativeTo: Date()))."
         } else {
@@ -640,11 +622,11 @@ private struct ExtensionLauncherRow: View {
         }
     }
 
-    private func detail(visible: Int, of total: Int) -> String {
+    private func detail(visible: Int, of total: Int) -> String? {
         switch visible {
-        case 0: "Hidden from launcher search; shortcuts still work."
-        case total: "Its commands appear in launcher search."
-        default: "\(visible) of \(total) commands appear in launcher search."
+        case 0: "Hidden. Shortcuts still work."
+        case total: nil
+        default: "\(visible) of \(total) commands."
         }
     }
 }
@@ -663,8 +645,7 @@ private struct ExtensionIconRow: View {
     var body: some View {
         SettingsCardRow(
             title: "Launcher icon",
-            detail: appearance == nil
-                ? "The icon this extension ships." : "Replaced with a Tinycast icon."
+            detail: appearance == nil ? nil : "Custom icon."
         ) {
             HStack(spacing: Theme.Spacing.md) {
                 preview
@@ -794,14 +775,14 @@ struct RaycastImportCandidate: Identifiable {
     var id: String { installed.id }
 }
 
-/// One scan of the local Raycast install, carried as the import sheet's presentation item.
+/// One scan of the local Raycast install, carried as the import panel's presentation item.
 private struct ImportCandidates: Identifiable {
     let id = UUID()
     let entries: [RaycastImportCandidate]
 }
 
 /// Anything not already built starts selected, so the common case is one press.
-private struct ExtensionImportSheet: View {
+private struct ExtensionImportPanel: View {
     let candidates: [RaycastImportCandidate]
     let onImport: ([InstalledExtension]) -> Void
     let onCancel: () -> Void
@@ -821,12 +802,7 @@ private struct ExtensionImportSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                Text("Import from Raycast").font(.title2.weight(.bold))
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            ExtensionSettingsEditorHeader(title: "Import from Raycast", subtitle: subtitle)
 
             if candidates.count > 6 {
                 SettingsFilterField(prompt: "Filter…", query: $filter)
@@ -867,20 +843,26 @@ private struct ExtensionImportSheet: View {
                 Button(allChosen ? "Deselect All" : "Select All") {
                     chosen = allChosen ? [] : Set(candidates.map(\.installed.manifest.name))
                 }
+                .buttonStyle(
+                    ExtensionSettingsEditorButtonStyle(role: .standard, fillsWidth: false)
+                )
                 .disabled(candidates.isEmpty)
                 Spacer()
                 Button("Cancel", action: onCancel)
+                    .buttonStyle(ExtensionSettingsEditorButtonStyle(role: .cancel))
                     .keyboardShortcut(.cancelAction)
                 Button("Import \(chosen.isEmpty ? "" : "(\(chosen.count))")") {
                     onImport(
                         candidates.map(\.installed).filter { chosen.contains($0.manifest.name) })
                 }
+                .buttonStyle(ExtensionSettingsEditorButtonStyle(role: .primary))
                 .keyboardShortcut(.defaultAction)
                 .disabled(chosen.isEmpty)
             }
         }
-        .padding(Theme.Spacing.xxl)
+        .padding(Theme.Spacing.dialogInset)
         .frame(width: Theme.Size.editorSheetWidth)
+        .extensionSettingsEditorPanelSurface()
         .onAppear {
             // Once: re-seeding on every render would fight the user's own deselection.
             guard !seeded else { return }

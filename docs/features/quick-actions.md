@@ -51,8 +51,8 @@ provider protocol and the connections behind it.
   route: a vanished catalog model moves to its command's first model, like the shared route, but a
   removed connection or an unavailable command deletes the entry instead of borrowing chat's model.
   The action then follows the route its pane names, not one the reader never chose for it.
-- **Installed providers are ordinary routes.** The model picker reads the same live Codex, Claude and
-  OpenCode catalogs as AI Settings. Execution still goes through `AIProviderFactory`, so Quick Actions
+- **Installed providers are ordinary routes.** The model picker reads the same live Codex, Claude, Grok,
+  OpenCode and Cursor catalogs as AI Settings. Execution still goes through `AIProviderFactory`, so Quick Actions
   inherit the same installed login, tool restrictions and process cleanup without owning CLI logic.
 - **The model picker is the AI picker.** Both panes render `AIModelOption.groupedCatalog`, with the
   same provider sections, model labels and provider-supported reasoning levels. An installed-model
@@ -172,9 +172,9 @@ the panel. System Settings has no anchor for the sheet itself, so the last click
 `QuickActionPanel` is Tinycast's **fourth borderless surface**, beside the dialog, the notes panel
 and the join preview. It takes the same recipe — `panelScrim`, then `VisualEffectView`, then the
 clip — and sits at `.floating` like the join preview, so a failure report still lands on top of it.
-Its buttons are the system's own — `Button` with `.borderedProminent` on Replace — not a copy of
-`DialogButton`. A dialog asks a question and styles its answers; this panel presents a result, and
-standard controls are what a reader expects to act on one with.
+Its footer speaks the same button language as a dialog's — `ModalActionButtonStyle`, with Replace
+as the `.primary` role — so every borderless surface answers in one voice rather than dropping Aqua
+controls onto vibrancy.
 
 It could not have been built on `HUDPresenter`: `HUDPanel` sets `ignoresMouseEvents` and returns
 `false` from `canBecomeKey`, so it is click-through and hosts no buttons. Nor on `DialogAccessory`,
@@ -204,10 +204,10 @@ makes it visible but lays its bars *over* the content instead of insetting it, s
 the buttons and escapes the corner clip. And a ramp starting at the panel edge rather than below the
 bar leaves text about 60% visible behind the title.
 
-`TextDiffEngine` shows what changed when the output is the input, edited. Its LCS matrix is
+`TextDiffEngine` shows what changed when the output is the input, edited. Its traceback is
 quadratic, so past `maxTokens` a side it degrades to whole-text rather than asking for gigabytes.
-At the cap the matrix is the feature's largest allocation, so its cells are `UInt16` rather than
-`Int` — no LCS length can exceed `maxTokens`, and the six bytes an `Int` adds are 96 MB of zeroes.
+It keeps one rolling `UInt16` score row and one insert-or-delete bit per token pair — equality is
+re-checked during traceback — so the cap costs about 2 MB where a full score matrix cost 32 MB.
 
 ## Reading the selection
 

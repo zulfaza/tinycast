@@ -133,6 +133,7 @@ struct QuickActionResultView: View {
             prose(Text(attributed(chunks)))
         } else if state.action == .summarize {
             MarkdownView(blocks: MarkdownBlock.parse(state.output))
+                .textSelection(.enabled)
         } else {
             prose(Text(state.output))
         }
@@ -177,6 +178,7 @@ struct QuickActionResultView: View {
                     .foregroundStyle(Theme.Colors.textTertiary)
             }
             Button("Open Language & Region", action: onOpenLanguageSettings)
+                .buttonStyle(.modalAction(.standard, fillsWidth: false))
         }
     }
 
@@ -195,12 +197,14 @@ struct QuickActionResultView: View {
         HStack(spacing: metrics.spacing.md) {
             Spacer(minLength: metrics.spacing.md)
             Button("Dismiss", action: onCancel)
-            Button("Copy", action: onCopy).disabled(!state.canReplace)
+                .buttonStyle(.modalAction(.cancel, fillsWidth: false))
+            Button("Copy", action: onCopy)
+                .buttonStyle(.modalAction(.standard, fillsWidth: false))
+                .disabled(!state.canReplace)
             Button("Replace", action: onReplace)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.modalAction(.primary, fillsWidth: false))
                 .disabled(!state.canReplace)
         }
-        .controlSize(.large)
         .padding(.horizontal, metrics.spacing.xxl)
         .padding(.vertical, metrics.spacing.xl)
     }

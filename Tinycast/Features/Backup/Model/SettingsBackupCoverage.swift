@@ -12,9 +12,11 @@ enum SettingsBackupCoverage {
         "hyperKeyIncludesShift": .hyperKeyIncludesShift,
         "hyperKeyQuickPress": .hyperKeyQuickPress,
         "emojiSkinTone": .emojiSkinTone,
+        "emojiGridColumns": .emojiGridColumns,
         "popToRootSeconds": .popToRootTimeout,
         "escapeKeyBehavior": .escapeKeyBehavior,
         "appearance": .appearance,
+        "calcNumberStyle": .calcNumberStyle,
         "interfaceSize": .interfaceSize,
         "paletteTransparency": .paletteTransparency,
         "compactMode": .compactMode,
@@ -26,6 +28,8 @@ enum SettingsBackupCoverage {
         "fileSearchScopes": .fileSearchScopes,
         "fileSearchIgnorePatterns": .fileSearchIgnorePatterns,
         "notesEnabled": .notesEnabled,
+        "notesRendersMarkdown": .notesRendersMarkdown,
+        "notesShowsFormattingBar": .notesShowsFormattingBar,
         "customCommandsEnabled": .customCommandsEnabled,
         "customCommandsShowInLauncher": .customCommandsShowInLauncher,
         "snippetsShowInLauncher": .snippetsShowInLauncher,
@@ -49,6 +53,7 @@ enum SettingsBackupCoverage {
         "quicklinkOpensNewWindow": .quicklinkOpensNewWindow,
         "quicklinkSelectionFallback": .quicklinkSelectionFallback,
         "quicklinkConfirmsBeforeDelete": .quicklinkConfirmsBeforeDelete,
+        "appleShortcutsEnabled": .appleShortcutsEnabled,
         "extensionsShowInLauncher": .extensionsShowInLauncher,
         "calendarShowInLauncher": .calendarShowInLauncher,
         "calendarLauncherLimit": .calendarLauncherLimit,
@@ -91,6 +96,8 @@ enum SettingsBackupCoverage {
             "Shared library paths belong to this Mac and must not be restored on another one.",
         AppSettingsKey.autoSwitchInputSource.rawValue:
             "Names a keyboard input source installed on this Mac; another Mac may not have it.",
+        AppSettingsKey.meetingBrowser.rawValue:
+            "Names a browser installed on this Mac; another Mac may not have it.",
         AppSettingsKey.calendarEnabled.rawValue:
             "Doubles as consent to read your calendar; an import must not grant calendar access.",
         AppSettingsKey.autoJoinMeetings.rawValue:

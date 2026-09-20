@@ -48,8 +48,8 @@ record plus creation of a new one. Saving always updates the existing path; crea
 the same name uses distinct filename suffixes.
 
 The first load creates the folder and nothing else: a new channel starts with an empty library, and
-snippets only ever arrive from the editor or a Raycast import. Malformed Markdown is reported per file
-while valid files stay available.
+snippets only ever arrive from the standalone editor or a Raycast import. Malformed Markdown is
+reported per file while valid files stay available.
 
 The store runs only while the feature is enabled: launch starts it for an enabled feature, and a
 user who never enables snippets pays for no load, no directory watcher and no event tap.
@@ -194,7 +194,10 @@ Accessibility because it begins from an explicit user action.
 
 `Search Snippets` and `Create Snippet` are launcher commands of their own, and either switch takes
 them out with the rows: "Show in launcher" off means the feature reaches launcher search not at all.
-The browser stays reachable by its global shortcut, and the editor from the pane.
+The browser stays reachable by its global shortcut. Create and Edit open the standalone editor panel
+without opening Settings. The editor uses the palette's current interface metrics and anchor, with
+the template on the left and snippet metadata on the right. Snippet argument option
+menus open directly below the focused selector; ↑/↓ cycles the choices without opening the menu.
 Their configured shortcuts remain available while the feature is enabled, even when launcher rows
 are hidden; disabling snippets disables those shortcuts too.
 
@@ -224,7 +227,7 @@ inactivity. It is capped at 256 characters. Keywords are matched case-insensitiv
 duplicates resolve by file identity. Tinycast-tagged synthetic events are ignored.
 
 A match is delivered on a later main-actor turn, never inside the tap callback, so the triggering
-keystroke reaches the target before a modal argument prompt can take focus. The target is still
+keystroke reaches the target before the argument dialog can take focus. The target is still
 sampled with the keystroke. Further real input or `stop()` cancels a match that has not run yet.
 
 Immediately before deleting a matched keyword and before inserting its expansion, automatic delivery
@@ -266,7 +269,7 @@ screen has no rows: an empty library would otherwise open a browser with nothing
 ## Confirmation HUD
 
 The confirmation is per snippet and off by default: the only gate is `show_confirmation: true`, set
-from the snippet's editor in **Settings → Snippets**. Nothing about it reaches settings backups.
+from the standalone snippet editor. Nothing about it reaches settings backups.
 The feature switch — which carries keyword-monitoring consent — is likewise excluded from backups.
 
 `MessageHUDController` is shared rather than snippet-specific. It takes a message and a `DialogTone`
@@ -387,8 +390,8 @@ and stay as silent as before, because a speculative expansion that declined is n
 I/O runs off-main. Its debounced watcher observes external edits and atomic replacements, discards
 stale load generations, and rearms after the directory is renamed, replaced, or deleted.
 
-The editor keeps its draft in memory and writes only on **Save**; **New** creates no file until that
-first save. Saves and deletes include the loaded source revision. All repository instances
+The standalone editor keeps its draft in memory and writes only on **Save**; **New** creates no file
+until that first save. Saves and deletes include the loaded source revision. All repository instances
 for one channel share a serialized owner, and each mutation uses `NSFileCoordinator` before
 revalidating the path and source revision immediately beside the atomic write or removal. Cooperative
 writers therefore produce a conflict instead of being overwritten. macOS path-based APIs cannot
