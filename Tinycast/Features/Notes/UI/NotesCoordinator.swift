@@ -68,7 +68,7 @@ final class NotesCoordinator {
         store.onIssue = { [weak self] issue in self?.present(issue) }
     }
 
-    var isEditingSnippet: Bool { core.pendingSnippetEdit != nil }
+    var isEditingSnippet: Bool { core.snippetCoordinator.isEditingSnippet }
 
     func inlineCompletion(
         _ text: String, _ caretUTF16Offset: Int, _ selectedLength: Int

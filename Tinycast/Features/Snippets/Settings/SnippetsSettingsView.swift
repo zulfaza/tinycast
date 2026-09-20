@@ -10,7 +10,6 @@ struct SnippetsSettingsView: View {
 
     var body: some View {
         @Bindable var settings = settings
-        @Bindable var core = core
         return Form {
             FeatureSwitchSection(
                 anchor: .snippetsSnippets,
@@ -50,10 +49,6 @@ struct SnippetsSettingsView: View {
         }
         .formStyle(.grouped)
         .settingsScrollTarget(.snippets)
-        // Presented from the pane, so the browser's Edit and Create rows can open it too.
-        .sheet(item: $core.pendingSnippetEdit) { request in
-            SnippetEditorSheet(record: request.record)
-        }
         .alert(item: $pendingDeletion) { record in
             Alert(
                 title: Text("Delete “\(record.snippet.name)”?"),
@@ -186,7 +181,7 @@ struct SnippetsSettingsView: View {
         }
 
         // The editor reports its own failures, so this covers the ones with no sheet behind.
-        if core.pendingSnippetEdit == nil, let operationError = snippetsStore.operationError {
+        if let operationError = snippetsStore.operationError {
             noticeSection(
                 "The snippet operation failed", operationError, tint: .red, retryHint: nil)
         }
@@ -234,12 +229,6 @@ struct SnippetsSettingsView: View {
     private func delete(_ record: StoredSnippet) {
         Task { try? await snippetsStore.delete(id: record.id) }
     }
-}
-
-struct SnippetEditRequest: Identifiable {
-    let id = UUID()
-    /// nil for a snippet that has no file yet.
-    let record: StoredSnippet?
 }
 
 private struct SnippetSettingsRow: View {
@@ -291,11 +280,11 @@ private struct SnippetSettingsRow: View {
     }
 }
 
-private struct SnippetEditorSheet: View {
+struct SnippetEditorView: View {
     /// nil while adding; otherwise the record whose file (and revision) the save targets.
     let record: StoredSnippet?
 
-    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
     @Environment(SnippetsStore.self) private var store
     @FocusState private var isTemplateFocused: Bool
     @State private var name: String
@@ -308,8 +297,9 @@ private struct SnippetEditorSheet: View {
     @State private var errorMessage: String?
     @State private var isSaving = false
 
-    init(record: StoredSnippet?) {
+    init(record: StoredSnippet?, onDismiss: @escaping () -> Void) {
         self.record = record
+        self.onDismiss = onDismiss
         let snippet = record?.snippet
         _name = State(initialValue: snippet?.name ?? "")
         _keyword = State(initialValue: snippet?.keyword ?? "")
@@ -354,7 +344,7 @@ private struct SnippetEditorSheet: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel", action: onDismiss)
                     .keyboardShortcut(.cancelAction)
                 Button("Save", action: save)
                     .keyboardShortcut(.defaultAction)
@@ -366,8 +356,8 @@ private struct SnippetEditorSheet: View {
         .frame(width: Theme.Size.editorSheetWidth, height: 475)
         .background(
             SnippetEditorEventMonitor(
-                onEscape: { dismiss() }))
-        .onExitCommand(perform: dismiss.callAsFunction)
+                onEscape: onDismiss))
+        .onExitCommand(perform: onDismiss)
     }
 
     private var templateEditor: some View {
@@ -506,7 +496,7 @@ private struct SnippetEditorSheet: View {
                 } else {
                     try await store.create(draft)
                 }
-                dismiss()
+                onDismiss()
             } catch {
                 errorMessage = error.localizedDescription
             }
