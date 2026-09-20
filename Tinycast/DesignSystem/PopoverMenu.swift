@@ -20,6 +20,7 @@ struct PopoverMenuItem {
     let title: String
     let icon: PopoverMenuIcon
     let isLoading: Bool
+    let isEnabled: Bool
     var sectionTitle: String?
     var startsSection: Bool
     var shortcut: String?
@@ -29,14 +30,18 @@ struct PopoverMenuItem {
     var isDestructive: Bool = false
     let action: () -> Void
 
+    /// What the keyboard and pointer may land on; a loading or disabled row only states itself.
+    var isSelectable: Bool { isEnabled && !isLoading }
+
     init(
-        title: String, icon: PopoverMenuIcon, isLoading: Bool = false, sectionTitle: String? = nil,
-        startsSection: Bool = false, shortcut: String? = nil, detail: String? = nil,
-        isDestructive: Bool = false, action: @escaping () -> Void
+        title: String, icon: PopoverMenuIcon, isLoading: Bool = false, isEnabled: Bool = true,
+        sectionTitle: String? = nil, startsSection: Bool = false, shortcut: String? = nil,
+        detail: String? = nil, isDestructive: Bool = false, action: @escaping () -> Void
     ) {
         self.title = title
         self.icon = icon
         self.isLoading = isLoading
+        self.isEnabled = isEnabled
         self.sectionTitle = sectionTitle
         self.startsSection = startsSection
         self.shortcut = shortcut
@@ -46,12 +51,12 @@ struct PopoverMenuItem {
     }
 
     init(
-        title: String, systemImage: String, isLoading: Bool = false, sectionTitle: String? = nil,
-        startsSection: Bool = false, shortcut: String? = nil, isDestructive: Bool = false,
-        action: @escaping () -> Void
+        title: String, systemImage: String, isLoading: Bool = false, isEnabled: Bool = true,
+        sectionTitle: String? = nil, startsSection: Bool = false, shortcut: String? = nil,
+        isDestructive: Bool = false, action: @escaping () -> Void
     ) {
         self.init(
-            title: title, icon: .symbol(systemImage), isLoading: isLoading,
+            title: title, icon: .symbol(systemImage), isLoading: isLoading, isEnabled: isEnabled,
             sectionTitle: sectionTitle, startsSection: startsSection, shortcut: shortcut,
             isDestructive: isDestructive, action: action)
     }
@@ -140,7 +145,10 @@ struct PopoverMenu: View {
                                 if let sectionTitle = items[index].sectionTitle {
                                     sectionLabel(sectionTitle, isFirst: index == 0)
                                 }
-                                PopoverMenuRow(item: items[index], selected: index == selection) {
+                                PopoverMenuRow(
+                                    item: items[index],
+                                    selected: index == selection && items[index].isSelectable
+                                ) {
                                     onActivate(index)
                                 }
                             }
@@ -155,6 +163,9 @@ struct PopoverMenu: View {
             .scrollIndicators(.never)
             .scrollBounceBehavior(contentHeight > viewportCapacity ? .always : .basedOnSize)
             .overflowFade(band: metrics.scaled(Theme.Size.menuOverflowFade), includingTop: true)
+            // The hosting view outlives a presentation, so a fresh one must not inherit the offset.
+            .id(palette.menuPresentationToken)
+            .onAppear { proxy.scrollTo(selection, anchor: .center) }
             .onChange(of: selection) {
                 let byPointer = pointerSelection == selection
                 pointerSelection = nil
@@ -227,7 +238,9 @@ struct PopoverMenu: View {
 
     /// Armed only once the pointer has moved of its own accord, so a scroll past it lights nothing.
     private func hover(_ index: Int) {
-        guard palette.hoverHighlightArmed, index != selection else { return }
+        guard palette.hoverHighlightArmed, items[index].isSelectable, index != selection else {
+            return
+        }
         pointerSelection = index
         selection = index
     }
@@ -313,9 +326,10 @@ private struct PopoverMenuRow: View {
                 RoundedRectangle(cornerRadius: metrics.radius.menuRow, style: .continuous)
                     .fill(selected ? Theme.Colors.menuHover : Color.clear)
             )
+            .opacity(item.isEnabled ? 1 : 0.45)
         }
         .buttonStyle(.plain)
-        .disabled(item.isLoading)
+        .disabled(!item.isSelectable)
     }
 }
 

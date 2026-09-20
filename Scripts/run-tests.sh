@@ -146,6 +146,7 @@ run app-name-test          Tinycast/Platform/AppDisplayName.swift \
                            Tinycast/Platform/BundleLocalization.swift \
                            $L/SearchRelevance.swift
 run favorites-test         $L/FavoriteSlots.swift
+run apple-shortcut-test    Tinycast/Features/AppleShortcuts/Model/*.swift
 run calc-test              Tinycast/Features/Calculator/Model/*.swift
 run index calc-performance Tinycast/Features/Calculator/Model/*.swift
 run calendar-test          Tinycast/Features/Calendar/Model/*.swift
@@ -190,6 +191,7 @@ run emoji-search-test      Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
                            Tinycast/Features/Emoji/Model/EmojiData.generated.swift \
                            Tinycast/Features/Emoji/Service/EmojiIndex.swift \
                            Tinycast/Features/Emoji/Service/FrequentEmojiStore.swift \
+                           Tinycast/Features/Emoji/Service/PinnedEmojiStore.swift \
                            Tinycast/Features/Launcher/Model/SearchRelevance.swift \
                            Tinycast/Platform/AppPaths.swift Tinycast/Platform/Memo.swift
 run emoji-keyword-test     Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
@@ -239,6 +241,7 @@ run ai-instructions-test   Tinycast/Features/AI/Model/AIInstructions.swift \
 run hover-arming-test      Tinycast/Palette/HoverArming.swift \
                            Tinycast/Palette/PaletteState.swift \
                            Tinycast/Palette/PaletteMode.swift \
+                           Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardRepresentation.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardQRPayload.swift \
@@ -260,6 +263,7 @@ run palette-escape-test    Tinycast/Palette/PaletteMode.swift \
 run palette-navigation-test Tinycast/Palette/PaletteState.swift \
                            Tinycast/Palette/PaletteMode.swift \
                            Tinycast/Palette/HoverArming.swift \
+                           Tinycast/Features/Emoji/Model/EmojiCatalog.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardStore.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardRepresentation.swift \
                            Tinycast/Features/Clipboard/Model/ClipboardQRPayload.swift \
@@ -355,7 +359,9 @@ run window-layout-test     Tinycast/Features/WindowManagement/Model/WindowComman
                            Tinycast/Features/WindowManagement/Model/WindowLayout.swift \
                            Tinycast/Features/WindowManagement/Model/WindowLayoutGeometry.swift \
                            Tinycast/Features/WindowManagement/Model/WindowLayoutPlan.swift \
-                           Tinycast/Features/WindowManagement/Model/WindowLayoutStore.swift
+                           Tinycast/Features/WindowManagement/Model/WindowLayoutStore.swift \
+                           Tinycast/Features/WindowManagement/Model/CustomWindowSize.swift \
+                           Tinycast/Features/WindowManagement/Model/CustomWindowSizeStore.swift
 run custom-command-test    Tinycast/Platform/PseudoTerminal.swift \
                            Tinycast/Features/CustomCommands/Model/CustomCommand.swift \
                            Tinycast/Features/CustomCommands/Model/RaycastScriptImport.swift \
@@ -388,6 +394,7 @@ run notes-editor-test      Tinycast/Platform/Signposts.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
                            Tinycast/Features/TextInjection/Service/InjectableTextView.swift \
                            Tinycast/Features/Notes/Model/NoteDocument.swift \
+                           Tinycast/Features/Notes/Model/NoteTask.swift \
                            Tinycast/Features/Notes/UI/NoteTextView.swift \
                            Tinycast/Features/Notes/UI/NoteEditorView.swift
 run slow -O raycast-test   Tinycast/Features/Backup/Model/RaycastImportError.swift \
@@ -527,8 +534,10 @@ run slow codex-turn-test   Tinycast/Platform/AppPaths.swift \
                            Tinycast/Features/AI/Service/CodexTurnRunner.swift
 run installed-ai-test     Tinycast/Features/AI/Model/*.swift \
                           Tinycast/Features/AI/Service/AIProvider.swift \
+                          Tinycast/Platform/AppPaths.swift \
                           Tinycast/Platform/ExecutableLocator.swift \
-                          Tinycast/Features/AI/Service/InstalledCLIProvider.swift
+                          Tinycast/Features/AI/Service/InstalledCLIProvider.swift \
+                          Tinycast/Features/AI/Service/InstalledAIManager.swift
 
 if [ "$emit_db" -eq 1 ]; then
     printf ']\n' >> "$DB"

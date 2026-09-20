@@ -109,7 +109,8 @@ enum SettingsSearchCatalog {
 
     static let entries: [SettingsSearchEntry] =
         general + customThemes + applications + systemSettings
-        + systemActions + commands + quicklinks + fallbacks + ai + quickActions + fileSearch + notes
+        + systemActions + commands + quicklinks + appleShortcuts + fallbacks + ai + quickActions + fileSearch
+        + notes
         + snippets + navigation + windowManagement + clipboard + emoji + calendar
         + extensions + permissions + backup + about
 
@@ -252,6 +253,16 @@ enum SettingsSearchCatalog {
             keywords: ["json", "backup"])
     ]
 
+    private static let appleShortcuts: [SettingsSearchEntry] = [
+        .init(pane: .appleShortcuts, keywords: ["shortcuts app", "automation", "workflow"]),
+        .init(
+            .appleShortcutsAppleShortcuts, "Enable Apple Shortcuts",
+            keywords: ["shortcuts app", "automation", "workflow"]),
+        .init(
+            group: .appleShortcutsShortcuts, "Aliases and shortcuts",
+            keywords: ["alias", "hotkey", "hide"])
+    ]
+
     private static let fallbacks: [SettingsSearchEntry] = [
         .init(
             pane: .fallbacks,
@@ -357,10 +368,7 @@ enum SettingsSearchCatalog {
             keywords: ["add", "keyword", "expansion"]),
         .init(
             .snippetsLibrary, "Snippets Folder",
-            keywords: ["reveal", "finder", "markdown", "files"]),
-        .init(
-            group: .snippetsExpansion, "Expansion",
-            keywords: ["trigger", "delimiter", "delay", "feedback", "exclude", "plain text"])
+            keywords: ["reveal", "finder", "markdown", "files"])
     ]
 
     private static let navigation: [SettingsSearchEntry] = [
@@ -414,7 +422,13 @@ enum SettingsSearchCatalog {
             keywords: ["add", "create", "arrangement", "preset"]),
         .init(
             .windowManagementLayouts, "Create Layout from Current Windows",
-            keywords: ["capture", "snapshot", "current", "save arrangement"])
+            keywords: ["capture", "snapshot", "current", "save arrangement"]),
+        .init(
+            group: .windowManagementCustomSizes, "Custom Sizes",
+            keywords: ["custom", "size", "resize", "dimensions", "pixels", "points", "percent"]),
+        .init(
+            .windowManagementCustomSizes, "New Custom Size",
+            keywords: ["add", "create", "resize", "window size"])
     ]
 
     private static let clipboard: [SettingsSearchEntry] = [
@@ -453,7 +467,10 @@ enum SettingsSearchCatalog {
             keywords: ["shortcut", "hotkey", "launcher", "picker"]),
         .init(
             .emojiAppearance, "Emoji Skin Tone",
-            keywords: ["colour", "color", "fitzpatrick", "default"])
+            keywords: ["colour", "color", "fitzpatrick", "default"]),
+        .init(
+            .emojiAppearance, "Column Count",
+            keywords: ["columns", "density", "zoom", "six", "eight", "ten"])
     ]
 
     private static let calendar: [SettingsSearchEntry] = [
@@ -517,9 +534,6 @@ enum SettingsSearchCatalog {
         .init(
             .extensionsInstall, "Search extensions",
             keywords: ["store", "browse", "install", "registry"]),
-        .init(
-            .extensionsDeveloper, "Developer mode",
-            keywords: ["debug", "logging", "trace", "diagnostics"]),
         .init(
             group: .extensionsInstall, "Registries",
             keywords: ["github", "source", "store"]),

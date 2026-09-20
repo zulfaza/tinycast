@@ -40,6 +40,7 @@ final class AppCore {
     let emojiKeywords = EmojiKeywordStore()
     let frequentEmoji = FrequentEmojiStore()
     let customThemes = CustomThemeStore()
+    let pinnedEmoji = PinnedEmojiStore()
     let runningApps = RunningAppsMonitor()
     let palette = PaletteState()
     let fileSearch = FileSearchSession()
@@ -219,6 +220,9 @@ final class AppCore {
             NSApp.setActivationPolicy(.accessory)
             applyAppearance()
             observeEffectiveAppearance()
+            pinnedEmoji.onPersistenceFailure = { [weak self] in
+                self?.showMessage("Couldn't save Emoji & Symbols pins", tone: .danger)
+            }
 
             appIndex.start(settings: settings)
             clipboardCoordinator.applyEnabled()

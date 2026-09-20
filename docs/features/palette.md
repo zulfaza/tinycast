@@ -275,7 +275,7 @@ programmatic resize would be recorded as one.
 ### The drop guides
 
 While a drag is in flight, `PaletteDropGuideController` puts a click-through borderless panel over the
-display the panel is on, one level under `.floating` so it never covers the panel being dragged. It
+display the panel is on, at `.paletteDropGuide`, one level under `.palette`, so it never covers the panel being dragged. It
 draws three dotted lines through the default placement — both panel edges full height, the top edge full
 width — which turn `Theme.Colors.dropGuideArmed` once the anchor is within `Theme.Size.paletteSnapDistance`
 of home. Releasing while armed snaps the panel there.
@@ -488,6 +488,9 @@ handled in `PalettePanel.sendEvent` before `super` hands the event to the respon
   `onKeyPress(keys: ["."])` never fires. Pin (⌘.) therefore arrives through `onCommandShortcut`,
   which bumps `PaletteState.pinChordToken`; `RootPaletteView` observes that and resolves the row
   through the current screen, so **which** row gets pinned still comes from `screen.rows` alone.
+- **Emoji zoom chords.** `⌘0`, `⌘+` and `⌘-` take the same `onCommandShortcut` path on the emoji
+  screen, Shift allowed since `+` is a shifted `=`. They bump `PaletteState.emojiGridZoomToken`, and
+  `EmojiScreen.zoom` applies the same bounded change as its Actions rows.
 - **Chords the window server keeps for itself.** ⌘⎋ is the one that bites: macOS binds it before any
   app sees it, so unlike ⌘. there is no keystroke left for `sendEvent` to intercept — a handler in
   the responder chain compiles, runs never, and looks like a palette bug. `CommandEscapeTap` takes it

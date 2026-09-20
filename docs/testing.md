@@ -15,8 +15,8 @@ The mechanical bar, in one place so it cannot drift. All five pass before a chan
 | A clean build | `xcodebuild … -configuration Debug CODE_SIGNING_ALLOWED=NO`, zero **new** warnings |
 | Docs still true | any doc your change made wrong, fixed in the same commit |
 
-CI runs the first two and does not build the app at all — so the build, the purity grep and the docs
-are on you. Each is expanded below; the manual sweep at the end of this file is the sixth, judged by
+There is no CI: every item is on you, run locally. CodeRabbit reviews each PR, but it is a reviewer,
+not a gate. Each is expanded below; the manual sweep at the end of this file is the sixth, judged by
 what you touched.
 
 ## The harnesses
@@ -45,8 +45,8 @@ which is worth it only where the run dominates the compile — `raycast-test` sp
 scrypt at `-Onone` and one second at `-O`. `slow` dispatches it in the first wave, so the longest
 harnesses are not still running after everything else has finished.
 
-The script is the **only** place the harness set is written down — CI runs exactly this, so the two
-cannot drift. Adding a harness means adding one `run` line.
+The script is the **only** place the harness set is written down. Nothing runs it for you, so run it
+before you open a PR. Adding a harness means adding one `run` line.
 
 Each harness compiles the **shipped sources** it guards rather than a copy of them, which is what makes
 the pure-layer boundary real: a harness that stops *compiling* means AppKit or SwiftUI has leaked into a
@@ -108,10 +108,11 @@ If a change touches anything in the right column, the harness on the left is man
 | `system-action-test` | `SystemActions/Model/SystemAction.swift` |
 | `volume-test` | `SystemActions/Model/VolumeLevel.swift` |
 | `window-command-test` | `WindowManagement/WindowCommand.swift`, `WindowPlacementEngine.swift`, `WindowActionMemory.swift` |
-| `window-layout-test` | `WindowManagement/Model/WindowLayout*.swift` — the layout record, its geometry and its inverse, the plan and the store |
+| `window-layout-test` | `WindowManagement/Model/WindowLayout*.swift` and `CustomWindowSize*.swift` — the layout record, its geometry and its inverse, the plan and the store; custom sizes' units, frames and store |
 | `custom-command-test` | `CustomCommands/Model/CustomCommand.swift`, `Service/ShellCommandRunner.swift` |
 | `uninstall-test` | all five pure files in `Uninstall/Model/` |
 | `quicklink-test` | all of `Quicklinks/Model/` |
+| `apple-shortcut-test` | all of `AppleShortcuts/Model/` — the `shortcuts list` parser and entry ids |
 | `snippets-test` | all of `Snippets/Model/` and `Snippets/Service/`, plus `Platform/HealthTicker.swift` |
 | `notes-test` | all of `Notes/Model/` and `Notes/Service/`, plus the real fuzzy matcher and signposts |
 | `notes-editor-test` | the literal Notes editor with real TextKit 2 and AppKit editing objects |
@@ -164,7 +165,7 @@ when touching a pure file:
 
 ## Build and size checks
 
-A clean build is part of the bar; CI does not build the app, so this is on you.
+A clean build is part of the bar; nothing builds the app for you, so this is on you.
 
 ```sh
 xcodegen generate                 # only after editing project.yml
@@ -350,7 +351,8 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 ### Launcher and icons
 
 - Every installed app appears; Settings panes appear under System Settings; running apps show the dot
-- Icons render with no placeholder flash on reopen, and Settings ▸ Applications scrolls without hitching
+- Icons render with no placeholder flash on reopen, and Settings ▸ Applications scrolls without hitching,
+  even with the scrollbar thumb dragged from end to end in under a second
 - An app removed since the last open drops out after a reopen
 - Learned ranking still surfaces your habitual result for a short query
 
@@ -380,6 +382,16 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 - `{selection}` falls back per the Settings choice
 - Pin, duplicate, delete and Open with Default all behave; import and export round-trip
 - Display order is pinned first by pin time, then by name
+
+### Apple Shortcuts
+
+- Off out of the box: the pane lists nothing and no shortcut reaches the launcher
+- Switching on lists every shortcut with the Shortcuts app's icon; ↵ on a row runs it
+- A shortcut added in Shortcuts appears on the next launcher open
+- A row's hotkey runs it with the palette closed; switching the feature off silences it
+- Unchecking a row hides it from search, and its hotkey still fires
+- Deleting a shortcut in Shortcuts frees its alias and hotkey on the next launcher open
+- A shortcut that fails shows Tinycast's dialog with the tool's error
 
 ### File Search
 
@@ -422,9 +434,13 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 - Delete confirms through Tinycast, moves the file to Trash, and selecting another note never loses an
   unsaved edit
 - An existing `Floating Note.md` appears as an ordinary note without conversion
-- Markdown source remains completely literal: markers stay visible, links are not activated, and task
-  syntax is ordinary text; there is no preview, formatting menu, or task overlay
-- Return, Tab, Delete, and formatting-looking shortcuts retain native plain-text behavior
+- Type `[] ` or `- [ ] ` to create a checkbox; click to check/uncheck, then Undo and Redo; the file
+  and copied text preserve Markdown task syntax, including after switching notes and reopening
+- Return continues a task with an unchecked item; Return on an empty item exits the list
+- Checkboxes follow scrolling, wrapping, and window resizing, work with VoiceOver and keyboard focus,
+  and checked text is dimmed and struck through in both appearances
+- Fenced code and non-task Markdown stay literal; links are not activated, and Tab and Delete retain
+  native plain-text behavior
 - Edit one note, switch to a shorter note, then Undo and Redo: the new note remains intact and the app
   does not terminate
 - Marked-text input, emoji, combining marks, Copy, Cut, Paste, Select All, Undo, Redo, and Find preserve

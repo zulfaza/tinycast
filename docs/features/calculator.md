@@ -22,6 +22,8 @@ in (see Currency below).
   entries and its `BDT` is the Bangladeshi taka. The home zone is read off the **injected calendar**,
   never `TimeZone.current`, which is what keeps the path pure and the harness deterministic.
   `localizedName` needs a `Locale`, so a badge is the identifier's own city component instead.
+  Countries are the one exception: Foundation carries no country for a zone, so
+  `CountryZoneData.generated.swift` comes from `node Scripts/gen-countries.js` and is never hand-edited.
 - **A workday is 8 hours, and nothing consults a calendar.** Weekends and public holidays would make
   the same query answer differently on two Macs, and the only supported source for them is EventKit,
   whose Full Calendar Access grant a calculator must never provoke mid-keystroke. `workdays` is
@@ -70,10 +72,9 @@ When a trailing operator keeps a conversion visible, its input is reconstructed 
 display rounding never feeds back into evaluation.
 
 `UnitDef` is an immutable, Sendable reference shared by its aliases and parsed values. The catalog
-stores 148 base definitions as compact text records rather than repeated construction code, then adds
-SI and transfer-rate prefixes once on first use. `CalcUnitCatalog` owns this data;
-`CalcUnits` owns conversion policy. Every one of the 675 aliases, labels, dimensions, scale factors
-and offsets was compared bit-for-bit with the previous advanced catalog.
+stores 150 base definitions as compact text records rather than repeated construction code, then adds
+SI and transfer-rate prefixes once on first use, for 679 aliases. `CalcUnitCatalog` owns this data;
+`CalcUnits` owns conversion policy.
 
 Typed arithmetic precedes simple conversion so `1 / 20ms to hz` divides by a duration,
 not a scalar subsequently labeled milliseconds. Simple conversions still own their source badges.
@@ -240,7 +241,13 @@ is `2 inches * 72 ppi to px`, producing `144 px` without a second conversion eng
 Density defaults to `ppi` (also `px/in`); `px/cm`, `px/mm` and `px/m` are conversion targets.
 Square pixels (`px²` / `px2`) let the ordinary powers and roots calculate a display's diagonal:
 `sqrt((3840px)^2 + (2160px)^2) / 27in` → `163.1783089 ppi`.
-These are image pixels, not CSS's fixed reference pixels or printer dots.
+These are image pixels, not printer dots.
+
+`rem` and `em` are pixel units fixed at the browser's default 16px root font size, so `24px`
+auto-converts to `1.5 rem`, `2em` to `32 px`, and `1rem + 8px` is `24 px`. The base is not a
+setting: a calculator has no stylesheet, so an `em` is always a root em. `pt` stays pints rather
+than typographic points, since volume claimed it first. A `px`, `rem` or `em` answer copies without
+the space (`24px`) so it pastes straight into CSS; the card keeps the space every other unit shows.
 
 `to timespan` / `to duration` formats any evaluated time quantity, including
 `(1hr + 30min) to timespan` and `100km / 40km/h to duration`. It uses the typed parser directly.
@@ -277,16 +284,24 @@ still earns a card where a lone `100000` deliberately doesn't. A literal that ov
 
 ## Time zones
 
-`CalcTimeZone` answers `time in Tokyo`, `what time is it in London`, `5pm ldn in sf` and
+`CalcTimeZone` answers `time in Tokyo`, `SF time`, `what time is it in London`, `5pm ldn in sf` and
 `9:30am in nyc`. It runs **before the tokenizer** — a zone phrase is words, and `5pm ldn in sf`
-is not calculator input — but its grammar always needs an `in` / `to` / `at` connector, so an
-ordinary app search never reaches the zone table at all.
+is not calculator input. The `<place> time` form resolves the whole place through the existing
+city, alias and country tables, then uses the same path as `time in <place>`. Every other form needs
+a connector or a leading clock, so ordinary app searches stay outside the zone grammar.
+
+A clock followed by a recognized source, such as `5:30pm SF` or `5:30 pm SF`, converts to the
+Mac's own zone when no destination is supplied. The destination comes from the injected calendar;
+the clock still uses today's date in the source zone and its daylight-saving rules. Existing city,
+country and airport aliases work here too. A missing or unknown source stays silent, and an explicit
+destination keeps its meaning: `5pm in SF` still converts from the Mac's zone to San Francisco.
 
 The source is the Mac's own zone unless the query names one, which is what makes `5pm london in sf`
 work without either side being local. That zone comes from the **injected calendar**, so `Model/`
 performs no environment read and `calc-test` pins UTC exactly as it pins the clock. A result that
-lands on another date is suffixed `(tomorrow)` / `(yesterday)` rather than silently reading as the
-same day — the copyable text stays the bare time.
+lands on another date is suffixed `(tomorrow)` / `(yesterday)`, or `(in 2 days)` / `(2 days ago)`
+for a two-date jump across the date line. The difference compares the source and target calendar
+dates; the copyable text stays the bare time.
 
 `now in UTC` keeps that phrase on the source side and badges both sides with their full local moment
 and GMT offset. Explicit clock conversions keep the clock and city badges that name their operands.
@@ -335,6 +350,19 @@ Two are deliberately absent: `MAD` is the Moroccan dirham, and `IST` is India St
 currency and a zone abbreviation both outrank an airport, the same ordering the rest of the file
 follows. The compiler enforces the rest: a duplicate key in the literal is a warning, which is what
 caught `syd` and `hkg` already being nicknames.
+
+**Countries** answer with their main clock: `time in uk`, `time in japan`, `5pm uk in japan`.
+Foundation knows every zone but not which country owns it, so `gen-countries.js` joins IANA's
+`zone.tab` — which names a country's zones, most populous first — with CLDR's English country names,
+short forms included (`UK`, `US`, `Bosnia`). Diacritics fold as they do for cities, and `&` also
+reads as `and`. The badge stays the clock's city, which is what says *which* clock answered.
+
+Where `zone.tab`'s geographic order puts a remote edge first — Lord Howe for Australia, Kaliningrad
+for Russia — the generator's `CAPITAL_ZONES` substitutes the capital's clock, and fails if IANA stops
+listing it. Antarctica and the US Minor Outlying Islands have no capital and no single clock, so they
+stay silent. ISO codes are deliberately not keys: two letters collide with `in`, `at`, `to` and `la`,
+and three with airports (`fra`, `per`); `usa` and `uae` are ordinary entries in `aliases`. Lookup
+order is `aliases`, then `cities`, then countries, so no curated name is ever shadowed.
 
 Order settles the collisions. Time zones run **last** among the named paths, after units and
 currency, so `10 cordoba to usd` stays money and `1 cup to ml` stays volume. `cordoba` is the one

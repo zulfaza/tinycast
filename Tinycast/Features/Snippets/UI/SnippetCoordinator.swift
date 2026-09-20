@@ -17,8 +17,6 @@ final class SnippetCoordinator {
     /// The consent dialog and the `pendingSnippetEdit` handoff to the Settings pane.
     private unowned let core: AppCore
 
-    var interfaceMetrics: InterfaceMetrics { settings.interfaceSize.metrics }
-
     init(
         store: SnippetsStore,
         listener: SnippetKeywordListener,
@@ -100,17 +98,6 @@ final class SnippetCoordinator {
         applySnippetsLauncherPresence()
     }
 
-    func applySnippetPolicy() {
-        listener.updateTrigger(
-            SnippetExpansionTrigger(
-                mode: settings.snippetsTriggerMode,
-                delimiter: settings.snippetsDelimiter,
-                retainsDelimiter: settings.snippetsRetainsDelimiter))
-        listener.updateExcludedBundleIDs(settings.snippetsExcludedApps)
-        let directories = settings.snippetsSharedLibraries.map { URL(fileURLWithPath: $0) }
-        store.setSharedLibraryDirectories(directories)
-    }
-
     // MARK: - Browsing and editing
 
     /// The switch gates the browser, the way Search Files re-checks its own before opening.
@@ -121,20 +108,8 @@ final class SnippetCoordinator {
 
     /// Opens the Snippets pane with the editor showing `record`; nil is a new snippet.
     func editSnippet(_ record: StoredSnippet?) {
-        guard record.map(store.isWritable) ?? true else { return }
         core.pendingSnippetEdit = SnippetEditRequest(record: record)
         settingsCoordinator.showSettings(tab: .snippets)
-    }
-
-    var isEditingSnippet: Bool { core.pendingSnippetEdit != nil }
-
-    func toggleEditor() {
-        guard isEditingSnippet else { return }
-        if settingsCoordinator.isVisible {
-            settingsCoordinator.hide()
-        } else {
-            settingsCoordinator.showSettings(tab: .snippets)
-        }
     }
 
     func showSnippetInFinder(_ record: StoredSnippet) {
@@ -179,20 +154,10 @@ final class SnippetCoordinator {
 
     /// The browser's ↵. The target has to be read before the panel hides, as the launcher's does.
     func expandSnippetFromPalette(id: StoredSnippet.ID) {
-        expandSnippetFromPalette(id: id, userArguments: [:])
-    }
-
-    func expandSnippetFromPalette(
-        id: StoredSnippet.ID, userArguments: [String: String]
-    ) {
         let target = windowController.previousTarget
         // One of our own editors is only reachable again once the palette hands key back to it.
         paletteCoordinator.hidePalette(restoreFocus: target?.ownEditor != nil)
-        expandSnippet(id: id, target: target, userArguments: userArguments)
-    }
-
-    func promptedArguments(for record: StoredSnippet) -> [SnippetTemplateEngine.MissingArgument] {
-        SnippetTemplateEngine.declaredArguments(in: record, snippets: store.snippets)
+        expandSnippet(id: id, target: target)
     }
 
     func expandSnippet(
@@ -200,11 +165,7 @@ final class SnippetCoordinator {
         target: InjectionTarget?,
         expectedKeyword: String? = nil,
         keywordLength: Int = 0,
-        automaticGeneration: UInt? = nil,
-        userArguments: [String: String] = [:],
-        output: SnippetExpansionOutput? = nil,
-        injectionDelay: Duration? = nil,
-        showsCompletionFeedback: Bool? = nil
+        automaticGeneration: UInt? = nil
     ) {
         let records = store.snippets
         guard let record = records.first(where: { $0.id == id }) else {
@@ -217,20 +178,14 @@ final class SnippetCoordinator {
         if automaticGeneration == nil {
             guard injector.prepareInteractiveExpansion(target: target) else { return }
         }
-        let expansionOutput = output ?? settings.snippetsOutput
-        let expansionDelay = injectionDelay ?? settings.snippetsInjectionDelay.duration
-        let shouldShowFeedback =
-            showsCompletionFeedback ?? (record.snippet.showsConfirmation || settings.snippetsCompletionFeedback)
-        let confirmation = shouldShowFeedback ? "Inserted \(record.snippet.name)" : nil
+        let confirmation = record.snippet.showsConfirmation ? "Inserted \(record.snippet.name)" : nil
         let context = injector.captureExpansionContext(
             target: target,
             clipboardHistory: clipboardHistoryForExpansion())
         let result = SnippetTemplateEngine.expand(
             record,
             snippets: records,
-            context: context,
-            userArguments: userArguments,
-            output: expansionOutput)
+            context: context)
         if !result.missingArguments.isEmpty {
             promptSnippetArguments(
                 record: record,
@@ -241,22 +196,16 @@ final class SnippetCoordinator {
                 expectedKeyword: expectedKeyword,
                 keywordLength: keywordLength,
                 automaticGeneration: automaticGeneration,
-                confirmation: confirmation,
-                userArguments: userArguments,
-                output: expansionOutput,
-                injectionDelay: expansionDelay)
+                confirmation: confirmation)
             return
         }
         completeSnippetExpansion(
             result,
-            recordID: record.id,
             target: target,
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
             automaticGeneration: automaticGeneration,
-            confirmation: confirmation,
-            injectionDelay: expansionDelay,
-            output: expansionOutput)
+            confirmation: confirmation)
     }
 
     private func promptSnippetArguments(
@@ -268,75 +217,60 @@ final class SnippetCoordinator {
         expectedKeyword: String?,
         keywordLength: Int,
         automaticGeneration: UInt?,
-        confirmation: String?,
-        userArguments: [String: String],
-        output: SnippetExpansionOutput,
-        injectionDelay: Duration
+        confirmation: String?
     ) {
-        listener.isPromptingForArguments = true
-        defer { listener.isPromptingForArguments = false }
-        guard
-            let arguments = SnippetArgumentsPrompt.run(
-                snippetName: record.snippet.name,
-                arguments: missingArgs,
-                metrics: settings.interfaceSize.metrics)
-        else {
+        // The open dialog would refuse this prompt, and its end must not clear the flag under it.
+        guard !core.isShowingDialog else {
             injector.cancelArgumentPrompt(
                 automaticGeneration: automaticGeneration,
                 target: target)
             return
         }
+        listener.isPromptingForArguments = true
+        Task {
+            let arguments = await core.fillSnippetArguments(
+                snippetName: record.snippet.name,
+                arguments: missingArgs)
+            listener.isPromptingForArguments = false
+            guard let arguments else {
+                injector.cancelArgumentPrompt(
+                    automaticGeneration: automaticGeneration,
+                    target: target)
+                return
+            }
 
-        let result = SnippetTemplateEngine.expand(
-            record,
-            snippets: records,
-            context: context,
-            userArguments: userArguments.merging(arguments) { _, prompted in prompted },
-            output: output)
-        completeSnippetExpansion(
-            result,
-            recordID: record.id,
-            target: target,
-            expectedKeyword: expectedKeyword,
-            keywordLength: keywordLength,
-            automaticGeneration: automaticGeneration,
-            confirmation: confirmation,
-            injectionDelay: injectionDelay,
-            output: output)
+            let result = SnippetTemplateEngine.expand(
+                record,
+                snippets: records,
+                context: context,
+                userArguments: arguments)
+            completeSnippetExpansion(
+                result,
+                target: target,
+                expectedKeyword: expectedKeyword,
+                keywordLength: keywordLength,
+                automaticGeneration: automaticGeneration,
+                confirmation: confirmation)
+        }
     }
 
     private func completeSnippetExpansion(
         _ result: SnippetTemplateEngine.ExpansionResult,
-        recordID: StoredSnippet.ID,
         target: InjectionTarget?,
         expectedKeyword: String?,
         keywordLength: Int,
         automaticGeneration: UInt?,
-        confirmation: String?,
-        injectionDelay: Duration,
-        output: SnippetExpansionOutput
+        confirmation: String?
     ) {
-        let injected: InjectedText
-        switch output {
-        case .markdown:
-            injected = InjectedText(
-                markdown: result.text,
-                plainText: SnippetMarkdownSerializer.plainText(from: result.text),
-                cursorOffsetFromEnd: result.cursorOffsetFromEnd)
-        case .plainText:
-            injected = InjectedText(result.text, cursorOffsetFromEnd: result.cursorOffsetFromEnd)
-        }
         injector.deliver(
-            injected,
+            InjectedText(result.text, cursorOffsetFromEnd: result.cursorOffsetFromEnd),
             target: target,
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
             automaticGeneration: automaticGeneration,
-            injectionDelay: injectionDelay,
             onDelivered: { [weak self] in
-                guard let self else { return }
-                self.store.recordUse(id: recordID)
-                if let confirmation { self.showMessage(confirmation) }
+                guard let self, let confirmation else { return }
+                self.showMessage(confirmation)
             })
     }
 }

@@ -339,8 +339,9 @@ beside it; edits store as typed and trim when the field loses focus, and a blank
 list filters by **membership only**, keeping the index's name order — re-ranking it per keystroke
 would move the row being edited out from under its own field editor. A pane with a hand-written row
 hands `AliasField` the key itself: Settings ▸ Quicklinks passes `Quicklink.entryID`, Settings ▸
-Extensions passes `extension:<name>/<command>`, and both dim the field when the entry is hidden
-from launcher search, whose entry the ranker never sees.
+Commands passes `CustomCommand.entryID`, Settings ▸ Extensions passes `extension:<name>/<command>`,
+and each dims the field when the entry is hidden from launcher search, whose entry the ranker never
+sees.
 
 Aliases ride along in a settings backup (`launcherAliases`), and deleting what an alias points at —
 uninstalling an app, deleting a quicklink or custom command, uninstalling an extension — removes it
@@ -491,8 +492,9 @@ dismissal matches Accessibility subroles rather than English labels.
 actions they carry dedicated global hotkeys (`AppEntry.hotKeyAction` returns `.windowCommand(id:)`),
 so launcher rows render keycaps for them. Their per-command shortcut and visibility controls live in
 Settings › Window Management rather than a launcher-category pane of their own — the same call already
-made for snippets. The feature ships off. See
-[window-management.md](window-management.md).
+made for snippets. The feature ships off. User-defined custom sizes join the same section as their
+own slice, `AppIndex.setCustomWindowSizes(_:)`, published right after the catalog. See
+[window-management.md](window-management.md#custom-sizes).
 
 ## Window layouts
 
@@ -510,6 +512,13 @@ any query — and a per-item "show in root search" flag filters the slice before
 four Quicklinks commands are dropped from the built-in slice in the same publish while the feature is
 off, so a toggle can't leave the section and its commands out of step. See
 [quicklinks.md](quicklinks.md).
+
+## Apple Shortcuts
+
+`AppleShortcutCoordinator` reads the Shortcuts app's library through `/usr/bin/shortcuts` and supplies
+it as its own slice right after Quicklinks, re-reading on every launcher open. Only the name is indexed,
+and the entry id is keyed on the shortcut's UUID, so an alias or binding survives a rename in
+Shortcuts. See [apple-shortcuts.md](apple-shortcuts.md).
 
 ## Custom commands
 
