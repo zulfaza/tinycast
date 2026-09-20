@@ -13,16 +13,12 @@ struct CalcResult: Equatable, Sendable {
             return .value(display: CalcFormatter.grouped(text) + suffix, copyText: text + suffix)
         }
 
-        static func measurement(_ value: Double, unit: UnitDef, expression: String = "") -> Self {
+        /// CSS lengths copy unspaced ("24px") so the answer pastes straight into a stylesheet.
+        static func measurement(_ value: Double, unit: UnitDef) -> Self {
             let text = CalcFormatter.copyText(value)
-            let words = expression.split(whereSeparator: { $0 == " " || $0 == "\t" })
-            let cssLiteral = (unit.symbol == "px" || unit.symbol == "rem")
-                && (expression.contains("rem") || expression.contains("ppi")
-                    || words.first?.hasSuffix("px") == true || words.first?.hasSuffix("rem") == true)
-            let separator = cssLiteral ? "" : " "
             return .value(
-                display: CalcFormatter.grouped(text) + separator + unit.symbol,
-                copyText: text + separator + unit.symbol)
+                display: "\(CalcFormatter.grouped(text)) \(unit.symbol)",
+                copyText: text + (unit.category == .pixels ? "" : " ") + unit.symbol)
         }
     }
 
@@ -122,7 +118,7 @@ enum CalcEngine {
                     expression: "\(CalcFormatter.display(input)) \(from.symbol)",
                     sourceBadge: from.name,
                     targetBadge: to.name,
-                    payload: .number(output, suffix: " \(to.symbol)"))
+                    payload: .measurement(output, unit: to))
             case .mismatch(let from, let to):
                 return CalcResult(
                     expression: query,
@@ -167,7 +163,7 @@ enum CalcEngine {
                 let text = CalcFormatter.compoundFeetInches(bare.output)
                 payload = .value(display: text, copyText: text)
             } else {
-                payload = .number(bare.output, suffix: " \(bare.to.symbol)")
+                payload = .measurement(bare.output, unit: bare.to)
             }
             return CalcResult(
                 expression: "\(CalcFormatter.display(bare.input)) \(bare.from.symbol)",

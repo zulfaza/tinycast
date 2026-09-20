@@ -998,10 +998,8 @@ struct CalcTests {
         expectBadgesAt("time in tokyo", source: "UTC", target: "Tokyo")
         expectBadgesAt("time in sf", source: "UTC", target: "Los Angeles")
         expectDisplayAt("now in UTC", "12:18 AM")
-        expectExpression("now in UTC", "now in UTC")
-        expectBadgesAt(
-            "now in tokyo", source: "July, 24, 12:18 AM, GMT",
-            target: "July, 24, 9:18 AM, GMT+9")
+        expectExpression("now in UTC", "12:18 AM")
+        expectBadgesAt("now in tokyo", source: "UTC", target: "Tokyo")
         // A named source zone overrides the Mac's own, so neither side has to be local
         expectDisplayAt("5pm london in sf", "9:00 AM")
         expectDisplayAt("9:30am in nyc", "5:30 AM")

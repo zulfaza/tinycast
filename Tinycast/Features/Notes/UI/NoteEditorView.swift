@@ -8,6 +8,29 @@ struct NoteEditorView: NSViewRepresentable {
     let onCharacterCountChange: (NoteEditorInput, Int) -> Void
     let onFormattingChange: (NoteEditorInput, NoteFormatting) -> Void
     let onReady: (NoteTextView) -> Void
+    let completionProvider: @MainActor (
+        _ text: String, _ caretUTF16Offset: Int, _ selectedLength: Int
+    ) -> NoteInlineCompletion?
+
+    init(
+        input: NoteEditorInput,
+        rendersMarkdown: Bool,
+        onSourceChange: @escaping (String) -> Void,
+        onCharacterCountChange: @escaping (NoteEditorInput, Int) -> Void,
+        onFormattingChange: @escaping (NoteEditorInput, NoteFormatting) -> Void,
+        onReady: @escaping (NoteTextView) -> Void,
+        completionProvider: @escaping @MainActor (
+            _ text: String, _ caretUTF16Offset: Int, _ selectedLength: Int
+        ) -> NoteInlineCompletion? = { _, _, _ in nil }
+    ) {
+        self.input = input
+        self.rendersMarkdown = rendersMarkdown
+        self.onSourceChange = onSourceChange
+        self.onCharacterCountChange = onCharacterCountChange
+        self.onFormattingChange = onFormattingChange
+        self.onReady = onReady
+        self.completionProvider = completionProvider
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -25,6 +48,7 @@ struct NoteEditorView: NSViewRepresentable {
 
         let textView = NoteTextView(usingTextLayoutManager: true)
         Self.configure(textView)
+        textView.completionProvider = completionProvider
         textView.delegate = context.coordinator
         textView.editorUndoManager = context.coordinator.editorUndoManager
         scrollView.documentView = textView
@@ -36,6 +60,7 @@ struct NoteEditorView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
+        context.coordinator.textView?.completionProvider = completionProvider
         context.coordinator.update(input)
         context.coordinator.setRendersMarkdown(rendersMarkdown)
     }
@@ -79,6 +104,7 @@ struct NoteEditorView: NSViewRepresentable {
             textView.setSelectedRange(NSRange(location: selectionLocation, length: 0))
             renderer.reset()
             isInstalling = false
+            textView.refreshCompletion()
             if resetUndo { editorUndoManager.removeAllActions() }
             reportCharacterCount()
             reportFormatting()

@@ -131,6 +131,9 @@ final class AppCore {
         store: notesStore,
         settings: settings,
         appIndex: appIndex,
+        emojiIndex: emojiIndex,
+        emojiKeywords: emojiKeywords,
+        frequentEmoji: frequentEmoji,
         core: self)
 
     @ObservationIgnored private(set) lazy var launcherCoordinator = LauncherCoordinator(
@@ -256,7 +259,7 @@ final class AppCore {
             customQuickActions.onChange = { [weak self] _ in
                 self?.quickActionCoordinator.applyCustomQuickActionsPresence()
             }
-            // Before `hotKeys.start` even when off: the prune reads it.
+            // Before `hotKeys.start` even when off: the prune reads it.o
             customQuickActions.load()
             quickActionCoordinator.applyEnabled()
             customCommands.onChange = { [weak self] _ in
@@ -628,7 +631,6 @@ final class AppCore {
     private func invalidateThemeSurfaces() {
         for window in NSApp.windows where window.isVisible {
             window.contentView?.needsDisplay = true
-            window.displayIfNeeded()
         }
     }
 

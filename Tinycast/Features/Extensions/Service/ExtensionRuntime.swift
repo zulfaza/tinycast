@@ -5,8 +5,6 @@ import JavaScriptCore
 @MainActor
 protocol ExtensionHostAPI: AnyObject, Sendable {
     func perform(api: String, method: String, arguments: [RenderValue]) async throws -> String
-    /// The context is gone; release anything opened on its behalf.
-    func sessionEnded()
 }
 
 /// Where a running command's UI or failure lands. Every callback arrives on the main actor.
@@ -25,6 +23,7 @@ final class ExtensionRuntime: @unchecked Sendable {
     private var context: JSContext?
     private var timers: [String: DispatchSourceTimer] = [:]
     private let nodeShims = ExtensionNodeShims()
+    private let trace = ExtensionTrace()
 
     /// Set once at startup; read on the JS queue, so it is written before the runtime ever boots.
     private nonisolated(unsafe) weak var delegate: ExtensionRuntimeDelegate?
@@ -60,6 +59,7 @@ final class ExtensionRuntime: @unchecked Sendable {
 
     /// Idempotent, so any command can lazily ensure the engine is up.
     func boot(config: ExtensionBootConfig) async throws {
+        trace.write("boot requested")
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 do {
@@ -91,6 +91,7 @@ final class ExtensionRuntime: @unchecked Sendable {
         if let thrown { throw RuntimeError.bootFailed(thrown) }
         // Stored only once it is known good: a half-built one would make every later boot a no-op.
         self.context = context
+        trace.write("boot complete")
 
         // From here on an exception is a bug in a command: report it and keep going.
         context.exceptionHandler = { [weak self] _, exception in
@@ -107,6 +108,7 @@ final class ExtensionRuntime: @unchecked Sendable {
         session: String, code: String, file: URL, mode: ExtensionCommandMode,
         context launchContext: ExtensionLaunchContext
     ) async {
+        trace.write("start session=\(session) mode=\(mode.runtimeName) file=\(file.lastPathComponent)")
         let payload = launchContext.jsonString()
         await onQueue { context in
             let compiled = context.objectForKeyedSubscript("__tinycast")
@@ -147,6 +149,7 @@ final class ExtensionRuntime: @unchecked Sendable {
     }
 
     func stop(session: String) async {
+        trace.write("stop session=\(session)")
         await onQueue { context in
             _ = context.objectForKeyedSubscript("__tinycast")?
                 .invokeMethod("stop", withArguments: [session])
@@ -235,6 +238,7 @@ final class ExtensionRuntime: @unchecked Sendable {
     // MARK: - Host call plumbing
 
     private func invokeAsync(callId: String, api: String, method: String, argsJSON: String) {
+        trace.write("invoke #\(callId) \(api).\(method) args=\(traceSummary(argsJSON))")
         // Decode to `RenderValue` here so only `Sendable` values reach the main actor.
         let arguments = RenderValue.arguments(from: argsJSON)
         let hostAPI = self.hostAPI
@@ -242,8 +246,10 @@ final class ExtensionRuntime: @unchecked Sendable {
             do {
                 let json = try await hostAPI.perform(
                     api: api, method: method, arguments: arguments)
+                self.trace.write("settle #\(callId) ok \(api).\(method)")
                 await self.settle(callId: callId, ok: true, payload: json)
             } catch {
+                self.trace.write("settle #\(callId) error \(api).\(method): \(error.localizedDescription)")
                 await self.settle(
                     callId: callId, ok: false,
                     payload: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
@@ -259,6 +265,7 @@ final class ExtensionRuntime: @unchecked Sendable {
     }
 
     private func deliverRender(session: String, json: String) {
+        trace.write("render session=\(session) bytes=\(json.utf8.count)")
         guard let delegate else { return }
         // Parsing a large list is the expensive part, and it belongs off the main actor.
         guard let tree = RenderTree(json: json) else {
@@ -269,8 +276,14 @@ final class ExtensionRuntime: @unchecked Sendable {
     }
 
     private func report(level: String, message: String) {
+        trace.write("log \(level): \(message.replacingOccurrences(of: "\n", with: "\\n"))")
         guard let delegate else { return }
         Task { @MainActor in delegate.runtime(self, log: level, message: message) }
+    }
+
+    private func traceSummary(_ json: String) -> String {
+        let oneLine = json.replacingOccurrences(of: "\n", with: "\\n")
+        return String(oneLine.prefix(600))
     }
 
     // MARK: - Timers
@@ -301,8 +314,7 @@ final class ExtensionRuntime: @unchecked Sendable {
 
     /// Timers are global and React's scheduler rides them, so a context is never reused.
     func shutdown() {
-        let hostAPI = self.hostAPI
-        Task { @MainActor in hostAPI.sessionEnded() }
+        trace.write("shutdown")
         queue.async {
             for timer in self.timers.values { timer.cancel() }
             self.timers.removeAll()

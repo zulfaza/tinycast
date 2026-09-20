@@ -330,7 +330,7 @@ enum CalcTimeZone {
             "lille", "strasbourg"
         ],
         "Europe/London": [
-            "bst", "ldn", "lhr", "lgw", "manchester", "birmingham", "liverpool", "leeds", "glasgow",
+            "bst", "ldn", "lhr", "lgw", "london heathrow", "manchester", "birmingham", "liverpool", "leeds", "glasgow",
             "edinburgh", "bristol", "cardiff", "cambridge", "oxford", "belfast"
         ],
         "Asia/Kolkata": [
