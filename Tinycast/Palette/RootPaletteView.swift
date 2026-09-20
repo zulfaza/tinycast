@@ -66,7 +66,8 @@ struct RootPaletteView: View {
                 openArgumentOptions: openArgumentOptions)
         case .snippets:
             return SnippetsScreen(
-                store: snippets, core: core, vm: vm, openActions: openActions)
+                store: snippets, core: core, vm: vm, openActions: openActions,
+                openArgumentOptions: openArgumentOptions)
         case .customCommandArguments:
             return CustomCommandArgumentsScreen(session: core.customCommandArguments, core: core, vm: vm)
         case .emoji:
