@@ -1,9 +1,27 @@
 import AppKit
 import SwiftUI
 
+enum SnippetEditorState: Sendable {
+    case create(Snippet)
+    case edit(StoredSnippet)
+
+    var snippet: Snippet {
+        switch self {
+        case .create(let snippet): snippet
+        case .edit(let record): record.snippet
+        }
+    }
+
+    var isEditing: Bool {
+        switch self {
+        case .create: false
+        case .edit: true
+        }
+    }
+}
+
 struct SnippetEditorView: View {
-    /// nil while adding; otherwise the record whose file (and revision) the save targets.
-    let record: StoredSnippet?
+    let state: SnippetEditorState
     let metrics: InterfaceMetrics
 
     let onDismiss: () -> Void
@@ -19,17 +37,17 @@ struct SnippetEditorView: View {
     @State private var errorMessage: String?
     @State private var isSaving = false
 
-    init(record: StoredSnippet?, metrics: InterfaceMetrics, onDismiss: @escaping () -> Void) {
-        self.record = record
+    init(state: SnippetEditorState, metrics: InterfaceMetrics, onDismiss: @escaping () -> Void) {
+        self.state = state
         self.metrics = metrics
         self.onDismiss = onDismiss
-        let snippet = record?.snippet
-        _name = State(initialValue: snippet?.name ?? "")
-        _keyword = State(initialValue: snippet?.keyword ?? "")
-        _tags = State(initialValue: snippet?.tags.joined(separator: ", ") ?? "")
-        _text = State(initialValue: snippet?.text ?? "")
-        _isEnabled = State(initialValue: snippet?.isEnabled ?? true)
-        _showsConfirmation = State(initialValue: snippet?.showsConfirmation ?? false)
+        let snippet = state.snippet
+        _name = State(initialValue: snippet.name)
+        _keyword = State(initialValue: snippet.keyword ?? "")
+        _tags = State(initialValue: snippet.tags.joined(separator: ", "))
+        _text = State(initialValue: snippet.text)
+        _isEnabled = State(initialValue: snippet.isEnabled)
+        _showsConfirmation = State(initialValue: snippet.showsConfirmation)
     }
 
     var body: some View {
@@ -167,7 +185,7 @@ struct SnippetEditorView: View {
     private var footer: some View {
         HStack {
             Label {
-                Text(record == nil ? "Create Snippet" : "Edit Snippet")
+                Text(state.isEditing ? "Edit Snippet" : "Create Snippet")
             } icon: {
                 Image(systemName: "doc.text")
                     .foregroundStyle(Theme.Colors.primaryAction)
@@ -336,11 +354,12 @@ struct SnippetEditorView: View {
             defer { isSaving = false }
             do {
                 // Saving keeps the revision, so an edit in between conflicts, not clobbers.
-                if var updated = record {
-                    updated.snippet = draft
-                    try await store.save(updated)
-                } else {
+                switch state {
+                case .create:
                     try await store.create(draft)
+                case .edit(var record):
+                    record.snippet = draft
+                    try await store.save(record)
                 }
                 onDismiss()
             } catch {

@@ -199,6 +199,7 @@ final class AppCore {
 
     @ObservationIgnored private lazy var windowController = PaletteWindowController(core: self)
     @ObservationIgnored private lazy var messageHUD = MessageHUDController(settings: settings)
+    @ObservationIgnored private lazy var clipboardEditor = ClipboardEditorWindowController(core: self)
     private(set) var isShowingDialog = false
     var isDimmingPaletteForDialog: Bool { isShowingDialog && windowController.isVisible }
     /// Every confirmation, report and prompt; it also stops a held hotkey stacking them.
@@ -367,6 +368,20 @@ final class AppCore {
                 windowLayoutIDs: Set(windowLayouts.layouts.map(\.id)),
                 customWindowSizeIDs: Set(customWindowSizes.sizes.map(\.id)),
                 quickActionIDs: Set(customQuickActions.actions.map(\.id)))
+            clipboardCoordinator.onRenameClip = { [weak self] item in
+                guard let self else { return }
+                self.paletteCoordinator.hidePalette(restoreFocus: false)
+                self.clipboardEditor.rename(item)
+            }
+            clipboardCoordinator.onSaveTextAsFile = { [weak self] item in
+                guard let self else { return }
+                self.paletteCoordinator.hidePalette(restoreFocus: false)
+                self.clipboardEditor.saveAsFile(item)
+            }
+            clipboardCoordinator.onSaveTextAsSnippet = { [weak self] item in
+                guard let self else { return }
+                self.snippetCoordinator.saveClipboardAsSnippet(text: item.text, name: item.name)
+            }
             // Keeps running while Carbon pauses: the recorder needs its rewritten flags.
             hyperKeyTap.start(settings: settings)
 
