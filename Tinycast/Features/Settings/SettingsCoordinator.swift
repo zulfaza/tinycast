@@ -66,4 +66,10 @@ final class SettingsCoordinator {
     func focusExisting() -> Bool {
         window.focus()
     }
+
+    var isVisible: Bool { window.isVisible }
+
+    func hide() {
+        window.hide()
+    }
 }

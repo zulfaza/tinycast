@@ -12,11 +12,6 @@ enum SettingsPaneScanner {
         "com.apple.HeadphoneSettings": "Headphones"
     ]
     private static let iconOverrides: [String: EntryIcon] = [
-        "com.apple.Battery-Settings.extension": .contentType("com.apple.graphic-icon.battery")
-    ]
-
-    /// Panes whose bundle icon is ExtensionKit's placeholder brick; keyed by CFBundleIdentifier.
-    private static let iconOverrides: [String: EntryIcon] = [
         "com.apple.Battery-Settings.extension": .contentType("com.apple.graphic-icon.battery"),
         "com.apple.HeadphoneSettings": .symbol("headphones")
     ]

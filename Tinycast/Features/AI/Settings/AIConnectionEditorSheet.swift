@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct AIConnectionEditorTarget: Identifiable {
+struct AIConnectionSheetTarget: Identifiable {
     let connection: AIConnection
     let hasStoredKey: Bool
     let isNew: Bool
@@ -8,7 +8,7 @@ struct AIConnectionEditorTarget: Identifiable {
 }
 
 struct AIConnectionEditorSheet: View {
-    let target: AIConnectionEditorTarget
+    let target: AIConnectionSheetTarget
     let onSave: (AIConnection, String, Bool) -> String?
     let onCancel: () -> Void
 
@@ -22,7 +22,7 @@ struct AIConnectionEditorSheet: View {
     private let modelDiscovery = AIModelDiscoveryService()
 
     init(
-        target: AIConnectionEditorTarget,
+        target: AIConnectionSheetTarget,
         onSave: @escaping (AIConnection, String, Bool) -> String?,
         onCancel: @escaping () -> Void
     ) {

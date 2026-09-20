@@ -94,7 +94,7 @@ final class LauncherCoordinator {
         }
         if app.kind == .customCommand {
             guard let id = CustomCommand.id(fromEntryID: app.id) else { return }
-            customCommandCoordinator.runCustomCommand(id: id, values: arguments)
+            customCommandCoordinator.runCustomCommand(id: id)
             return
         }
         if app.kind == .systemAction {

@@ -133,7 +133,7 @@ enum CalcQuantity {
         CalcResult(
             expression: expression,
             sourceBadge: "Expression", targetBadge: unit.name,
-            payload: .measurement(amount, unit: unit))
+            payload: .measurement(amount, unit: unit, expression: expression))
     }
 
     private static func currencyResult(

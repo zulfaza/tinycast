@@ -196,6 +196,10 @@ final class AppSettings {
         didSet { defaults.set(appearance.rawValue, forKey: Key.appearance.rawValue) }
     }
 
+    var calcNumberStyle: CalcNumberStyle {
+        didSet { defaults.set(calcNumberStyle.rawValue, forKey: Key.calcNumberStyle.rawValue) }
+    }
+
     /// Scales the palette and its floating siblings only. Read through `InterfaceSize.metrics`.
     var interfaceSize: InterfaceSize {
         didSet { defaults.set(interfaceSize.rawValue, forKey: Key.interfaceSize.rawValue) }
@@ -274,6 +278,14 @@ final class AppSettings {
 
     var notesEnabled: Bool {
         didSet { defaults.set(notesEnabled, forKey: Key.notesEnabled.rawValue) }
+    }
+
+    var notesRendersMarkdown: Bool {
+        didSet { defaults.set(notesRendersMarkdown, forKey: Key.notesRendersMarkdown.rawValue) }
+    }
+
+    var notesShowsFormattingBar: Bool {
+        didSet { defaults.set(notesShowsFormattingBar, forKey: Key.notesShowsFormattingBar.rawValue) }
     }
 
     /// Off by default: connecting a server is consent to run code Tinycast did not write.
@@ -439,6 +451,16 @@ final class AppSettings {
         didSet { defaults.set(cameraPreview, forKey: Key.cameraPreview.rawValue) }
     }
 
+    var meetingBrowserBundleID: String? {
+        didSet {
+            if let meetingBrowserBundleID {
+                defaults.set(meetingBrowserBundleID, forKey: Key.meetingBrowser.rawValue)
+            } else {
+                defaults.removeObject(forKey: Key.meetingBrowser.rawValue)
+            }
+        }
+    }
+
     var menuBarEvents: MenuBarEvents {
         didSet { defaults.set(menuBarEvents.rawValue, forKey: Key.menuBarEvents.rawValue) }
     }
@@ -580,6 +602,9 @@ final class AppSettings {
             ?? .navigateBackOrClose
         appearance =
             defaults.string(forKey: Key.appearance.rawValue).flatMap(AppAppearance.init) ?? .system
+        calcNumberStyle =
+            defaults.string(forKey: Key.calcNumberStyle.rawValue).flatMap(CalcNumberStyle.init)
+            ?? .system
         interfaceSize =
             defaults.string(forKey: Key.interfaceSize.rawValue).flatMap(InterfaceSize.init)
             ?? .standard
@@ -608,6 +633,12 @@ final class AppSettings {
         fileSearchIgnorePatterns =
             defaults.stringArray(forKey: Key.fileSearchIgnorePatterns.rawValue) ?? []
         notesEnabled = defaults.bool(forKey: Key.notesEnabled.rawValue)
+        notesRendersMarkdown =
+            defaults.object(forKey: Key.notesRendersMarkdown.rawValue) == nil
+            || defaults.bool(forKey: Key.notesRendersMarkdown.rawValue)
+        notesShowsFormattingBar =
+            defaults.object(forKey: Key.notesShowsFormattingBar.rawValue) == nil
+            || defaults.bool(forKey: Key.notesShowsFormattingBar.rawValue)
         aiEnabled = defaults.bool(forKey: Key.aiEnabled.rawValue)
         mcpEnabled = defaults.bool(forKey: Key.mcpEnabled.rawValue)
         customCommandsEnabled = defaults.bool(forKey: Key.customCommandsEnabled.rawValue)
@@ -669,6 +700,7 @@ final class AppSettings {
             defaults.object(forKey: Key.autoJoinConfirms.rawValue) == nil
             || defaults.bool(forKey: Key.autoJoinConfirms.rawValue)
         cameraPreview = defaults.bool(forKey: Key.cameraPreview.rawValue)
+        meetingBrowserBundleID = defaults.string(forKey: Key.meetingBrowser.rawValue)
         // Both default to their zero case, so an unset key needs no presence check.
         menuBarEvents =
             MenuBarEvents(rawValue: defaults.integer(forKey: Key.menuBarEvents.rawValue)) ?? .today

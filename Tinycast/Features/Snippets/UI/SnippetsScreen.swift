@@ -52,7 +52,7 @@ struct SnippetsScreen: PaletteScreen {
             let selected = record(at: selection)
             HStack(spacing: 0) {
                 SnippetsList(
-                    results: rows, selectedID: selected?.id, scroll: scroll,
+                    results: rows, usage: store.usage, selectedID: selected?.id, scroll: scroll,
                     onSelect: { record in
                         vm.selection = rows.firstIndex(of: record) ?? 0
                     },
@@ -64,7 +64,7 @@ struct SnippetsScreen: PaletteScreen {
                 )
                 .frame(width: metrics.size.clipboardListWidth)
                 Rectangle().fill(Theme.Colors.separator).frame(width: Theme.Size.hairline)
-                SnippetPreview(record: selected)
+                SnippetPreview(record: selected, usage: store.usage)
             }
         }
     }

@@ -12,6 +12,7 @@ struct RootPaletteView: View {
     @Environment(CurrencyRateStore.self) private var currencyRates
     @Environment(EmojiIndex.self) private var emojiIndex
     @Environment(FrequentEmojiStore.self) private var frequentEmoji
+    @Environment(EmojiKeywordStore.self) private var emojiKeywords
     @Environment(FileSearchSession.self) private var fileSearch
     @Environment(DictionarySession.self) private var dictionary
     @Environment(MenuSearchSession.self) private var menuSearch
@@ -66,11 +67,14 @@ struct RootPaletteView: View {
         case .snippets:
             return SnippetsScreen(
                 store: snippets, core: core, vm: vm, openActions: openActions)
+        case .customCommandArguments:
+            return CustomCommandArgumentsScreen(session: core.customCommandArguments, core: core, vm: vm)
         case .emoji:
             return EmojiScreen(
-                index: emojiIndex, frequent: frequentEmoji, pinned: core.pinnedEmoji, core: core, vm: vm,
+                index: emojiIndex, frequent: frequentEmoji, pinned: core.pinnedEmoji,
+                customKeywords: emojiKeywords.records, core: core, vm: vm,
                 tone: settings.emojiSkinTone, defaultColumns: settings.emojiGridColumns,
-                openActions: openActions, customKeywords: emojiKeywords.records)
+                openActions: openActions)
         case .fileSearch:
             return FileSearchScreen(
                 session: fileSearch, core: core, vm: vm, openActions: openActions)

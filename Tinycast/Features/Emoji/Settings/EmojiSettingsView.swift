@@ -125,22 +125,8 @@ private struct EmojiColumnCountPicker: View {
 private struct EmojiColumnCountPreview: View {
     let columns: Int
     let isSelected: Bool
-
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-        EmojiGridDots(columns: columns)
-            .fill(isSelected ? Theme.Colors.textTertiary : Theme.Colors.border)
-            .background(
-                shape.fill(isSelected ? Theme.Colors.controlSurface : Color.clear)
-            )
-            .overlay(
-                shape.strokeBorder(
-                    isSelected ? Theme.Colors.border : Theme.Colors.cardStroke,
-                    lineWidth: Theme.Size.hairline)
-            )
-            .clipShape(shape)
-            .aspectRatio(1, contentMode: .fit)
-            .frame(maxWidth: Theme.Size.emojiSettingsGridPreview)
+        Text("\(columns)")
     }
 }
 

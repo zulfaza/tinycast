@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Identifies the editor to present; nil is "new", and the UUID keeps two opens distinct.
-struct WindowLayoutEditRequest: Identifiable {
+struct WindowLayoutSheetEditRequest: Identifiable {
     let id = UUID()
     var layout: WindowLayout?
     /// Set by capture, so the sheet says what it is showing.
@@ -11,7 +11,7 @@ struct WindowLayoutEditRequest: Identifiable {
 
 /// Add / edit sheet for one layout, presented from the Window Management pane.
 struct WindowLayoutEditorSheet: View {
-    let request: WindowLayoutEditRequest
+    let request: WindowLayoutSheetEditRequest
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AppCore.self) private var core
@@ -20,7 +20,7 @@ struct WindowLayoutEditorSheet: View {
     @State private var screens: [WindowLayoutScreen]
     @State private var errorMessage: String?
 
-    init(request: WindowLayoutEditRequest) {
+    init(request: WindowLayoutSheetEditRequest) {
         self.request = request
         let connected = Self.connectedScreens()
         _screens = State(initialValue: connected)

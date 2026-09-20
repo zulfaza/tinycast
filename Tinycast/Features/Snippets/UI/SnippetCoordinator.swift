@@ -43,6 +43,25 @@ final class SnippetCoordinator {
         self.core = core
     }
 
+    var isEditingSnippet: Bool { core.pendingSnippetEdit != nil }
+    var interfaceMetrics: InterfaceMetrics { settings.interfaceSize.metrics }
+
+    func promptedArguments(for record: StoredSnippet) -> [SnippetTemplateEngine.MissingArgument] {
+        SnippetTemplateEngine.declaredArguments(in: record, snippets: store.snippets)
+    }
+
+    func toggleEditor() {
+        if isEditingSnippet {
+            core.pendingSnippetEdit = nil
+        } else {
+            editSnippet(nil)
+        }
+    }
+
+    func applySnippetPolicy() {
+        applySnippetsEnabled()
+    }
+
     // MARK: - Feature switch
 
     func revealSnippetsInFinder() {
