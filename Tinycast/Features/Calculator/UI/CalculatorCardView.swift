@@ -7,18 +7,26 @@ enum CalcMemo {
         let query: String
         let stamp: Date?
         let region: String?
+        let format: CalcNumberFormat
         let result: CalcResult?
     }
 
     private static var cache: Cache?
 
-    static func evaluate(_ query: String, rates: CurrencyRates?) -> CalcResult? {
+    static func evaluate(
+        _ query: String, rates: CurrencyRates?, format: CalcNumberFormat
+    ) -> CalcResult? {
         let region = RegionCurrency.code
-        if let cache, cache.query == query, cache.stamp == rates?.fetchedAt, cache.region == region {
+        if let cache, cache.query == query, cache.stamp == rates?.fetchedAt,
+            cache.region == region, cache.format == format
+        {
             return cache.result
         }
-        let result = CalcEngine.evaluate(query, now: Date(), calendar: .current, rates: rates, region: region)
-        cache = Cache(query: query, stamp: rates?.fetchedAt, region: region, result: result)
+        let result = CalcEngine.evaluate(
+            query, now: Date(), calendar: .current, rates: rates, region: region, format: format)
+            .map(format.localized)
+        cache = Cache(
+            query: query, stamp: rates?.fetchedAt, region: region, format: format, result: result)
         return result
     }
 }
@@ -109,12 +117,17 @@ enum CalcActionsMenu {
                     core.calculatorCoordinator.copyCalculatorResult(result)
                 },
                 PopoverMenuItem(
-                    title: "Copy Unformatted Answer", systemImage: "textformat", shortcut: "⌘↵"
+                    title: "Paste Answer", systemImage: "arrow.down.doc", shortcut: "⌘↵ / ⌃↵"
+                ) {
+                    core.calculatorCoordinator.pasteCalculatorResult(result)
+                },
+                PopoverMenuItem(
+                    title: "Copy Unformatted Answer", systemImage: "textformat", shortcut: "⌥⌘C"
                 ) {
                     core.calculatorCoordinator.copyCalculatorUnformatted(result)
                 },
                 PopoverMenuItem(
-                    title: "Copy Question and Answer", systemImage: "doc.on.doc.fill", shortcut: "⇧⌘↵"
+                    title: "Copy Question and Answer", systemImage: "doc.on.doc.fill", shortcut: "⌥⇧⌘C"
                 ) {
                     core.calculatorCoordinator.copyCalculationWithExpression(result)
                 }
