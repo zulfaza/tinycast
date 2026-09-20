@@ -358,7 +358,8 @@ struct RootPaletteView: View {
     /// Split from `body` for the same reason `keyHandlers` is: one chain cannot carry them all.
     @ViewBuilder
     private func stateObservers(_ content: some View) -> some View {
-        emojiObservers(content)
+        menuObservers(
+            emojiObservers(content)
             // Every show bumps focusToken so the search field refocuses.
             .onChange(of: vm.focusToken) {
                 searchFocused = !screen.hidesSearchField
@@ -440,6 +441,20 @@ struct RootPaletteView: View {
             .onChange(of: vm.favoriteSlotToken) {
                 if let index = vm.favoriteSlotIndex { performShortcut(.favoriteSlot(index)) }
             }
+        )
+        .onDisappear(perform: tearDownPaletteSurface)
+        .onAppear { searchFocused = !screen.hidesSearchField }
+        .modifier(SearchFieldHiding(hidden: hidesSearchField, apply: applySearchFieldHiding))
+        // Several paths flip `paletteIsCollapsed`, so resize the window to match.
+        .onChange(of: core.paletteCoordinator.paletteIsCollapsed) {
+            core.paletteCoordinator.syncPaletteSize()
+        }
+    }
+
+    /// Menu presentation is isolated from the broader state observer chain.
+    @ViewBuilder
+    private func menuObservers(_ content: some View) -> some View {
+        content
             // One optional makes "exactly one menu" structural; this only presents it.
             .onChange(of: openMenu) {
                 guard menuOpen else { return }
@@ -448,13 +463,6 @@ struct RootPaletteView: View {
             // The hosted tree is its own hierarchy, so the highlight has to be pushed into it.
             .onChange(of: menuSelection) { syncMenuPanel(presenting: false) }
             .onChange(of: vm.menuQuery) { menuQueryChanged() }
-            .onDisappear(perform: tearDownPaletteSurface)
-            .onAppear { searchFocused = !screen.hidesSearchField }
-            .modifier(SearchFieldHiding(hidden: hidesSearchField, apply: applySearchFieldHiding))
-            // Several paths flip `paletteIsCollapsed`, so resize the window to match.
-            .onChange(of: core.paletteCoordinator.paletteIsCollapsed) {
-                core.paletteCoordinator.syncPaletteSize()
-            }
     }
 
     private func tearDownPaletteSurface() {
