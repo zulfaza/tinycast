@@ -2,6 +2,17 @@ import Foundation
 
 /// Clock time in another city. See docs/features/calculator.md.
 enum CalcTimeZone {
+    static func hasMalformedFixedOffset(_ raw: String) -> Bool {
+        raw.split(whereSeparator: \.isWhitespace).contains { word in
+            let upper = word.uppercased()
+            guard upper.hasPrefix("UTC") || upper.hasPrefix("GMT") else { return false }
+            guard upper.dropFirst(3).contains(where: { $0 == "+" || $0 == "-" }) else {
+                return false
+            }
+            return fixedOffset(named: upper) == nil
+        }
+    }
+
     static func evaluate(_ raw: String, now: Date, calendar: Calendar) -> CalcResult? {
         guard raw.count <= 128, raw.contains(where: \.isWhitespace) else { return nil }
         let inputWords = raw.split(whereSeparator: \.isWhitespace)
@@ -145,7 +156,7 @@ enum CalcTimeZone {
     private static func endsInZoneOrDuration(_ tail: String) -> Bool {
         // Folded, because the identifiers carry no accents while `zürich` and `são paulo` do.
         let folded = tail.folding(options: [.diacriticInsensitive], locale: nil)
-        if zoneIdentifier(named: folded) != nil { return true }
+        if zoneIdentifier(named: folded) != nil || fixedOffset(named: folded) != nil { return true }
         // `time in 4 hours` ends in the unit alone, so a bare unit word counts as a duration tail.
         if durationUnits.contains(folded) || parseDuration(folded, impliesHours: true) != nil {
             return true
@@ -287,7 +298,58 @@ enum CalcTimeZone {
         // `são paulo` and `zürich` are how the cities are spelled; the identifiers are not.
         let phrase = words.joined(separator: " ")
             .folding(options: [.diacriticInsensitive], locale: nil)
-        return zoneIdentifier(named: phrase).flatMap(TimeZone.init(identifier:))
+        if let identifier = zoneIdentifier(named: phrase), let zone = TimeZone(identifier: identifier) {
+            return zone
+        }
+        return fixedOffset(named: phrase)
+    }
+
+    /// Parses ISO-style fixed offsets without treating an arbitrary UTC-looking word as a zone.
+    private static func fixedOffset(named phrase: String) -> TimeZone? {
+        let upper = phrase.uppercased()
+        guard upper.count >= 5 else { return nil }
+        let prefix = String(upper.prefix(3))
+        guard let sign = upper.dropFirst(3).first,
+            prefix == "UTC" || prefix == "GMT", sign == "+" || sign == "-"
+        else {
+            return nil
+        }
+
+        let body = String(upper.dropFirst(4))
+        let pieces = body.split(separator: ":", omittingEmptySubsequences: false)
+        guard pieces.count <= 2 else { return nil }
+        let hours: Int
+        let minutes: Int
+        if pieces.count == 2 {
+            guard let hourText = pieces.first, !hourText.isEmpty,
+                hourText.allSatisfy({ $0.isNumber }), (1...2).contains(hourText.count),
+                let parsedHours = Int(hourText)
+            else { return nil }
+            hours = parsedHours
+            guard pieces[1].count == 2, pieces[1].allSatisfy({ $0.isNumber }),
+                let parsed = Int(pieces[1])
+            else { return nil }
+            minutes = parsed
+        } else {
+            guard body.count <= 4 else { return nil }
+            switch body.count {
+            case 1, 2:
+                guard let parsedHours = Int(body) else { return nil }
+                hours = parsedHours
+                minutes = 0
+            case 4:
+                guard let parsedHours = Int(body.dropLast(2)),
+                    let parsedMinutes = Int(body.suffix(2))
+                else { return nil }
+                hours = parsedHours
+                minutes = parsedMinutes
+            default: return nil
+            }
+        }
+        guard hours <= 18, minutes <= 59, hours != 18 || minutes == 0 else { return nil }
+        let seconds = (hours * 60 + minutes) * 60
+        let signed = sign == "-" ? -seconds : seconds
+        return TimeZone(secondsFromGMT: signed)
     }
 
     /// A curated alias outranks a city, and a city outranks a country sharing its spelling.
@@ -444,8 +506,19 @@ enum CalcTimeZone {
     /// Not `localizedName`, which needs a `Locale` — banned in `Model/`.
     private static func label(for zone: TimeZone) -> String {
         if zone.identifier == "GMT" || zone.identifier == "UTC" { return "UTC" }
+        if zone.identifier.hasPrefix("GMT+") || zone.identifier.hasPrefix("GMT-") {
+            let seconds = abs(zone.secondsFromGMT())
+            let hours = seconds / 3600
+            let minutes = seconds / 60 % 60
+            let sign = zone.secondsFromGMT() < 0 ? "-" : "+"
+            return "UTC\(sign)\(twoDigits(hours)):\(twoDigits(minutes))"
+        }
         guard let city = zone.identifier.split(separator: "/").last else { return zone.identifier }
         return city.replacingOccurrences(of: "_", with: " ")
+    }
+
+    private static func twoDigits(_ value: Int) -> String {
+        value < 10 ? "0\(value)" : "\(value)"
     }
 
     private static func clockString(_ date: Date, zone: TimeZone, calendar: Calendar) -> String {

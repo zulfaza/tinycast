@@ -65,6 +65,7 @@ enum CalcEngine {
 
         // Before tokenizing: `5pm ldn in sf` is words, which the tokenizer would reject.
         if let zone = CalcTimeZone.evaluate(query, now: now, calendar: calendar) { return zone }
+        if CalcTimeZone.hasMalformedFixedOffset(query) { return nil }
 
         if let pixels = pixelAtDensity(
             query, now: now, calendar: calendar, rates: rates, region: region)

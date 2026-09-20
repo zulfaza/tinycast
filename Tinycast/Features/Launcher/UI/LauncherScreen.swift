@@ -67,7 +67,9 @@ struct LauncherScreen: PaletteScreen {
         // No card over a pinned row: its fields hang off the selection, which must start on it.
         let calc =
             pinned == nil
-            ? CalcMemo.evaluate(vm.query, rates: currencyRates.rates) : nil
+            ? CalcMemo.evaluate(
+                vm.query, rates: currencyRates.rates,
+                format: core.regionNumberFormat.format(for: core.settings.calcNumberStyle)) : nil
         // After the calculator: `#FF5733` is never arithmetic, so the two can't both answer.
         let color = calc == nil && pinned == nil ? ColorValue.parse(vm.query) : nil
         let fallbacks = core.fallbackCoordinator.entries(for: vm.query)
@@ -257,10 +259,10 @@ struct LauncherScreen: PaletteScreen {
         }
     }
 
-    /// ⌘↵ copies calculations unformatted; file-backed entries reveal in Finder.
+    /// ⌘↵ pastes calculations; file-backed entries reveal in Finder.
     func secondary(at selection: Int) -> Bool {
         if case .calc(let result) = row(at: selection) {
-            core.calculatorCoordinator.copyCalculatorUnformatted(result)
+            core.calculatorCoordinator.pasteCalculatorResult(result)
             return true
         }
         guard let app = entry(at: selection), app.canRevealInFinder else { return false }
@@ -271,6 +273,19 @@ struct LauncherScreen: PaletteScreen {
     func tertiary(at selection: Int) -> Bool {
         guard case .calc(let result) = row(at: selection) else { return false }
         core.calculatorCoordinator.copyCalculationWithExpression(result)
+        return true
+    }
+
+    func perform(_ shortcut: CalcShortcut, at selection: Int) -> Bool {
+        guard case .calc(let result) = row(at: selection) else { return false }
+        switch shortcut {
+        case .pasteAnswer:
+            core.calculatorCoordinator.pasteCalculatorResult(result)
+        case .copyUnformattedAnswer:
+            core.calculatorCoordinator.copyCalculatorUnformatted(result)
+        case .copyQuestionAndAnswer:
+            core.calculatorCoordinator.copyCalculationWithExpression(result)
+        }
         return true
     }
 

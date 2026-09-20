@@ -21,7 +21,11 @@ struct CalculatorHistoryScreen: PaletteScreen {
         }
     }
 
-    private var calc: CalcResult? { CalcMemo.evaluate(vm.query, rates: currencyRates.rates) }
+    private var calc: CalcResult? {
+        CalcMemo.evaluate(
+            vm.query, rates: currencyRates.rates,
+            format: core.regionNumberFormat.format(for: core.settings.calcNumberStyle))
+    }
     private var entries: [CalcHistoryEntry] { history.search(vm.query) }
 
     var rows: [Row] {
@@ -73,10 +77,10 @@ struct CalculatorHistoryScreen: PaletteScreen {
         }
     }
 
-    /// ⌘↵ copies a fresh card unformatted; stored rows retain their expression shortcut.
+    /// ⌘↵ pastes a fresh card; stored rows retain their expression shortcut.
     func secondary(at selection: Int) -> Bool {
         if case .calc(let result) = row(at: selection) {
-            core.calculatorCoordinator.copyCalculatorUnformatted(result)
+            core.calculatorCoordinator.pasteCalculatorResult(result)
             return true
         }
         guard let entry = entry(at: selection) else { return false }
@@ -88,6 +92,31 @@ struct CalculatorHistoryScreen: PaletteScreen {
         guard case .calc(let result) = row(at: selection) else { return false }
         core.calculatorCoordinator.copyCalculationWithExpression(result)
         return true
+    }
+
+    func perform(_ shortcut: CalcShortcut, at selection: Int) -> Bool {
+        switch (shortcut, row(at: selection)) {
+        case (.pasteAnswer, .calc(let result)):
+            core.calculatorCoordinator.pasteCalculatorResult(result)
+            return true
+        case (.pasteAnswer, .entry(let entry)):
+            core.calculatorCoordinator.pasteCalculatorHistoryEntry(entry)
+            return true
+        case (.copyUnformattedAnswer, .calc(let result)):
+            core.calculatorCoordinator.copyCalculatorUnformatted(result)
+            return true
+        case (.copyUnformattedAnswer, .entry(let entry)):
+            core.calculatorCoordinator.copyHistoryEntry(entry)
+            return true
+        case (.copyQuestionAndAnswer, .calc(let result)):
+            core.calculatorCoordinator.copyCalculationWithExpression(result)
+            return true
+        case (.copyQuestionAndAnswer, .entry(let entry)):
+            core.calculatorCoordinator.copyPlainCalculation(entry)
+            return true
+        default:
+            return false
+        }
     }
 
     func perform(_ shortcut: PaletteShortcut, at selection: Int) -> Bool {

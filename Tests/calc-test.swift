@@ -8,6 +8,35 @@ struct CalcTests {
     static var passes = 0
 
     static func main() {
+        expectShortcut(
+            CalcShortcut.resolve(
+                isReturn: true, isC: false, command: true, shift: false, option: false,
+                control: false), .pasteAnswer, "⌘↵ pastes the answer")
+        expectShortcut(
+            CalcShortcut.resolve(
+                isReturn: true, isC: false, command: false, shift: false, option: false,
+                control: true), .pasteAnswer, "⌃↵ pastes the answer")
+        expectShortcut(
+            CalcShortcut.resolve(
+                isReturn: false, isC: true, command: true, shift: false, option: true,
+                control: false), .copyUnformattedAnswer, "⌥⌘C copies unformatted")
+        expectShortcut(
+            CalcShortcut.resolve(
+                isReturn: false, isC: true, command: true, shift: true, option: true,
+                control: false), .copyQuestionAndAnswer, "⌥⇧⌘C copies question and answer")
+        expectShortcut(
+            CalcShortcut.resolve(
+                isReturn: false, isC: true, command: false, shift: false, option: true,
+                control: true), .copyUnformattedAnswer, "⌃⌥C copies unformatted")
+        expectShortcut(
+            CalcShortcut.resolve(
+                isReturn: false, isC: true, command: false, shift: true, option: true,
+                control: true), .copyQuestionAndAnswer, "⌃⌥⇧C copies question and answer")
+        expectShortcut(
+            CalcShortcut.resolve(
+                isReturn: true, isC: false, command: false, shift: true, option: false,
+                control: false), nil, "⇧↵ stays ordinary")
+
         // Arithmetic & precedence
         expectDisplay("2+2", "4")
         expectDisplay("5*7", "35")
@@ -1000,6 +1029,23 @@ struct CalcTests {
         expectDisplayAt("now in UTC", "12:18 AM")
         expectExpression("now in UTC", "12:18 AM")
         expectBadgesAt("now in tokyo", source: "UTC", target: "Tokyo")
+        expectDisplayAt("now in UTC+2", "2:18 AM")
+        expectBadgesAt("now in UTC+2", source: "UTC", target: "UTC+02:00")
+        expectDisplayAt("now in UTC+18", "6:18 PM")
+        expectBadgesAt("now in UTC+18", source: "UTC", target: "UTC+18:00")
+        expectDisplayAt("now in GMT-5", "7:18 PM (yesterday)")
+        expectBadgesAt("now in GMT-5", source: "UTC", target: "UTC-05:00")
+        expectDisplayAt("now in UTC+05:30", "5:48 AM")
+        expectBadgesAt("now in UTC+05:30", source: "UTC", target: "UTC+05:30")
+        expectDisplayAt("now in GMT-0330", "8:48 PM (yesterday)")
+        expectBadgesAt("now in GMT-0330", source: "UTC", target: "UTC-03:30")
+        for query in [
+            "now in UTC+18:01", "now in UTC+19", "now in UTC+24", "now in UTC-24",
+            "now in UTC+2:60", "now in UTC+2:3",
+            "now in UTC+", "now in UTC+00000", "now in UTC+2:000", "now in UTC+002"
+        ] {
+            expectNilAt(query)
+        }
         // A named source zone overrides the Mac's own, so neither side has to be local
         expectDisplayAt("5pm london in sf", "9:00 AM")
         expectDisplayAt("9:30am in nyc", "5:30 AM")
@@ -1804,6 +1850,10 @@ struct CalcTests {
         }
         check(query + " [source badge]", expected: source, got: result.sourceBadge ?? "nil")
         check(query + " [target badge]", expected: target, got: result.targetBadge ?? "nil")
+    }
+
+    static func expectShortcut(_ actual: CalcShortcut?, _ expected: CalcShortcut?, _ query: String) {
+        check(query, expected: String(describing: expected), got: String(describing: actual))
     }
 
     static func expectNilAt(_ query: String, now: Date = clock.now, calendar: Calendar? = nil) {

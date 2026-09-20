@@ -35,7 +35,22 @@ final class CalculatorCoordinator {
         Paster.copyPlainText(display)
     }
 
-    /// `⌘↵` copies the unformatted payload while recording the rendered calculation.
+    /// Raycast's ⌘↵/⌃↵ path pastes the rendered answer into the app behind the palette.
+    func pasteCalculatorResult(_ result: CalcResult) {
+        guard case .value(let display, _) = result.payload else { return }
+        calcHistory.record(expression: result.expression, result: display)
+        let target = paletteCoordinator.targetApp
+        paletteCoordinator.hidePalette(restoreFocus: false)
+        Paster.pasteString(display, previousApp: target)
+    }
+
+    func pasteCalculatorHistoryEntry(_ entry: CalcHistoryEntry) {
+        let target = paletteCoordinator.targetApp
+        paletteCoordinator.hidePalette(restoreFocus: false)
+        Paster.pasteString(entry.result, previousApp: target)
+    }
+
+    /// `⌥⌘C` copies the unformatted payload while recording the rendered calculation.
     func copyCalculatorUnformatted(_ result: CalcResult) {
         guard case .value(let display, let copyText) = result.payload else { return }
         calcHistory.record(expression: result.expression, result: display)
@@ -60,5 +75,10 @@ final class CalculatorCoordinator {
     func copyHistoryExpression(_ entry: CalcHistoryEntry) {
         paletteCoordinator.hidePalette(restoreFocus: false)
         Paster.copyPlainText(entry.expression)
+    }
+
+    func copyPlainCalculation(_ entry: CalcHistoryEntry) {
+        paletteCoordinator.hidePalette(restoreFocus: false)
+        Paster.copyPlainText("\(entry.expression) = \(entry.result)")
     }
 }

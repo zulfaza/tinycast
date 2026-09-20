@@ -319,6 +319,10 @@ dates; the copyable text stays the bare time.
 `now in UTC` keeps that phrase on the source side and badges both sides with their full local moment
 and GMT offset. Explicit clock conversions keep the clock and city badges that name their operands.
 
+Fixed offsets are accepted as `UTC+2`, `UTC-5`, `GMT+05:30` or `GMT-0330`. They are bounded to
+`±18:00`, reject malformed minutes and use canonical badges such as `UTC+02:00`. Compact offsets
+without a colon require four digits, so ambiguous forms such as `UTC+002` are rejected.
+
 A trailing `+ 2h` / `- 30 min` shifts the answer before it is converted, so `5pm ldn in sf + 2h`
 stays one query rather than needing two. Only sub-day units qualify, since a zone answer is a clock
 time, and `5pm london in sf + 2 kg` is silent rather than wrong.
@@ -327,6 +331,10 @@ The offset's unit may be left out — `time in sao paulo + 5` is five hours — 
 admits no other reading. The implication is the **offset's alone**: `time in 4` still names no zone
 and stays silent, and a bare `5 + 3` is arithmetic exactly as it was. It mirrors the bare number a
 moment already takes in grammar C.
+
+Calculator keyboard actions match Raycast: `↵` copies the rendered answer, `⌘↵` or `⌃↵` pastes it
+into the app behind Tinycast, `⌥⌘C` (or `⌃⌥C`) copies the unformatted answer, and
+`⌥⇧⌘C` (or `⌃⌥⇧C`) copies the question and answer.
 
 `diff paris` answers how far a zone runs from the Mac's own, and a duration may stand where a zone
 would (`time in 4 hours`, `time in 4 hours in san francisco`) — the zone table is tried first, so a
