@@ -407,6 +407,7 @@ extension View {
             .environment(core.visibility)
             .environment(core.aliases)
             .environment(core.fallbacks)
+            .environment(core.customThemes)
             .environment(core.customCommands)
             .environment(core.snippetsStore)
             .environment(core.quicklinks)

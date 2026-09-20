@@ -17,66 +17,76 @@ struct CustomThemeSettingsView: View {
     }
 
     var body: some View {
-        Section {
-            Picker("Edit", selection: $selectedAppearance) {
-                ForEach(ThemeEditorAppearance.allCases) { appearance in
-                    Text(appearance.title).tag(appearance)
+        Form {
+            Section {
+                Picker("Edit", selection: $selectedAppearance) {
+                    ForEach(ThemeEditorAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance)
+                    }
                 }
-            }
-            TextField("Name", text: name)
-            colorPicker("Panel background", keyPath: \ThemePalette.panelBackground)
-            colorPicker("Primary text", keyPath: \ThemePalette.primaryText)
-            colorPicker("Accent", keyPath: \ThemePalette.accent)
-            colorPicker("Secondary text", keyPath: \ThemePalette.support.secondaryText)
-            colorPicker("Success", keyPath: \ThemePalette.support.success)
-            colorPicker("Destructive", keyPath: \ThemePalette.support.destructive)
-            Toggle("Use a two-stop gradient", isOn: gradientEnabled)
-            if palette.gradient != nil {
-                ColorPicker("Gradient first", selection: gradientColorBinding(first: true))
-                ColorPicker("Gradient second", selection: gradientColorBinding(first: false))
-                Slider(value: gradientAngle, in: -180...180, step: 1) {
-                    Text("Gradient angle")
-                } minimumValueLabel: {
-                    Text("-180°")
-                } maximumValueLabel: {
-                    Text("180°")
+                TextField("Name", text: name)
+                colorPicker("Panel background", keyPath: \ThemePalette.panelBackground)
+                colorPicker("Primary text", keyPath: \ThemePalette.primaryText)
+                colorPicker("Accent", keyPath: \ThemePalette.accent)
+                colorPicker("Secondary text", keyPath: \ThemePalette.support.secondaryText)
+                colorPicker("Success", keyPath: \ThemePalette.support.success)
+                colorPicker("Destructive", keyPath: \ThemePalette.support.destructive)
+                Toggle("Use a two-stop gradient", isOn: gradientEnabled)
+                if palette.gradient != nil {
+                    ColorPicker("Gradient first", selection: gradientColorBinding(first: true))
+                    ColorPicker("Gradient second", selection: gradientColorBinding(first: false))
+                    Slider(value: gradientAngle, in: -180...180, step: 1) {
+                        Text("Gradient angle")
+                    } minimumValueLabel: {
+                        Text("-180°")
+                    } maximumValueLabel: {
+                        Text("180°")
+                    }
+                    .accessibilityValue(Text("\(Int(gradientAngle.wrappedValue)) degrees"))
                 }
-                .accessibilityValue(Text("\(Int(gradientAngle.wrappedValue)) degrees"))
+            } header: {
+                SettingsSectionHeader(.customThemesTheme)
+            } footer: {
+                Text("Theme changes apply to Tinycast surfaces immediately.")
             }
-        } header: {
-            SettingsSectionHeader(.customThemesTheme)
-        } footer: {
-            Text("Theme changes apply to Tinycast surfaces immediately.")
+            Section {
+                CustomThemePreview(palette: palette, appearance: selectedAppearance)
+            } header: {
+                Text("Preview")
+            }
+            Section {
+                HStack {
+                    Button("Import…") { showingImporter = true }
+                    Button("Export…") { prepareExport() }
+                    Spacer()
+                    Button("Reset", role: .destructive) {
+                        themes.reset()
+                        draft = .defaults
+                    }
+                    if let importError {
+                        Text(importError)
+                            .font(.caption)
+                            .foregroundStyle(Theme.Colors.destructive)
+                    }
+                }
+            } header: {
+                Text("Portable theme")
+            }
         }
-        Section {
-            HStack {
-                Button("Import…") { showingImporter = true }
-                Button("Export…") { prepareExport() }
-                Spacer()
-                Button("Reset", role: .destructive) {
-                    themes.reset()
-                    draft = .defaults
-                }
-                if let importError {
-                    Text(importError)
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.destructive)
-                }
-            }
-        } header: {
-            Text("Portable theme")
-        }
+        .formStyle(.grouped)
         .fileImporter(
             isPresented: $showingImporter,
             allowedContentTypes: [.json],
             allowsMultipleSelection: false,
-            onCompletion: importTheme)
+            onCompletion: importTheme
+        )
         .fileExporter(
             isPresented: $showingExporter,
             document: exportDocument,
             contentType: .json,
             defaultFilename: "Tinycast Theme.tinycast-theme",
-            onCompletion: exportFinished)
+            onCompletion: exportFinished
+        )
         .onAppear { draft = themes.editableTheme }
         .settingsScrollTarget(.customThemes)
     }
@@ -231,6 +241,121 @@ private enum ThemeEditorAppearance: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     var title: String { rawValue.capitalized }
+
+    var colorScheme: ColorScheme {
+        self == .dark ? .dark : .light
+    }
+}
+
+private struct CustomThemePreview: View {
+    let palette: ThemePalette
+    let appearance: ThemeEditorAppearance
+
+    private var primary: Color { palette.primaryText.swiftUIColor }
+    private var secondary: Color { palette.support.secondaryText.swiftUIColor }
+    private var accent: Color { palette.accent.swiftUIColor }
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.dialog, style: .continuous)
+        VStack(spacing: 0) {
+            header
+            separator
+            VStack(spacing: Theme.Spacing.xxs) {
+                row(symbol: "sparkles", title: "Tinycast", subtitle: "Open anything", selected: true)
+                row(symbol: "doc.on.clipboard", title: "Clipboard History", subtitle: "Recent copies")
+            }
+            .padding(Theme.Spacing.md)
+            separator
+            footer
+        }
+        .foregroundStyle(primary)
+        .background(surface, in: shape)
+        .overlay(shape.strokeBorder(primary.opacity(0.14), lineWidth: Theme.Size.hairline))
+        .environment(\.colorScheme, appearance.colorScheme)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(appearance.title) theme preview")
+    }
+
+    private var header: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            SymbolImage(name: "magnifyingglass", size: Theme.Size.quickActionHeaderIcon)
+                .foregroundStyle(secondary)
+            Text("Search for apps and commands…")
+                .foregroundStyle(secondary)
+            Spacer(minLength: Theme.Spacing.lg)
+            Text("⌘ K")
+                .font(Theme.Typography.keyCap)
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, Theme.Spacing.xxs)
+                .background(
+                    primary.opacity(0.10),
+                    in: RoundedRectangle(
+                        cornerRadius: Theme.Radius.keyCap, style: .continuous))
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .frame(height: Theme.Size.headerHeight)
+    }
+
+    private func row(
+        symbol: String, title: String, subtitle: String, selected: Bool = false
+    ) -> some View {
+        HStack(spacing: Theme.Spacing.lg) {
+            SymbolImage(name: symbol, size: Theme.Size.quickActionHeaderIcon)
+                .foregroundStyle(selected ? accent : secondary)
+                .frame(width: Theme.Size.rowIcon, height: Theme.Size.rowIcon)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text(title)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(secondary)
+            }
+            Spacer(minLength: Theme.Spacing.lg)
+            if selected {
+                SymbolImage(name: "return", size: Theme.Size.quickActionHeaderIcon)
+                    .foregroundStyle(accent)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(
+            selected ? primary.opacity(0.10) : Color.clear,
+            in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+    }
+
+    private var footer: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Circle()
+                .fill(palette.support.success.swiftUIColor)
+                .frame(width: Theme.Size.colorDot, height: Theme.Size.colorDot)
+            Text("Ready")
+                .foregroundStyle(secondary)
+            Spacer(minLength: Theme.Spacing.lg)
+            Text("Preview updates live")
+                .font(.caption)
+                .foregroundStyle(secondary)
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .frame(height: Theme.Size.bottomBarHeight)
+    }
+
+    private var separator: some View {
+        primary.opacity(0.10)
+            .frame(height: Theme.Size.hairline)
+    }
+
+    private var surface: AnyShapeStyle {
+        guard let gradient = palette.gradient else {
+            return AnyShapeStyle(palette.panelBackground.swiftUIColor)
+        }
+        let radians = gradient.angle * .pi / 180
+        let horizontal = CGFloat(cos(radians))
+        let vertical = CGFloat(sin(radians))
+        return AnyShapeStyle(
+            LinearGradient(
+                colors: [gradient.first.swiftUIColor, gradient.second.swiftUIColor],
+                startPoint: UnitPoint(x: 0.5 - horizontal / 2, y: 0.5 - vertical / 2),
+                endPoint: UnitPoint(x: 0.5 + horizontal / 2, y: 0.5 + vertical / 2)))
+    }
 }
 
 private struct CustomThemeFileDocument: FileDocument {
