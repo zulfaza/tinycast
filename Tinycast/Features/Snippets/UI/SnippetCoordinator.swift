@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Owns the snippet flow: listener, browser, editor handoff, delivery, presence.
 @MainActor
@@ -11,10 +12,10 @@ final class SnippetCoordinator {
     private let settings: AppSettings
     private let windowController: PaletteWindowController
     private let paletteCoordinator: PaletteCoordinator
-    private let settingsCoordinator: SettingsCoordinator
+    private let editorPanel: SnippetEditorPanelController
     /// Routed out so `MessageHUDController` stays owned by `AppCore`.
     private let showMessage: @MainActor (String) -> Void
-    /// The consent dialog and the `pendingSnippetEdit` handoff to the Settings pane.
+    /// The consent dialog and standalone editor panel are owned by this coordinator.
     private unowned let core: AppCore
 
     var interfaceMetrics: InterfaceMetrics { settings.interfaceSize.metrics }
@@ -28,7 +29,6 @@ final class SnippetCoordinator {
         settings: AppSettings,
         windowController: PaletteWindowController,
         paletteCoordinator: PaletteCoordinator,
-        settingsCoordinator: SettingsCoordinator,
         showMessage: @escaping @MainActor (String) -> Void,
         core: AppCore
     ) {
@@ -40,7 +40,7 @@ final class SnippetCoordinator {
         self.settings = settings
         self.windowController = windowController
         self.paletteCoordinator = paletteCoordinator
-        self.settingsCoordinator = settingsCoordinator
+        self.editorPanel = SnippetEditorPanelController(store: store)
         self.showMessage = showMessage
         self.core = core
     }
@@ -122,19 +122,24 @@ final class SnippetCoordinator {
     /// Opens the Snippets pane with the editor showing `record`; nil is a new snippet.
     func editSnippet(_ record: StoredSnippet?) {
         guard record.map(store.isWritable) ?? true else { return }
-        core.pendingSnippetEdit = SnippetEditRequest(record: record)
-        settingsCoordinator.showSettings(tab: .snippets)
+        editorPanel.open(record: record) { [weak core] in
+            core?.snippetCoordinator.editorDidClose()
+        }
     }
 
-    var isEditingSnippet: Bool { core.pendingSnippetEdit != nil }
+    var isEditingSnippet: Bool { editorPanel.isOpen }
 
     func toggleEditor() {
-        guard isEditingSnippet else { return }
-        if settingsCoordinator.isVisible {
-            settingsCoordinator.hide()
+        guard editorPanel.hasEditor else { return }
+        if editorPanel.isVisible {
+            editorPanel.hide()
         } else {
-            settingsCoordinator.showSettings(tab: .snippets)
+            editorPanel.show()
         }
+    }
+
+    private func editorDidClose() {
+        editorPanel.clearEditor()
     }
 
     func showSnippetInFinder(_ record: StoredSnippet) {
@@ -338,5 +343,67 @@ final class SnippetCoordinator {
                 self.store.recordUse(id: recordID)
                 if let confirmation { self.showMessage(confirmation) }
             })
+    }
+}
+
+@MainActor
+private final class SnippetEditorPanelController: NSObject, NSWindowDelegate {
+    private let store: SnippetsStore
+    private var panel: NSPanel?
+    private var hostingController: NSHostingController<AnyView>?
+    private var onDismiss: (() -> Void)?
+
+    init(store: SnippetsStore) {
+        self.store = store
+    }
+
+    var hasEditor: Bool { panel != nil }
+    var isOpen: Bool { panel != nil }
+    var isVisible: Bool { panel?.isVisible == true }
+
+    func open(record: StoredSnippet?, onDismiss: @escaping () -> Void) {
+        panel?.close()
+        self.onDismiss = onDismiss
+
+        let view = SnippetEditorView(record: record) { [weak self] in
+            self?.panel?.close()
+        }
+        hostingController = NSHostingController(rootView: AnyView(view.environment(store)))
+
+        let panel = NSPanel(
+            contentRect: NSRect(
+                origin: .zero,
+                size: NSSize(width: Theme.Size.editorSheetWidth, height: 475)),
+            styleMask: [.titled, .closable, .utilityWindow],
+            backing: .buffered,
+            defer: false)
+        panel.title = record == nil ? "Add Snippet" : "Edit Snippet"
+        panel.isReleasedWhenClosed = false
+        panel.delegate = self
+        panel.contentViewController = hostingController
+        panel.center()
+        self.panel = panel
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    func show() {
+        guard let panel else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    func hide() {
+        panel?.orderOut(nil)
+    }
+
+    func clearEditor() {
+        panel = nil
+        hostingController = nil
+        onDismiss = nil
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onDismiss?()
     }
 }
