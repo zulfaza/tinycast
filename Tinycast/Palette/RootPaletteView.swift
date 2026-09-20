@@ -448,19 +448,20 @@ struct RootPaletteView: View {
             // The hosted tree is its own hierarchy, so the highlight has to be pushed into it.
             .onChange(of: menuSelection) { syncMenuPanel(presenting: false) }
             .onChange(of: vm.menuQuery) { menuQueryChanged() }
-            .onDisappear {
-                menuPanel.hide()
-                if let panel = hostWindow as? PalettePanel {
-                    panel.onHeaderFieldBoundaryArrow = nil
-                    panel.onHeaderOptionArrow = nil
-                }
-            }
+            .onDisappear(perform: tearDownPaletteSurface)
             .onAppear { searchFocused = !screen.hidesSearchField }
             .modifier(SearchFieldHiding(hidden: hidesSearchField, apply: applySearchFieldHiding))
             // Several paths flip `paletteIsCollapsed`, so resize the window to match.
             .onChange(of: core.paletteCoordinator.paletteIsCollapsed) {
                 core.paletteCoordinator.syncPaletteSize()
             }
+    }
+
+    private func tearDownPaletteSurface() {
+        menuPanel.hide()
+        guard let panel = hostWindow as? PalettePanel else { return }
+        panel.onHeaderFieldBoundaryArrow = nil
+        panel.onHeaderOptionArrow = nil
     }
 
     /// Split from `body`: one chain of this length is past what the type-checker will infer.
