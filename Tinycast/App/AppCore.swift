@@ -356,8 +356,7 @@ final class AppCore {
             }
             clipboardCoordinator.onSaveTextAsSnippet = { [weak self] item in
                 guard let self else { return }
-                self.paletteCoordinator.hidePalette(restoreFocus: false)
-                self.clipboardEditor.saveAsSnippet(item)
+                self.snippetCoordinator.saveClipboardAsSnippet(text: item.text, name: item.name)
             }
             // Keeps running while Carbon pauses: the recorder needs its rewritten flags.
             hyperKeyTap.start(settings: settings)

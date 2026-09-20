@@ -122,11 +122,25 @@ final class SnippetCoordinator {
     /// Opens the standalone editor with `record`; nil is a new snippet.
     func editSnippet(_ record: StoredSnippet?) {
         guard record.map(store.isWritable) ?? true else { return }
+        let state: SnippetEditorState = record.map(SnippetEditorState.edit)
+            ?? .create(Snippet(name: "", text: ""))
+        openEditor(state: state)
+    }
+
+    /// Opens the standalone editor for a text clipboard item; non-text values do nothing.
+    func saveClipboardAsSnippet(text: String?, name: String?) {
+        guard let text else { return }
+        openEditor(
+            state: .create(
+                Snippet(name: name ?? "Clipboard Snippet", text: text)))
+    }
+
+    private func openEditor(state: SnippetEditorState) {
         let size = CGSize(
             width: interfaceMetrics.size.panelWidth, height: interfaceMetrics.size.panelHeight)
         let frame = windowController.frameForAuxiliaryPanel(size: size)
         if paletteCoordinator.isVisible { paletteCoordinator.hidePalette(restoreFocus: false) }
-        editorPanel.open(record: record, frame: frame) { [weak core] in
+        editorPanel.open(state: state, frame: frame) { [weak core] in
             core?.snippetCoordinator.editorDidClose()
         }
     }
@@ -372,11 +386,11 @@ private final class SnippetEditorPanelController: NSObject, NSWindowDelegate {
     var isOpen: Bool { panel != nil }
     var isVisible: Bool { panel?.isVisible == true }
 
-    func open(record: StoredSnippet?, frame: NSRect, onDismiss: @escaping () -> Void) {
+    func open(state: SnippetEditorState, frame: NSRect, onDismiss: @escaping () -> Void) {
         panel?.close()
         self.onDismiss = onDismiss
 
-        let view = SnippetEditorView(record: record, metrics: settings.interfaceSize.metrics) {
+        let view = SnippetEditorView(state: state, metrics: settings.interfaceSize.metrics) {
             [weak self] in self?.panel?.close()
         }
         hostingController = NSHostingController(rootView: AnyView(view.environment(store)))
@@ -386,7 +400,7 @@ private final class SnippetEditorPanelController: NSObject, NSWindowDelegate {
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false)
-        panel.title = record == nil ? "Add Snippet" : "Edit Snippet"
+        panel.title = state.isEditing ? "Edit Snippet" : "Add Snippet"
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

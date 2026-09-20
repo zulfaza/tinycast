@@ -200,6 +200,8 @@ the template on the left and snippet metadata on the right. Snippet argument opt
 menus open directly below the focused selector; ↑/↓ cycles the choices without opening the menu.
 Their configured shortcuts remain available while the feature is enabled, even when launcher rows
 are hidden; disabling snippets disables those shortcuts too.
+Clipboard **Save as Snippet** opens this same editor with the copied text and a suggested name
+prefilled, so all snippet metadata can be reviewed before the first save.
 
 Automatic keyword expansion comes with the feature switch: enabling snippets in
 **Settings → Snippets** first shows an explanation, then stores the flag and requests Accessibility if
