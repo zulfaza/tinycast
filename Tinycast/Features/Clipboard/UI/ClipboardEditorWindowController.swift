@@ -27,12 +27,6 @@ final class ClipboardEditorWindowController {
         } }
     }
 
-    func saveAsSnippet(_ item: ClipboardItem) {
-        show { ClipboardSaveSnippetView(item: item, core: core) { [weak self] in
-            self?.window.close()
-        } }
-    }
-
     private func show<Content: View>(@ViewBuilder content: () -> Content) {
         window.show { content().environment(core).environment(core.settings) }
     }
@@ -95,51 +89,6 @@ private struct ClipboardSaveFileView: View {
             }
             try? text.write(to: url, atomically: true, encoding: .utf8)
             onDone()
-        }
-    }
-}
-
-private struct ClipboardSaveSnippetView: View {
-    let item: ClipboardItem
-    let core: AppCore
-    let onDone: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var name: String
-    @State private var error: String?
-
-    init(item: ClipboardItem, core: AppCore, onDone: @escaping () -> Void) {
-        self.item = item
-        self.core = core
-        self.onDone = onDone
-        _name = State(initialValue: item.name ?? "Clipboard Snippet")
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            Text("Save as Snippet").font(.title2.weight(.bold))
-            TextField("Snippet name", text: $name).textFieldStyle(.roundedBorder)
-            if let error { Text(error).font(.caption).foregroundStyle(.red) }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Save", action: save)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(Theme.Spacing.xxl)
-    }
-
-    private func save() {
-        guard let text = item.text else { return }
-        let snippet = Snippet(name: name, text: text)
-        Task {
-            do {
-                _ = try await core.snippetsStore.create(snippet)
-                onDone()
-            } catch {
-                self.error = error.localizedDescription
-            }
         }
     }
 }
