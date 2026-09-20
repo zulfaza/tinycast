@@ -509,12 +509,21 @@ struct RootPaletteView: View {
             .onKeyPress(keys: [.return, KeyEquivalent("\u{3}")], phases: .down) { press in
                 let command = press.modifiers.contains(.command)
                 let option = press.modifiers.contains(.option)
+                let control = press.modifiers.contains(.control)
                 if menuOpen, !command, !option {
                     activateMenuItem(menuSelection)
                     return .handled
                 }
                 if isExtensionForm { return handleFormReturn(press) }
                 let screen = screen
+                if !menuOpen, (vm.mode == .calculatorHistory || vm.mode == .launcher),
+                    let shortcut = CalcShortcut.resolve(
+                        isReturn: true, isC: false, command: command,
+                        shift: press.modifiers.contains(.shift), option: option, control: control),
+                    screen.perform(shortcut, at: selection(in: screen))
+                {
+                    return .handled
+                }
                 guard command || option else {
                     guard !vm.isComposing else { return .ignored }
                     // The fallback for a hidden-field screen with no control focused to answer.
@@ -588,6 +597,17 @@ struct RootPaletteView: View {
             .onKeyPress(phases: .down) { press in
                 let isDeleteKey = press.key == .delete || press.key == .deleteForward
                 if isDeleteKey, menuOpen { return .handled }
+                let screen = screen
+                if !menuOpen, (vm.mode == .calculatorHistory || vm.mode == .launcher),
+                    let shortcut = CalcShortcut.resolve(
+                        isReturn: false, isC: ASCIIKeyboardLayout.matches(press.key, character: "c"),
+                        command: press.modifiers.contains(.command),
+                        shift: press.modifiers.contains(.shift), option: press.modifiers.contains(.option),
+                        control: press.modifiers.contains(.control)),
+                    screen.perform(shortcut, at: selection(in: screen))
+                {
+                    return .handled
+                }
                 guard
                     let shortcut = PaletteShortcut.resolve(
                         command: press.modifiers.contains(.command),
@@ -598,7 +618,6 @@ struct RootPaletteView: View {
                         matches: { ASCIIKeyboardLayout.matches(press.key, character: $0) })
                 else { return .ignored }
                 guard !shortcut.requiresExpanded || !isCollapsed else { return .ignored }
-                let screen = screen
                 guard screen.perform(shortcut, at: selection(in: screen)) else { return .ignored }
                 if shortcut.closesMenu, menuOpen { closeMenus() }
                 return .handled

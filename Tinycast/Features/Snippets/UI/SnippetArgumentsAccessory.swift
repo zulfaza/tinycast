@@ -141,8 +141,8 @@ private struct SnippetArgumentsRow: View {
                     .focusable()
                     .focusEffectDisabled()
                     .focused($focused, equals: argument.name)
-                    .onKeyPress(.return) {
-                        openOptions(argument.name)
+                    .onKeyPress(keys: [.return, KeyEquivalent("\u{3}")]) { _ in
+                        onSubmit()
                         return .handled
                     }
                     .background {

@@ -682,6 +682,7 @@
 		FEA3CEC6870A030FAF1F4331 /* ThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 102B53830D247FAE19479BCA /* ThumbnailCache.swift */; };
 		FED12A4930BD0A52AE2799F7 /* CameraStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 140D704D2B8F12F7D623DB8F /* CameraStage.swift */; };
 		FF372D9F3A0FE3671D517589 /* WindowCommandCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE33C0D70D728B12E9A8D4A6 /* WindowCommandCoordinator.swift */; };
+		FF3E52AD9A892A25C41BE74D /* CalcShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C80EB4979F7C1AD5EA8CD6 /* CalcShortcut.swift */; };
 		FF42AF572BA0BFEFCFCE5901 /* WindowLayoutGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFF7FC0E52E9082006614E0D /* WindowLayoutGeometry.swift */; };
 		FF934DD9FBD8F26BAB72ACD1 /* SymbolImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64EC07E163CE4F3D11FE7225 /* SymbolImage.swift */; };
 		FFE6952D79F28B62E189C097 /* DoubleTapMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2258D4A6B6C22AB7C5D421BE /* DoubleTapMonitor.swift */; };
@@ -1371,6 +1372,7 @@
 		F082FD6A3AC234F43735715D /* FeatureCommandsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureCommandsSection.swift; sourceTree = "<group>"; };
 		F097C9983DF27A99694C8BC5 /* Zlib.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Zlib.swift; sourceTree = "<group>"; };
 		F1521B7DF72B9F64DE0AE866 /* SnippetFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnippetFilter.swift; sourceTree = "<group>"; };
+		F2C80EB4979F7C1AD5EA8CD6 /* CalcShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalcShortcut.swift; sourceTree = "<group>"; };
 		F3F97240A718D95DFD9343DB /* UpcomingWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpcomingWindow.swift; sourceTree = "<group>"; };
 		F42BECB8234FEA49797B68F6 /* WindowSwitchQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSwitchQuery.swift; sourceTree = "<group>"; };
 		F5061C8D4F15F068C4EC5E7A /* DisabledApplicationsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisabledApplicationsSection.swift; sourceTree = "<group>"; };
@@ -1510,6 +1512,7 @@
 				CA97F3257C2FA99BF185ED8A /* CalcOperator.swift */,
 				92B4495E56754B05B5F3551D /* CalcPercent.swift */,
 				4EF9F16C3F5567240FF03122 /* CalcQuantity.swift */,
+				F2C80EB4979F7C1AD5EA8CD6 /* CalcShortcut.swift */,
 				EBBB8484C670351136F3C535 /* CalcTimestamp.swift */,
 				8BA109C429A1E4E7E2B55BDC /* CalcTimeZone.swift */,
 				34F2E06B7C8613EB3096B94B /* CalcToken.swift */,
@@ -3397,6 +3400,7 @@
 				AF5FB32136A3DC18EC4E5E4C /* CalcOperator.swift in Sources */,
 				48AE2C9989F8FA2AA99D2D61 /* CalcPercent.swift in Sources */,
 				208FFC22E116E53E7BF3D147 /* CalcQuantity.swift in Sources */,
+				FF3E52AD9A892A25C41BE74D /* CalcShortcut.swift in Sources */,
 				0B16FB98CFD5FC242DB69E70 /* CalcTimeZone.swift in Sources */,
 				1BC52F49830E021342C037CA /* CalcTimestamp.swift in Sources */,
 				D7293913917ABBCD527EB615 /* CalcToken.swift in Sources */,
