@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 
 /// Owns the snippet flow: listener, browser, editor handoff, delivery, presence.
 @MainActor
@@ -12,10 +11,10 @@ final class SnippetCoordinator {
     private let settings: AppSettings
     private let windowController: PaletteWindowController
     private let paletteCoordinator: PaletteCoordinator
-    private let editorPanel: SnippetEditorPanelController
+    private let settingsCoordinator: SettingsCoordinator
     /// Routed out so `MessageHUDController` stays owned by `AppCore`.
     private let showMessage: @MainActor (String) -> Void
-    /// The consent dialog and standalone editor panel are owned by this coordinator.
+    /// The consent dialog and the `pendingSnippetEdit` handoff to the Settings pane.
     private unowned let core: AppCore
 
     var interfaceMetrics: InterfaceMetrics { settings.interfaceSize.metrics }
@@ -29,6 +28,7 @@ final class SnippetCoordinator {
         settings: AppSettings,
         windowController: PaletteWindowController,
         paletteCoordinator: PaletteCoordinator,
+        settingsCoordinator: SettingsCoordinator,
         showMessage: @escaping @MainActor (String) -> Void,
         core: AppCore
     ) {
@@ -40,7 +40,7 @@ final class SnippetCoordinator {
         self.settings = settings
         self.windowController = windowController
         self.paletteCoordinator = paletteCoordinator
-        self.editorPanel = SnippetEditorPanelController(store: store, settings: settings)
+        self.settingsCoordinator = settingsCoordinator
         self.showMessage = showMessage
         self.core = core
     }
@@ -119,45 +119,22 @@ final class SnippetCoordinator {
         paletteCoordinator.togglePalette(mode: .snippets)
     }
 
-    /// Opens the standalone editor with `record`; nil is a new snippet.
+    /// Opens the Snippets pane with the editor showing `record`; nil is a new snippet.
     func editSnippet(_ record: StoredSnippet?) {
         guard record.map(store.isWritable) ?? true else { return }
-        let state: SnippetEditorState = record.map(SnippetEditorState.edit)
-            ?? .create(Snippet(name: "", text: ""))
-        openEditor(state: state)
+        core.pendingSnippetEdit = SnippetEditRequest(record: record)
+        settingsCoordinator.showSettings(tab: .snippets)
     }
 
-    /// Opens the standalone editor for a text clipboard item; non-text values do nothing.
-    func saveClipboardAsSnippet(text: String?, name: String?) {
-        guard let text else { return }
-        openEditor(
-            state: .create(
-                Snippet(name: name ?? "Clipboard Snippet", text: text)))
-    }
-
-    private func openEditor(state: SnippetEditorState) {
-        let size = CGSize(
-            width: interfaceMetrics.size.panelWidth, height: interfaceMetrics.size.panelHeight)
-        let frame = windowController.frameForAuxiliaryPanel(size: size)
-        if paletteCoordinator.isVisible { paletteCoordinator.hidePalette(restoreFocus: false) }
-        editorPanel.open(state: state, frame: frame) { [weak core] in
-            core?.snippetCoordinator.editorDidClose()
-        }
-    }
-
-    var isEditingSnippet: Bool { editorPanel.isOpen }
+    var isEditingSnippet: Bool { core.pendingSnippetEdit != nil }
 
     func toggleEditor() {
-        guard editorPanel.hasEditor else { return }
-        if editorPanel.isVisible {
-            editorPanel.hide()
+        guard isEditingSnippet else { return }
+        if settingsCoordinator.isVisible {
+            settingsCoordinator.hide()
         } else {
-            editorPanel.show()
+            settingsCoordinator.showSettings(tab: .snippets)
         }
-    }
-
-    private func editorDidClose() {
-        editorPanel.clearEditor()
     }
 
     func showSnippetInFinder(_ record: StoredSnippet) {
@@ -361,87 +338,5 @@ final class SnippetCoordinator {
                 self.store.recordUse(id: recordID)
                 if let confirmation { self.showMessage(confirmation) }
             })
-    }
-}
-
-@MainActor
-private final class SnippetEditorPanelController: NSObject, NSWindowDelegate {
-    private final class Panel: NSPanel {
-        override var canBecomeKey: Bool { true }
-        override var canBecomeMain: Bool { false }
-    }
-
-    private let store: SnippetsStore
-    private let settings: AppSettings
-    private var panel: NSPanel?
-    private var hostingController: NSHostingController<AnyView>?
-    private var onDismiss: (() -> Void)?
-
-    init(store: SnippetsStore, settings: AppSettings) {
-        self.store = store
-        self.settings = settings
-    }
-
-    var hasEditor: Bool { panel != nil }
-    var isOpen: Bool { panel != nil }
-    var isVisible: Bool { panel?.isVisible == true }
-
-    func open(state: SnippetEditorState, frame: NSRect, onDismiss: @escaping () -> Void) {
-        panel?.close()
-        self.onDismiss = onDismiss
-
-        let view = SnippetEditorView(state: state, metrics: settings.interfaceSize.metrics) {
-            [weak self] in self?.panel?.close()
-        }
-        hostingController = NSHostingController(rootView: AnyView(view.environment(store)))
-
-        let panel = Panel(
-            contentRect: frame,
-            styleMask: [.borderless, .fullSizeContentView],
-            backing: .buffered,
-            defer: false)
-        panel.title = state.isEditing ? "Edit Snippet" : "Add Snippet"
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.hidesOnDeactivate = false
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.animationBehavior = .utilityWindow
-        panel.isMovableByWindowBackground = true
-        panel.isReleasedWhenClosed = false
-        panel.isRestorable = false
-        panel.delegate = self
-        panel.contentViewController = hostingController
-        panel.contentView?.wantsLayer = true
-        panel.contentView?.layer?.cornerCurve = .continuous
-        panel.contentView?.layer?.cornerRadius = settings.interfaceSize.metrics.radius.panel
-        panel.contentView?.layer?.masksToBounds = true
-        panel.setFrame(frame, display: false)
-        self.panel = panel
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-        panel.selectNextKeyView(nil)
-    }
-
-    func show() {
-        guard let panel else { return }
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-    }
-
-    func hide() {
-        panel?.orderOut(nil)
-    }
-
-    func clearEditor() {
-        panel = nil
-        hostingController = nil
-        onDismiss = nil
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        onDismiss?()
     }
 }

@@ -116,11 +116,13 @@ enum SnippetActionsMenu {
         if canEdit {
             items.append(
                 PopoverMenuItem(title: "Edit Snippet", systemImage: "pencil", startsSection: true) {
+                    core.paletteCoordinator.hidePalette(restoreFocus: false)
                     core.snippetCoordinator.editSnippet(record)
                 })
         }
         items.append(
             PopoverMenuItem(title: "Create Snippet", systemImage: "plus") {
+                core.paletteCoordinator.hidePalette(restoreFocus: false)
                 core.snippetCoordinator.editSnippet(nil)
             })
         items.append(
