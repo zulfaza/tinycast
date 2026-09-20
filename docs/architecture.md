@@ -144,6 +144,11 @@ driven imperatively from AppKit. Extension menu extras are dynamic `NSStatusItem
 - **The main menu** — shaped by `TinycastApp`'s `.commands`, which rebinds ⌘Q to Close Window: the AI
   Chat window when it is key, otherwise Settings. It is only ever on screen while a titled window is
   open, so it is those windows' menu bar. It must stay declarative.
+ - **Snippet editor** — a feature-owned, borderless `NSPanel` managed by `SnippetCoordinator`. Create
+  and Edit open it directly; Settings remains independent.
+ - **The main menu** — shaped by `TinycastApp`'s `.commands`, which rebinds ⌘Q to Close Window. It is
+  only ever on screen while a titled window is open, so it is Settings' menu bar. It must stay
+  declarative.
 - **Dialogs** — borderless `DialogPanel`s driven by `DialogController`, the app's only presenter for
   confirmations, failure reports and value prompts. Presentation is `async`, so nothing blocks the main
   actor, and the presenter refuses a second dialog while one is up — that, not a flag, is what stops a

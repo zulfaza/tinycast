@@ -40,7 +40,7 @@ final class SnippetCoordinator {
         self.settings = settings
         self.windowController = windowController
         self.paletteCoordinator = paletteCoordinator
-        self.editorPanel = SnippetEditorPanelController(store: store)
+        self.editorPanel = SnippetEditorPanelController(store: store, settings: settings)
         self.showMessage = showMessage
         self.core = core
     }
@@ -119,10 +119,14 @@ final class SnippetCoordinator {
         paletteCoordinator.togglePalette(mode: .snippets)
     }
 
-    /// Opens the Snippets pane with the editor showing `record`; nil is a new snippet.
+    /// Opens the standalone editor with `record`; nil is a new snippet.
     func editSnippet(_ record: StoredSnippet?) {
         guard record.map(store.isWritable) ?? true else { return }
-        editorPanel.open(record: record) { [weak core] in
+        let size = CGSize(
+            width: interfaceMetrics.size.panelWidth, height: interfaceMetrics.size.panelHeight)
+        let frame = windowController.frameForAuxiliaryPanel(size: size)
+        if paletteCoordinator.isVisible { paletteCoordinator.hidePalette(restoreFocus: false) }
+        editorPanel.open(record: record, frame: frame) { [weak core] in
             core?.snippetCoordinator.editorDidClose()
         }
     }
@@ -348,43 +352,63 @@ final class SnippetCoordinator {
 
 @MainActor
 private final class SnippetEditorPanelController: NSObject, NSWindowDelegate {
+    private final class Panel: NSPanel {
+        override var canBecomeKey: Bool { true }
+        override var canBecomeMain: Bool { false }
+    }
+
     private let store: SnippetsStore
+    private let settings: AppSettings
     private var panel: NSPanel?
     private var hostingController: NSHostingController<AnyView>?
     private var onDismiss: (() -> Void)?
 
-    init(store: SnippetsStore) {
+    init(store: SnippetsStore, settings: AppSettings) {
         self.store = store
+        self.settings = settings
     }
 
     var hasEditor: Bool { panel != nil }
     var isOpen: Bool { panel != nil }
     var isVisible: Bool { panel?.isVisible == true }
 
-    func open(record: StoredSnippet?, onDismiss: @escaping () -> Void) {
+    func open(record: StoredSnippet?, frame: NSRect, onDismiss: @escaping () -> Void) {
         panel?.close()
         self.onDismiss = onDismiss
 
-        let view = SnippetEditorView(record: record) { [weak self] in
-            self?.panel?.close()
+        let view = SnippetEditorView(record: record, metrics: settings.interfaceSize.metrics) {
+            [weak self] in self?.panel?.close()
         }
         hostingController = NSHostingController(rootView: AnyView(view.environment(store)))
 
-        let panel = NSPanel(
-            contentRect: NSRect(
-                origin: .zero,
-                size: NSSize(width: Theme.Size.editorSheetWidth, height: 475)),
-            styleMask: [.titled, .closable, .utilityWindow],
+        let panel = Panel(
+            contentRect: frame,
+            styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false)
         panel.title = record == nil ? "Add Snippet" : "Edit Snippet"
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.animationBehavior = .utilityWindow
+        panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
+        panel.isRestorable = false
         panel.delegate = self
         panel.contentViewController = hostingController
-        panel.center()
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.cornerCurve = .continuous
+        panel.contentView?.layer?.cornerRadius = settings.interfaceSize.metrics.radius.panel
+        panel.contentView?.layer?.masksToBounds = true
+        panel.setFrame(frame, display: false)
         self.panel = panel
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
+        panel.selectNextKeyView(nil)
     }
 
     func show() {

@@ -241,7 +241,7 @@ enum Theme {
         static let layoutPositionStroke: CGFloat = 1.5
         /// A position cell's clickable row; the glyph floats inside it, so the whole cell hits.
         static let layoutPositionCell: CGFloat = 34
-        /// Settings editor modals (Custom Commands, Snippets): fixed width, intrinsic height.
+        /// Compact settings editors that use a fixed sheet width.
         static let editorSheetWidth: CGFloat = 480
         /// The multi-line box inside those modals; it scrolls rather than grows the panel.
         static let editorTextHeight: CGFloat = 120
