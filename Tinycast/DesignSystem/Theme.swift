@@ -11,6 +11,7 @@ enum Theme {
         static let md: CGFloat = 8
         static let lg: CGFloat = 10
         static let xl: CGFloat = 12
+        static let dialogInset: CGFloat = 18
         static let xxl: CGFloat = 20
         /// Calculator answer card's roomier vertical breathing room.
         static let xxxl: CGFloat = 28
@@ -22,14 +23,12 @@ enum Theme {
         static let chatFollowTailSlack: CGFloat = 44
         /// Space above every header but the first, reading as the previous section's close.
         static let sectionSpacing: CGFloat = 12
-        /// Emoji tiles need a little more separation so adjacent category grids stay distinct.
         static let emojiSectionSpacing: CGFloat = 14
     }
 
     enum Radius {
         static let panel: CGFloat = 26
         static let row: CGFloat = 10
-        /// Emoji tiles are roomier than list rows, so their corners take one larger step.
         static let emojiCell: CGFloat = 12
         static let menu: CGFloat = 6
         /// Hover highlight behind a popover menu row.
@@ -37,6 +36,7 @@ enum Theme {
         /// A header pop-up button; the footer's action pills stay capsules.
         static let barControl: CGFloat = 8
         static let menuPanel: CGFloat = 16
+        static let dialogSymbol: CGFloat = 16
         /// The dialog and HUD surface, so a dialog reads as a sibling of the palette.
         static let dialog: CGFloat = 20
         static let thumbnail: CGFloat = 6
@@ -48,6 +48,7 @@ enum Theme {
         static let keyCap: CGFloat = 6
         /// Settings shortcut-recorder keycap — smaller than the palette's `keyCap` chip.
         static let recorderKeyCap: CGFloat = 4
+        static let tooltip: CGFloat = 8
     }
 
     enum Blur {
@@ -68,6 +69,8 @@ enum Theme {
         static let noteSwitcher = CGSize(width: 300, height: 240)
         static let noteSwitcherEmptyHeight: CGFloat = 96
         static let noteSwitcherDrop: CGFloat = 56
+        static let noteHeadingMenu = CGSize(
+            width: 220, height: menuRowHeight * 4 + menuRowSpacing * 3 + Spacing.sm * 2)
         static let noteFooterHeight: CGFloat = 28
         /// Holds the launcher's 36-point action capsule with the same margin its own bar gives it.
         static let noteTitlebar: CGFloat = 52
@@ -95,6 +98,10 @@ enum Theme {
         /// A `BarButton`'s hover capsule, shared by the footer group and the header's filter.
         static let barButtonHeight: CGFloat = 28
         static let rowIcon: CGFloat = 24
+        static let colorDot: CGFloat = 8
+        static let calendarBarWidth: CGFloat = 3
+        static let calendarBarHeight: CGFloat = 18
+        static let menuBarCalendarBarHeight: CGFloat = 12
         static let keyCap: CGFloat = 18
         /// Settings shortcut-recorder keycap — smaller than the palette's `keyCap` chip.
         static let recorderKeyCap: CGFloat = 16
@@ -115,6 +122,10 @@ enum Theme {
         static let compactKeyCap: CGFloat = 15
         static let heroKeyCap: CGFloat = 22
         static let menuButton: CGFloat = 36
+        static let dialogCompactWidth: CGFloat = 290
+        static let dialogButtonHeight: CGFloat = menuButton - 2
+        static let dialogSymbol: CGFloat = 28
+        static let dialogSymbolContainer: CGFloat = 52
         static let noteGlyph: CGFloat = 16
         static let noteEmptyGlyph: CGFloat = 28
         /// Hit target for a chat message footer glyph; its caption symbol floats inside it.
@@ -126,14 +137,13 @@ enum Theme {
         /// The uninstall list's leading checkbox / lock glyph.
         static let checkbox: CGFloat = 16
         static let clipboardListWidth: CGFloat = 290
-        /// Symmetric clearance between the emoji grid and both panel edges.
         static let emojiGridInset: CGFloat = 16
         static let emojiCell: CGFloat = 56
         static let menuWidth: CGFloat = 276
+        static let actionMenuWidth: CGFloat = 320
         /// The clipboard type filter's menu; `menuWidth` is far too wide for six short rows.
         static let clipboardFilterMenuWidth: CGFloat = 200
         static let fileSearchFilterMenuWidth: CGFloat = 200
-        /// Fits "Shapes & Punctuation", the longest category title.
         static let emojiCategoryMenuWidth: CGFloat = 220
         /// Stated, not padded: the cap below counts rows, so a capped menu would land mid-row.
         static let menuRowHeight: CGFloat = menuIcon + Spacing.md * 2
@@ -181,8 +191,6 @@ enum Theme {
         static let interfaceSizeSegment: CGFloat = 40
         /// The sidebar's search field; matches a grouped `Form` row's control height.
         static let settingsSearchField: CGFloat = 28
-        /// One density preview; five fit across the Emoji settings detail pane.
-        static let emojiSettingsGridPreview: CGFloat = 72
         /// The layout editor. Height is stated so selecting an entry cannot resize the sheet.
         static let layoutEditorSheet = CGSize(width: 900, height: 660)
         /// The inspector column; the preview takes the rest, keeping the split two-to-one.
@@ -205,6 +213,8 @@ enum Theme {
         static let editorSheetWidth: CGFloat = 480
         /// The multi-line box inside those modals; it scrolls rather than grows the sheet.
         static let editorTextHeight: CGFloat = 120
+        /// The argument prompt's field column, kept under the alert's natural width.
+        static let argumentPromptWidth: CGFloat = 220
         /// The confirmation HUD's width ceiling, and its distance above the screen bottom.
         static let hudMaxWidth: CGFloat = 420
         static let hudEdgeOffset: CGFloat = 48
@@ -243,18 +253,25 @@ enum Theme {
         /// How a borderless surface arrives and leaves; the exit is shorter, so it feels quick.
         static let enter: TimeInterval = 0.18
         static let exit: TimeInterval = 0.12
+        static let dialogEnter: TimeInterval = 0.12
+        static let dialogExit: TimeInterval = 0.10
         /// Fade-in/out for a hover `Tooltip`.
         static let tooltip: TimeInterval = 0.15
+        static let tooltipDelay: TimeInterval = 0.4
+        static let menuChevron: TimeInterval = 0.34
         /// A control lighting up under the pointer; short enough to feel like a response.
         static let hover: TimeInterval = 0.12
-        /// A pop-up chevron turning between its closed and open directions.
-        static let menuChevron: TimeInterval = 0.34
         static let copyFeedback: TimeInterval = 1.2
         static let chatFooter: TimeInterval = 0.12
         /// A Settings search result scrolling its section into view, then the pulse that marks it.
         static let settingsReveal: TimeInterval = 0.28
         static let settingsFlash: TimeInterval = 2.0
         static let settingsFlashOut: TimeInterval = 0.6
+    }
+
+    enum DialogMotion {
+        static let offset: CGFloat = 3
+        static let initialOpacity: CGFloat = 0.08
     }
 
     /// Motion owned by Tinycast's menus; extension-provided panels keep their own behavior.
@@ -269,7 +286,6 @@ enum Theme {
         static let expansionTiming = CAMediaTimingFunction(controlPoints: 0.2, 0.7, 0.2, 1)
         static let settleTiming = CAMediaTimingFunction(controlPoints: 0.42, 0, 0.58, 1)
         static let exitTiming = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
-        /// Starts promptly and eases gently into the chevron's final direction.
         static let chevronAnimation = Animation.timingCurve(
             0.16, 1, 0.3, 1, duration: Theme.Duration.menuChevron)
     }
@@ -330,6 +346,10 @@ enum Theme {
                 .srgbInk(isDark ? 0 : 1, alpha: isDark ? 0.40 : 0.55)
             }
         }
+        static let dialogDimming = adaptive(
+            dark: .srgbInk(0, alpha: 0.34), light: .srgbInk(0, alpha: 0.34))
+        static let tooltipShadow = adaptive(
+            dark: .srgbInk(0, alpha: 0.18), light: .srgbInk(0, alpha: 0.18))
 
         static func panelScrim(transparency: Int) -> Color {
             dynamic(.panelBackground) { isDark in
@@ -406,14 +426,6 @@ enum Theme {
         static let selection = ramp(dark: 0.10, light: 0.09)
         /// Mouse hover: a fainter layer, visually distinct from selection.
         static let rowHover = ramp(dark: 0.05, light: 0.045)
-        /// Emoji grid chrome: a quiet tile at rest, with two legible rings on interaction.
-        static let emojiCell = ramp(dark: 0.045, light: 0.04)
-        static let emojiHoverBorder = ramp(dark: 0.42, light: 0.34)
-        static let emojiSelectionBorder = adaptive(
-            dark: NSColor(srgbRed: 0.96, green: 0.90, blue: 0.72, alpha: 0.92),
-            light: .srgbInk(0, alpha: 0.72))
-        static let emojiInnerBorder = adaptive(
-            dark: .srgbInk(0, alpha: 0.72), light: .srgbInk(1, alpha: 0.72))
         static let menuHover = ramp(dark: 0.10, light: 0.09)
         static let separator = ramp(dark: 0.10, light: 0.12)
         /// Small control surfaces: kbd chips, glyph tiles.
@@ -461,6 +473,14 @@ enum Theme {
         /// The palette's drop guides while dragging, and once a release would snap it home.
         static let dropGuide = ramp(dark: 0.35, light: 0.35)
         static let dropGuideArmed = Color.blue
+        static let primaryAction = Color.blue
+        static let emojiCell = ramp(dark: 0.045, light: 0.04)
+        static let emojiHoverBorder = ramp(dark: 0.42, light: 0.34)
+        static let emojiSelectionBorder = adaptive(
+            dark: NSColor(srgbRed: 0.96, green: 0.90, blue: 0.72, alpha: 0.92),
+            light: .srgbInk(0, alpha: 0.72))
+        static let emojiInnerBorder = adaptive(
+            dark: .srgbInk(0, alpha: 0.72), light: .srgbInk(1, alpha: 0.72))
         /// Destructive tint: a destructive label, and a `.danger` dialog's glyph.
         static var destructive: Color {
             dynamic(.destructive) { _ in .red }

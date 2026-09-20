@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct SnippetsSettingsView: View {
@@ -6,18 +5,16 @@ struct SnippetsSettingsView: View {
     @Environment(SnippetsStore.self) private var snippetsStore
     @Environment(AppSettings.self) private var settings
 
+    @State private var editor: SnippetEditRequest?
     @State private var pendingDeletion: StoredSnippet?
 
     var body: some View {
         @Bindable var settings = settings
-        @Bindable var core = core
         return Form {
             FeatureSwitchSection(
                 anchor: .snippetsSnippets,
                 enableTitle: "Enable snippets",
-                enableSubtitle:
-                    "Reusable Markdown templates, expanded from the launcher or a typed keyword.",
-                launcherSubtitle: "Find your snippets in launcher search.",
+                enableSubtitle: "Expand templates from the launcher or by keyword.",
                 // Enabling is also keyword-expansion consent, so it uses the confirming setter.
                 isEnabled: Binding(
                     get: { settings.snippetsEnabled },
@@ -30,17 +27,14 @@ struct SnippetsSettingsView: View {
                         Button("Grant Access…") { Permissions.openAccessibilitySettings() }
                     } label: {
                         Label(
-                            "Keyword expansion needs the Accessibility permission.",
+                            "Keyword expansion needs Accessibility access.",
                             systemImage: "exclamationmark.triangle"
                         )
                         .foregroundStyle(.orange)
-                        Text(
-                            "The same grant pasting uses. Launcher search keeps working meanwhile.")
+                        Text("Launcher search still works.")
                     }
                 }
             }
-
-            expansion
 
             Group {
                 FeatureCommandsSection(owner: .snippets, anchor: .snippetsCommands)
@@ -51,9 +45,13 @@ struct SnippetsSettingsView: View {
         }
         .formStyle(.grouped)
         .settingsScrollTarget(.snippets)
-        // Presented from the pane, so the browser's Edit and Create rows can open it too.
-        .sheet(item: $core.pendingSnippetEdit) { request in
-            SnippetEditorSheet(record: request.record)
+        .settingsEditorPanel(item: $editor) { request in
+            SnippetEditorPanel(record: request.record)
+        }
+        .onChange(of: core.pendingSnippetEdit?.id, initial: true) { _, _ in
+            guard let request = core.pendingSnippetEdit else { return }
+            editor = request
+            core.pendingSnippetEdit = nil
         }
         .alert(item: $pendingDeletion) { record in
             Alert(
@@ -67,77 +65,6 @@ struct SnippetsSettingsView: View {
         }
     }
 
-    private var expansion: some View {
-        @Bindable var settings = settings
-        return Section {
-            Picker("Trigger", selection: $settings.snippetsTriggerMode) {
-                Text("Immediately").tag(SnippetExpansionTriggerMode.immediate)
-                Text("After delimiter").tag(SnippetExpansionTriggerMode.delimiter)
-            }
-            if settings.snippetsTriggerMode == .delimiter {
-                TextField("Delimiter (whitespace or literal)", text: $settings.snippetsDelimiter)
-                Toggle("Keep delimiter", isOn: $settings.snippetsRetainsDelimiter)
-            }
-            Picker("Output", selection: $settings.snippetsOutput) {
-                ForEach(SnippetExpansionOutput.allCases, id: \.rawValue) { output in
-                    Text(output.title).tag(output)
-                }
-            }
-            Picker("Injection delay", selection: $settings.snippetsInjectionDelay) {
-                ForEach(SnippetInjectionDelay.allCases) { delay in
-                    Text(delay.title).tag(delay)
-                }
-            }
-            Toggle("Show completion feedback", isOn: $settings.snippetsCompletionFeedback)
-            TextField(
-                "Excluded app bundle IDs (comma-separated)",
-                text: Binding(
-                    get: { settings.snippetsExcludedApps.joined(separator: ", ") },
-                    set: { settings.snippetsExcludedApps = $0.split(separator: ",").map(String.init) }))
-            LabeledContent("Shared libraries") {
-                HStack {
-                    Button("Choose folders…", action: chooseSharedLibraries)
-                    if !settings.snippetsSharedLibraries.isEmpty {
-                        Button("Clear") { settings.snippetsSharedLibraries = [] }
-                    }
-                }
-            }
-            ForEach(settings.snippetsSharedLibraries, id: \.self) { directory in
-                HStack {
-                    Text(directory)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: Theme.Spacing.lg)
-                    Button("Remove") {
-                        settings.snippetsSharedLibraries.removeAll { $0 == directory }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove shared library (directory)")
-                }
-            }
-        } header: {
-            SettingsSectionHeader(.snippetsExpansion)
-        } footer: {
-            Text("Control when and where keyword expansion runs. Shared libraries stay read-only.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func chooseSharedLibraries() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = true
-        panel.begin { response in
-            guard response == .OK else { return }
-            settings.snippetsSharedLibraries = panel.urls.map(\.path)
-        }
-    }
-
     private var library: some View {
         Section {
             if sortedSnippets.isEmpty {
@@ -147,17 +74,15 @@ struct SnippetsSettingsView: View {
                 ForEach(sortedSnippets) { record in
                     SnippetSettingsRow(
                         record: record,
-                        canEdit: snippetsStore.isWritable(record),
-                        onEdit: { core.snippetCoordinator.editSnippet(record) },
+                        onEdit: { editor = SnippetEditRequest(record: record) },
                         onDelete: { pendingDeletion = record })
                 }
             }
 
             LabeledContent {
-                Button("Add…") { core.snippetCoordinator.editSnippet(nil) }
+                Button("Add…") { editor = SnippetEditRequest(record: nil) }
             } label: {
                 SettingsRowTitle(.snippetsLibrary, "New Snippet")
-                Text("Give the snippet a searchable name and an optional expansion keyword.")
             }
 
             LabeledContent {
@@ -165,7 +90,7 @@ struct SnippetsSettingsView: View {
                     .accessibilityHint("Reveals this Tinycast channel’s snippets folder in Finder.")
             } label: {
                 SettingsRowTitle(.snippetsLibrary, "Snippets Folder")
-                Text("Plain Markdown files in this channel’s Application Support folder.")
+                Text("Plain Markdown files.")
             }
         } header: {
             SettingsSectionHeader(.snippetsLibrary)
@@ -186,8 +111,8 @@ struct SnippetsSettingsView: View {
                 retryHint: "Reloads snippet files after you fix them on disk.")
         }
 
-        // The editor reports its own failures, so this covers the ones with no sheet behind.
-        if core.pendingSnippetEdit == nil, let operationError = snippetsStore.operationError {
+        // The editor reports its own failures, so this covers the ones with no panel behind.
+        if editor == nil, let operationError = snippetsStore.operationError {
             noticeSection(
                 "The snippet operation failed", operationError, tint: .red, retryHint: nil)
         }
@@ -245,7 +170,6 @@ struct SnippetEditRequest: Identifiable {
 
 private struct SnippetSettingsRow: View {
     let record: StoredSnippet
-    let canEdit: Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
 
@@ -259,16 +183,14 @@ private struct SnippetSettingsRow: View {
             .buttonStyle(.plain)
             .help("Edit Snippet")
             .accessibilityLabel("Edit \(record.snippet.name)")
-            .disabled(!canEdit)
 
             Button(action: onDelete) {
                 Image(systemName: "trash")
-                    .foregroundStyle(Theme.Colors.destructive)
+                    .foregroundStyle(.red)
             }
             .buttonStyle(.plain)
             .help("Delete Snippet")
             .accessibilityLabel("Delete \(record.snippet.name)")
-            .disabled(!canEdit)
         }
     }
 
@@ -276,32 +198,20 @@ private struct SnippetSettingsRow: View {
         let filename = record.fileURL.lastPathComponent
         guard let keyword = record.snippet.keyword?.trimmingCharacters(in: .whitespacesAndNewlines),
             !keyword.isEmpty
-        else {
-            return metadataWithTags(filename: filename)
-        }
-        return metadataWithTags(filename: "\(keyword) · \(filename)")
-    }
-
-    private func metadataWithTags(filename: String) -> String {
-        var parts = [filename]
-        if !record.snippet.tags.isEmpty {
-            parts.append(record.snippet.tags.map { "#\($0)" }.joined(separator: " "))
-        }
-        if !canEdit { parts.append("Read-only shared library") }
-        return parts.joined(separator: " · ")
+        else { return filename }
+        return "\(keyword) · \(filename)"
     }
 }
 
-private struct SnippetEditorSheet: View {
+private struct SnippetEditorPanel: View {
     /// nil while adding; otherwise the record whose file (and revision) the save targets.
     let record: StoredSnippet?
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.settingsEditorDismiss) private var dismiss
     @Environment(SnippetsStore.self) private var store
     @FocusState private var isTemplateFocused: Bool
     @State private var name: String
     @State private var keyword: String
-    @State private var tags: String
     @State private var text: String
     @State private var selection: TextSelection?
     @State private var isEnabled: Bool
@@ -314,7 +224,6 @@ private struct SnippetEditorSheet: View {
         let snippet = record?.snippet
         _name = State(initialValue: snippet?.name ?? "")
         _keyword = State(initialValue: snippet?.keyword ?? "")
-        _tags = State(initialValue: snippet?.tags.joined(separator: ", ") ?? "")
         _text = State(initialValue: snippet?.text ?? "")
         _isEnabled = State(initialValue: snippet?.isEnabled ?? true)
         _showsConfirmation = State(initialValue: snippet?.showsConfirmation ?? false)
@@ -322,8 +231,7 @@ private struct SnippetEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-            Text(record == nil ? "Add Snippet" : "Edit Snippet")
-                .font(.title2.weight(.bold))
+            SettingsEditorHeader(title: record == nil ? "Add Snippet" : "Edit Snippet")
 
             field(
                 title: "Name", placeholder: "Email Sign-off", text: $name,
@@ -331,9 +239,6 @@ private struct SnippetEditorSheet: View {
             field(
                 title: "Keyword", placeholder: "Optional, for example !notes", text: $keyword,
                 hint: "Optional. Type this to expand the snippet.")
-            field(
-                title: "Tags", placeholder: "Optional, comma-separated", text: $tags,
-                hint: "Optional. Filter browser results with #tag.")
 
             templateEditor
 
@@ -353,22 +258,20 @@ private struct SnippetEditorSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack {
-                Spacer()
+            HStack(spacing: Theme.Spacing.md) {
                 Button("Cancel") { dismiss() }
+                    .buttonStyle(.modalAction(.cancel))
                     .keyboardShortcut(.cancelAction)
                 Button("Save", action: save)
+                    .buttonStyle(.modalAction(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(
                         isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(Theme.Spacing.xxl)
-        .frame(width: Theme.Size.editorSheetWidth, height: 475)
-        .background(
-            SnippetEditorEventMonitor(
-                onEscape: { dismiss() }))
-        .onExitCommand(perform: dismiss.callAsFunction)
+        .padding(Theme.Spacing.dialogInset)
+        .frame(width: Theme.Size.editorSheetWidth)
+        .settingsEditorPanelSurface()
     }
 
     private var templateEditor: some View {
@@ -381,17 +284,7 @@ private struct SnippetEditorSheet: View {
             }
             TextEditor(text: $text, selection: $selection)
                 .font(.body.monospaced())
-                .scrollContentBackground(.hidden)
-                .padding(Theme.Spacing.sm)
-                .frame(height: Theme.Size.editorTextHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                        .fill(Theme.Colors.cardFill)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                        .strokeBorder(Theme.Colors.cardStroke, lineWidth: 1)
-                )
+                .settingsEditorTextArea(height: Theme.Size.editorTextHeight)
                 .focused($isTemplateFocused)
                 .accessibilityLabel("Snippet template")
                 .accessibilityHint("Enter the text Tinycast expands.")
@@ -404,7 +297,6 @@ private struct SnippetEditorSheet: View {
             Section("Text") {
                 placeholderItem("{cursor}")
                 placeholderItem("{clipboard}")
-                placeholderItem("{clipboard offset=1}")
                 placeholderItem("{selection}")
                 placeholderItem("{uuid}")
             }
@@ -413,18 +305,11 @@ private struct SnippetEditorSheet: View {
                 placeholderItem("{time}")
                 placeholderItem("{datetime}")
                 placeholderItem("{day}")
-                placeholderItem("{date format=\"yyyy-MM-dd\"}")
-                placeholderItem("{date locale=\"fr-FR\"}")
-                placeholderItem("{time offset=\"+3h +30m\"}")
             }
             Section("Arguments") {
-                placeholderItem("{argument}")
                 placeholderItem("{argument name=\"Name\"}")
-                placeholderItem("{argument default=\"Default\"}")
-                placeholderItem("{argument options=\"One, Two\"}")
             }
             Section("Snippets") {
-                placeholderItem("{snippet:Name}")
                 placeholderItem("{snippet name=\"Name\"}")
             }
         }
@@ -458,7 +343,7 @@ private struct SnippetEditorSheet: View {
             Text(title)
                 .font(.callout.weight(.medium))
             TextField(placeholder, text: text)
-                .textFieldStyle(.roundedBorder)
+                .settingsEditorTextField()
                 .accessibilityLabel("Snippet \(title.lowercased())")
                 .accessibilityHint(hint)
         }
@@ -484,7 +369,6 @@ private struct SnippetEditorSheet: View {
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             text: text,
             keyword: trimmedOrNil(keyword),
-            tags: tags.split(separator: ",").map(String.init),
             isEnabled: isEnabled,
             showsConfirmation: showsConfirmation)
     }
@@ -511,45 +395,6 @@ private struct SnippetEditorSheet: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
-        }
-    }
-}
-
-private struct SnippetEditorEventMonitor: NSViewRepresentable {
-    let onEscape: () -> Void
-
-    @MainActor
-    final class Coordinator {
-        var monitor: Any?
-
-        isolated deinit {
-            if let monitor { NSEvent.removeMonitor(monitor) }
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
-            [weak view] event in
-            guard let window = view?.window, event.window === window else { return event }
-            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            if event.keyCode == 53, modifiers.isEmpty {
-                onEscape()
-                return nil
-            }
-            return event
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        if let monitor = coordinator.monitor {
-            NSEvent.removeMonitor(monitor)
-            coordinator.monitor = nil
         }
     }
 }

@@ -15,6 +15,12 @@ enum SettingsPaneScanner {
         "com.apple.Battery-Settings.extension": .contentType("com.apple.graphic-icon.battery")
     ]
 
+    /// Panes whose bundle icon is ExtensionKit's placeholder brick; keyed by CFBundleIdentifier.
+    private static let iconOverrides: [String: EntryIcon] = [
+        "com.apple.Battery-Settings.extension": .contentType("com.apple.graphic-icon.battery"),
+        "com.apple.HeadphoneSettings": .symbol("headphones")
+    ]
+
     /// Panes that shouldn't appear in the launcher at all (contextual/one-shot panes).
     private static let skippedBundleIDs: Set<String> = []
 

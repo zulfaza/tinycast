@@ -11,6 +11,7 @@ final class AppCore {
     let customCommands = CustomCommandStore()
     let quicklinks = QuicklinkStore()
     let windowLayouts = WindowLayoutStore()
+    let customWindowSizes = CustomWindowSizeStore()
     let clipboardStore = ClipboardStore()
     @ObservationIgnored private var clipboardTextIndexer: ClipboardTextIndexer?
     let clipboardManager: ClipboardManager
@@ -33,6 +34,7 @@ final class AppCore {
     let calcHistory = CalculatorHistoryStore()
     let currencyRates = CurrencyRateStore()
     let calendarStore = CalendarStore()
+    let regionNumberFormat = RegionNumberFormatMonitor()
     let meetingClock = MeetingClock()
     let updateChecker = UpdateCheckStore()
     let supportReminders: SupportReminderStore
@@ -103,7 +105,16 @@ final class AppCore {
         settingsCoordinator: settingsCoordinator, settings: settings, core: self)
     @ObservationIgnored private(set) lazy var windowCommandCoordinator = WindowCommandCoordinator(
         settings: settings, paletteCoordinator: paletteCoordinator, windowMover: windowMover,
-        spaceSwitcher: spaceSwitcher)
+        spaceSwitcher: spaceSwitcher, customSizes: customWindowSizes)
+    @ObservationIgnored private(set) lazy var customWindowSizeCoordinator =
+        CustomWindowSizeCoordinator(
+            store: customWindowSizes, settings: settings, appIndex: appIndex, hotKeys: hotKeys,
+            favorites: favorites, visibility: visibility, ranking: launcherRanking,
+            aliases: aliases, core: self)
+    @ObservationIgnored private(set) lazy var appleShortcutCoordinator = AppleShortcutCoordinator(
+        settings: settings, appIndex: appIndex, hotKeys: hotKeys, favorites: favorites,
+        visibility: visibility, ranking: launcherRanking, aliases: aliases,
+        paletteCoordinator: paletteCoordinator, core: self)
     @ObservationIgnored private(set) lazy var windowLayoutCoordinator = WindowLayoutCoordinator(
         store: windowLayouts, settings: settings, appIndex: appIndex, hotKeys: hotKeys,
         favorites: favorites, visibility: visibility, ranking: launcherRanking, aliases: aliases,
@@ -119,9 +130,6 @@ final class AppCore {
         store: notesStore,
         settings: settings,
         appIndex: appIndex,
-        emojiIndex: emojiIndex,
-        emojiKeywords: emojiKeywords,
-        frequentEmoji: frequentEmoji,
         core: self)
 
     @ObservationIgnored private(set) lazy var launcherCoordinator = LauncherCoordinator(
@@ -140,7 +148,8 @@ final class AppCore {
         calendarCoordinator: calendarCoordinator,
         core: self)
     @ObservationIgnored private(set) lazy var fallbackCoordinator = FallbackCoordinator(
-        store: fallbacks, quicklinks: quicklinks, settings: settings, core: self)
+        store: fallbacks, quicklinks: quicklinks, settings: settings,
+        visibility: visibility, core: self)
     @ObservationIgnored private(set) lazy var clipboardCoordinator = ClipboardCoordinator(
         clipboardStore: clipboardStore, clipboardManager: clipboardManager, settings: settings,
         appIndex: appIndex, palette: palette, windowController: windowController,

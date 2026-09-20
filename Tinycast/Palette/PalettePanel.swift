@@ -172,7 +172,7 @@ final class PalettePanel: NSPanel {
             sendEvent(arrow)
             return
         }
-        // A footer menu owns the keyboard. See docs/features/palette.md#menu-open-input-freeze.
+        // A palette menu owns the keyboard. See docs/features/palette.md#menu-open-input-freeze.
         if event.type == .keyDown,
             paletteState?.menuOpen == true,
             event.modifierFlags.isDisjoint(with: [.command, .control]),
@@ -266,5 +266,6 @@ final class PalettePanel: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    // The parent stays main while a menu is key, so its Liquid Glass remains active.
+    override var canBecomeMain: Bool { true }
 }

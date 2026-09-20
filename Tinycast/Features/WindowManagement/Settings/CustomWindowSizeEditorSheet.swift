@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Identifies the editor to present; nil is "new", and the UUID keeps two opens distinct.
-struct CustomWindowSizeEditRequest: Identifiable {
+struct CustomWindowSizeSheetEditRequest: Identifiable {
     let id = UUID()
     var size: CustomWindowSize?
 }
@@ -18,7 +18,7 @@ struct CustomWindowSizeEditorSheet: View {
     @State private var size: CustomWindowSize
     @State private var errorMessage: String?
 
-    init(request: CustomWindowSizeEditRequest) {
+    init(request: CustomWindowSizeSheetEditRequest) {
         isNew = request.size == nil
         reference = NSScreen.main?.visibleFrame.size ?? .zero
         _size = State(initialValue: request.size ?? CustomWindowSize(name: ""))

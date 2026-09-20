@@ -424,7 +424,7 @@ enum CalcDateTime {
         let seconds = base.date.timeIntervalSince(other.date)
         let payload: CalcResult.Payload
         if let unit = targetUnit {
-            payload = .measurement(seconds / unit.factor, unit: unit)
+            payload = .number(seconds / unit.factor, suffix: " \(unit.symbol)")
         } else if hasTime {
             let text = CalcFormatter.timespan(seconds)
             payload = .value(display: text, copyText: text)

@@ -1,11 +1,21 @@
 // Single source of truth for links, install commands, and metadata used across
 // the site. Update these in one place rather than hunting through components.
 
+// The page title and meta description, shared by the layout and /llms.txt. Google truncates a
+// description near 160 characters, so `summary` is written to land under it rather than be cut.
+export const pageTitle =
+  "Tinycast — everything on your Mac, one keystroke away";
+export const summary =
+  "Free and open source, fully native macOS launcher: app search, clipboard manager, snippets, custom commands, window management, BYOK AI and Raycast extensions.";
+
 export const site = {
   name: "Tinycast",
   tagline: "The essentials, without the bloat.",
   repo: "https://github.com/abue-ammar/tinycast",
-  url: "https://abue-ammar.github.io/tinycast",
+  url: "https://tinycast.dev",
+  // The R2 bucket behind cdn.tinycast.dev. Anything over Workers' 25 MiB
+  // per-asset cap lives here instead of `public/` — see website/README.md.
+  cdn: "https://cdn.tinycast.dev",
   // Shown only until the build-time release lookup resolves, and if it fails.
   fallbackVersion: "v0.9.7",
   platform: "macOS 26+",
@@ -14,8 +24,7 @@ export const site = {
   community: {
     discord: "https://discord.gg/v2Eeb4QQy3",
   },
-  support:
-    "https://buy.polar.sh/polar_cl_NDVFC20DKQpLcNawsh97QzbARBXD3WNn8v35R0mbJmT",
+  support: "/support",
 } as const;
 
 // The hero, in as few words as possible — headline plus one punchy line.
