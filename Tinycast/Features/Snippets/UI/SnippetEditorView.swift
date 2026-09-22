@@ -64,8 +64,8 @@ struct SnippetEditorView: View {
         .padding(.vertical, metrics.spacing.xl)
         .frame(width: metrics.size.panelWidth, height: metrics.size.panelHeight)
         .environment(\.metrics, metrics)
-        .background(Theme.Colors.panelScrim)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: metrics.radius.panel))
+        .background(Theme.Colors.panelSurface())
+        .background(VisualEffectView())
         .background(
             SnippetEditorEventMonitor(
                 onEscape: onDismiss))
