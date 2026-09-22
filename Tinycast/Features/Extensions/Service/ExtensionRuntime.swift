@@ -19,9 +19,12 @@ protocol ExtensionRuntimeDelegate: AnyObject {
 
 /// The one `JSContext` a command runs in; every touch is on `queue`, only values cross.
 final class ExtensionRuntime: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "com.tinycast.extensions.js", qos: .userInitiated)
+    private let queue: DispatchQueue
     private var context: JSContext?
     private var timers: [String: DispatchSourceTimer] = [:]
+    private var hostTasks: [String: Task<Void, Never>] = [:]
+    private var generation = UUID()
+    private var idleWaiters: [CheckedContinuation<Void, Never>] = []
     private let nodeShims = ExtensionNodeShims()
     private let trace = ExtensionTrace()
 
@@ -31,7 +34,8 @@ final class ExtensionRuntime: @unchecked Sendable {
     private let runtimeOverride: URL?
 
     /// `runtimeURL` overrides the bundled runtime; only the harness passes it.
-    init(hostAPI: ExtensionHostAPI, runtimeURL: URL? = nil) {
+    init(hostAPI: ExtensionHostAPI, runtimeURL: URL? = nil, priority: DispatchQoS = .userInitiated) {
+        queue = DispatchQueue(label: "com.tinycast.extensions.js", qos: priority, autoreleaseFrequency: .workItem)
         self.hostAPI = hostAPI
         self.runtimeOverride = runtimeURL
     }
@@ -108,7 +112,7 @@ final class ExtensionRuntime: @unchecked Sendable {
         session: String, code: String, file: URL, mode: ExtensionCommandMode,
         context launchContext: ExtensionLaunchContext
     ) async {
-        trace.write("start session=\(session) mode=\(mode.runtimeName) file=\(file.lastPathComponent)")
+        trace.write("start session=\(session) mode=\(mode.rawValue) file=\(file.lastPathComponent)")
         let payload = launchContext.jsonString()
         await onQueue { context in
             let compiled = context.objectForKeyedSubscript("__tinycast")
@@ -116,16 +120,16 @@ final class ExtensionRuntime: @unchecked Sendable {
                 "start",
                 withArguments: [
                     session, code, file.path, file.deletingLastPathComponent().path,
-                    mode.runtimeName, payload
+                    mode.rawValue, payload
                 ])
         }
     }
 
     /// Pre-encoded: `[Any]` isn't Sendable, so only the JSON string crosses onto the queue.
-    func dispatch(session: String, handler: String, payload: String) async {
+    func dispatch(session: String, handler: String, payload: String, completesSession: Bool = false) async {
         await onQueue { context in
             _ = context.objectForKeyedSubscript("__tinycast")?
-                .invokeMethod("dispatch", withArguments: [session, handler, payload])
+                .invokeMethod("dispatch", withArguments: [session, handler, payload, completesSession])
         }
     }
 
@@ -242,26 +246,52 @@ final class ExtensionRuntime: @unchecked Sendable {
         // Decode to `RenderValue` here so only `Sendable` values reach the main actor.
         let arguments = RenderValue.arguments(from: argsJSON)
         let hostAPI = self.hostAPI
-        Task { @MainActor in
+        let generation = self.generation
+        hostTasks[callId] = Task { @MainActor [weak self] in
+            guard !Task.isCancelled else { return }
             do {
                 let json = try await hostAPI.perform(
                     api: api, method: method, arguments: arguments)
-                self.trace.write("settle #\(callId) ok \(api).\(method)")
-                await self.settle(callId: callId, ok: true, payload: json)
+                self?.trace.write("settle #\(callId) ok \(api).\(method)")
+                await self?.settle(callId: callId, generation: generation, ok: true, payload: json)
             } catch {
-                self.trace.write("settle #\(callId) error \(api).\(method): \(error.localizedDescription)")
-                await self.settle(
-                    callId: callId, ok: false,
+                self?.trace.write("settle #\(callId) error \(api).\(method): \(error.localizedDescription)")
+                await self?.settle(
+                    callId: callId, generation: generation, ok: false,
                     payload: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
             }
         }
     }
 
-    private func settle(callId: String, ok: Bool, payload: String) async {
-        await onQueue { context in
-            _ = context.objectForKeyedSubscript("__tinycast")?
-                .invokeMethod("settle", withArguments: [callId, ok, payload])
+    private func settle(callId: String, generation: UUID, ok: Bool, payload: String) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async {
+                defer { continuation.resume() }
+                guard generation == self.generation else { return }
+                self.hostTasks[callId] = nil
+                _ = self.context?.objectForKeyedSubscript("__tinycast")?
+                    .invokeMethod("settle", withArguments: [callId, ok, payload])
+                if self.hostTasks.isEmpty { self.resumeIdleWaiters() }
+            }
         }
+    }
+
+    func drainHostCalls() async {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                if self.hostTasks.isEmpty {
+                    continuation.resume()
+                } else {
+                    self.idleWaiters.append(continuation)
+                }
+            }
+        }
+    }
+
+    private func resumeIdleWaiters() {
+        let waiters = idleWaiters
+        idleWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 
     private func deliverRender(session: String, json: String) {
@@ -318,6 +348,10 @@ final class ExtensionRuntime: @unchecked Sendable {
         queue.async {
             for timer in self.timers.values { timer.cancel() }
             self.timers.removeAll()
+            for task in self.hostTasks.values { task.cancel() }
+            self.hostTasks.removeAll()
+            self.resumeIdleWaiters()
+            self.generation = UUID()
             self.context = nil
             self.nodeShims.closeFiles()
         }
