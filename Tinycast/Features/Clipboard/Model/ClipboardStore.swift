@@ -585,18 +585,35 @@ final class ClipboardStore {
         deleteBlob(item)
     }
 
+    /// A pin is a deliberate keep, so it outlives the bulk clear; `remove` is the way to drop one.
     func clearAll() {
         invalidateSearch()
         extractionGeneration = UUID()
-        if db != nil { sqlite3_exec(db, "DELETE FROM items", nil, nil, nil) }
-        try? FileManager.default.removeItem(at: imagesDir)
-        try? FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
-        representationsByID.removeAll()
-        filePathsByID.removeAll()
-        namesByID.removeAll()
-        qrByID.removeAll()
-        metadataLoadedIDs.removeAll()
-        items = []
+        // RETURNING hands back the deleted blobs in the same pass, so no separate SELECT is needed.
+        let removedIDs = Set(items.lazy.filter { !$0.isPinned }.map(\.id))
+        if db != nil,
+            let stmt = prepare("DELETE FROM items WHERE pinned_at IS NULL RETURNING image_path")
+        {
+            var orphaned: [String] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let path = Self.columnString(stmt, 0), owns(path) { orphaned.append(path) }
+            }
+            sqlite3_finalize(stmt)
+            if !orphaned.isEmpty {
+                Task.detached(priority: .utility) {
+                    for path in orphaned { try? FileManager.default.removeItem(atPath: path) }
+                }
+            }
+        }
+        for id in removedIDs {
+            representationsByID.removeValue(forKey: id)
+            filePathsByID.removeValue(forKey: id)
+            namesByID.removeValue(forKey: id)
+            qrByID.removeValue(forKey: id)
+            metadataLoadedIDs.remove(id)
+        }
+        // Every pinned row is resident however old, so the window stays whole without a reload.
+        items = items.filter(\.isPinned)
     }
 
     @discardableResult
