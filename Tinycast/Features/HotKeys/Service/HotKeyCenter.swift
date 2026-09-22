@@ -71,7 +71,7 @@ final class HotKeyCenter {
             UInt32(entry.shortcut.carbonKeyCode),
             UInt32(entry.shortcut.carbonModifiers),
             EventHotKeyID(signature: signature, id: entry.carbonID),
-            GetEventDispatcherTarget(),
+            GetApplicationEventTarget(),
             0,
             &ref
         )
@@ -92,13 +92,13 @@ final class HotKeyCenter {
     }
 
     private func installEventHandlerIfNeeded() {
-        guard eventHandler == nil, let dispatcher = GetEventDispatcherTarget() else { return }
+        guard eventHandler == nil, let application = GetApplicationEventTarget() else { return }
         var eventTypes = [
             EventTypeSpec(
                 eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         ]
         InstallEventHandler(
-            dispatcher,
+            application,
             hotKeyCarbonEventHandler,
             eventTypes.count,
             &eventTypes,
