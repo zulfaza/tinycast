@@ -64,6 +64,7 @@ final class PaletteCoordinator {
         if isShowing(mode), query == nil {
             hidePalette()
         } else {
+            if windowController.isVisible { palette.prepare(mode: mode) }
             showPalette(mode: mode, seeding: query)
         }
     }
