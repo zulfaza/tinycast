@@ -446,10 +446,7 @@ struct RootPaletteView: View {
                 if let index = vm.favoriteSlotIndex { performShortcut(.favoriteSlot(index)) }
             }
             // One optional makes "exactly one menu" structural; this only presents it.
-            .onChange(of: openMenu) {
-                guard menuOpen else { return }
-                syncMenuPanel(presenting: true)
-            }
+            .onChange(of: openMenu) { _, _ in menuPresentationChanged() }
             // The hosted tree is its own hierarchy, so the highlight has to be pushed into it.
             .onChange(of: menuSelection) { syncMenuPanel(presenting: false) }
             .onChange(of: vm.menuQuery) { menuQueryChanged() }
@@ -1101,6 +1098,11 @@ struct RootPaletteView: View {
             return
         }
         syncMenuPanel(presenting: false)
+    }
+
+    private func menuPresentationChanged() {
+        guard menuOpen else { return }
+        syncMenuPanel(presenting: true)
     }
 
     /// Drives the menu's window from the two pieces of state that decide what it shows.
