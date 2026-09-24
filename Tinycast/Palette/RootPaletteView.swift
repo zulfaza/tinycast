@@ -363,7 +363,12 @@ struct RootPaletteView: View {
     /// Split from `body` for the same reason `keyHandlers` is: one chain cannot carry them all.
     @ViewBuilder
     private func stateObservers(_ content: some View) -> some View {
-        emojiObservers(content)
+        paletteSessionObservers(screenObservers(emojiObservers(content)))
+    }
+
+    @ViewBuilder
+    private func screenObservers(_ content: some View) -> some View {
+        content
             // Every show bumps focusToken so the search field refocuses.
             .onChange(of: vm.focusToken) {
                 searchFocused = !screen.hidesSearchField
@@ -434,6 +439,11 @@ struct RootPaletteView: View {
                     Task { await extensions.stop() }
                 }
             }
+    }
+
+    @ViewBuilder
+    private func paletteSessionObservers(_ content: some View) -> some View {
+        content
             // `prepare` may change nothing, so this intent still snaps the scroll to the origin.
             .onChange(of: vm.resetToken) {
                 if menuOpen { closeMenus() }
