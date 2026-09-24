@@ -14,8 +14,9 @@ Independently of the folder tree, every mature subsystem has converged on the sa
 │ environment fact is an injected parameter.                                 │
 │ ⇒ Compiled verbatim by a harness, so it cannot drift.                      │
 │                                                                            │
-│ SearchRelevance · EntryNaming · ScriptRomanization · LauncherOrder ·       │
-│ SearchScopes · LauncherRankingStore · FileSearch{Query,Result,Scope} ·      │
+│ SearchRelevance · LauncherMatch · EntryNaming · ScriptRomanization ·       │
+│ LauncherOrder · LauncherSuggestions · LauncherRankingStore · SearchScopes · │
+│ FileSearch{Query,Result,Scope} ·                                           │
 │ Calculator/* · EmojiCatalog · EmojiGridGeometry · SystemAction ·            │
 │ VolumeLevel ·                                                              │
 │ WindowCommand · WindowPlacementEngine · WindowActionMemory · WindowLayout/* ·      │
@@ -34,12 +35,12 @@ Independently of the folder tree, every mature subsystem has converged on the sa
                                    │ consumed by
 ┌─ EFFECT ─────────────────────────▼─────────────────────────────────────────┐
 │ All platform I/O, one folder per feature.                                  │
-│ AppIndex · SpotlightNames · FileSearchService · SettingsPaneScanner ·      │
+│ AppIndex · FileSearchService · SettingsPaneScanner ·                       │
 │ AXWindowAccess · AXScreens · WindowInventory · WindowLayoutRunner ·        │
 │ IconCache · WindowMover · UninstallScanner · UninstallRunner ·             │
 │ SystemActionRunner · QuicklinkLauncher · TextInjector ·             │
 │ SnippetKeywordListener · NotesRepository · CurrencyRateStore · Paster ·    │
-│ HotKeyCenter · HyperKeyTap · DoubleTapMonitor · RunningAppsMonitor ·       │
+│ HotKeyCenter · HyperKeyTap · ModifierTapMonitor · RunningAppsMonitor ·     │
 │ CalendarStore · MeetingLauncher · MeetingClock · CameraSession ·           │
 │ SupportReminderStore · AXMenuAccess · WindowZOrder · WindowSwitchSweep ·   │
 │ AppleShortcutRunner                                                        │
@@ -89,7 +90,7 @@ app: the stores (`AppIndex`, `ClipboardStore`, `SnippetsStore`, `QuicklinkStore`
 (`ClipboardManager`, the opt-in `ClipboardTextIndexer`,
 `HotKeyManager`, `HyperKeyTap`, `RunningAppsMonitor`, `SnippetKeywordListener`), the shared state
 (`AppSettings`, `PaletteState`, `FileSearchSession`, `MenuSearchSession`, `UninstallSession`,
-`MeetingClock`), `NotesStore`, the twenty feature coordinators, and the
+`MeetingClock`), `NotesStore`, the twenty-one feature coordinators, and the
 window controllers.
 
 `AppDelegate.applicationDidFinishLaunching` calls `AppCore.shared.start()` and nothing else. That is the
@@ -136,11 +137,13 @@ driven imperatively from AppKit. Extension menu extras are dynamic `NSStatusItem
   literal source, switches among local Markdown files and stays visible on focus loss. The displayed
   string is the canonical file source; there is no source/display mapping.
   See [features/notes.md](features/notes.md).
-- **Snippet editor** — a feature-owned, borderless `NSPanel` managed by `SnippetCoordinator`. Create
-  and Edit open it directly; Settings remains independent.
-- **The main menu** — shaped by `TinycastApp`'s `.commands`, which rebinds ⌘Q to Close Settings. It is
-  only ever on screen while a titled window is open, so it is Settings' menu bar. It must stay
-  declarative.
+- **AI Chat** — a titled `AppWindowController` window owned by `AIChatCoordinator`: an
+  `NSSplitViewController` with a collapsible sidebar of saved chats beside the open conversation, as
+  Settings is built. The conversation lives on `AppCore.aiChats`, not the window, so closing it cancels
+  nothing. Quick AI is the same feature's palette screen. See [features/ai.md](features/ai.md).
+- **The main menu** — shaped by `TinycastApp`'s `.commands`, which rebinds ⌘Q to Close Window: the AI
+  Chat window when it is key, otherwise Settings. It is only ever on screen while a titled window is
+  open, so it is those windows' menu bar. It must stay declarative.
 - **Dialogs** — borderless `DialogPanel`s driven by `DialogController`, the app's only presenter for
   confirmations, failure reports and value prompts. Presentation is `async`, so nothing blocks the main
   actor, and the presenter refuses a second dialog while one is up — that, not a flag, is what stops a
@@ -209,7 +212,7 @@ everything that feature owns.
 Tinycast/
   App/              @main, AppDelegate, AppCore — the composition root
   DesignSystem/     Theme (the token source), KeyCapChip, Tooltip, SymbolImage,
-                    VisualEffectView, PopoverMenu, SettingsComponents, Scrolling/, Interaction/
+                    GlassEffectView, PopoverMenu, SettingsComponents, Scrolling/, Interaction/
   Platform/         system shims: Permissions, LaunchAtLogin, InputSourceSwitcher, ScreenTarget,
                     AppDisplayName,
                     NotificationToken, AppPaths, Signposts, HealthTicker, Memo, ActivationPolicy,
@@ -229,7 +232,7 @@ Tinycast/
         Service/    effects — stores, monitors, runners, AppKit glue
         UI/         screens, views, and the feature's coordinator
         Settings/   the feature's own panes
-    Settings/       the Settings shell only: SettingsCoordinator, the sidebar/detail/toolbar and
+    Settings/       the Settings shell only: SettingsCoordinator, the root/sidebar/detail views, the chrome,
                     navigation types, SettingsTab, AppSettings, AppSettingsKey, and Panes/ for the
                     two panes no feature owns
 Tests/              the standalone harnesses, one Swift file each

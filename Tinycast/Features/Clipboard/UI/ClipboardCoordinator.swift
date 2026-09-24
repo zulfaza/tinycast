@@ -3,9 +3,6 @@ import AppKit
 /// Owns clipboard-history actions: paste, copy, reveal, pin — and the selection that follows.
 @MainActor
 final class ClipboardCoordinator {
-    var onRenameClip: (@MainActor (ClipboardItem) -> Void)?
-    var onSaveTextAsFile: (@MainActor (ClipboardItem) -> Void)?
-    var onSaveTextAsSnippet: (@MainActor (ClipboardItem) -> Void)?
     private let clipboardStore: ClipboardStore
     private let clipboardManager: ClipboardManager
     private let settings: AppSettings
@@ -71,12 +68,21 @@ final class ClipboardCoordinator {
         clipboardStore.enforceLimits()
     }
 
-    /// ↵ runs the configured default; ⌘↵ the other one, so the two chords stay a swapped pair.
-    func activate(_ item: ClipboardItem, inverted: Bool = false) {
-        if (settings.clipboardDefaultAction == .copy) != inverted {
-            copyToClipboard(item)
-        } else {
-            paste(item)
+    /// ↵ runs the configured default and the other chords follow it; false when `chord` has none.
+    @discardableResult
+    func activate(_ item: ClipboardItem, chord: ClipboardChord = .return) -> Bool {
+        guard let action = settings.clipboardDefaultAction.action(for: chord, on: item) else {
+            return false
+        }
+        perform(action, on: item)
+        return true
+    }
+
+    func perform(_ action: ClipboardDefaultAction, on item: ClipboardItem) {
+        switch action {
+        case .paste: paste(item)
+        case .copy: copyToClipboard(item)
+        case .pastePlainText: pasteAsPlainText(item)
         }
     }
 
@@ -91,13 +97,12 @@ final class ClipboardCoordinator {
         }
     }
 
-    func pasteAs(_ item: ClipboardItem, representation: ClipboardRepresentation) {
+    /// A file's path stays valid text after the file goes, so this never reports it missing.
+    func pasteAsPlainText(_ item: ClipboardItem) {
         let previous = windowController.previousApp
         paletteCoordinator.hidePalette(restoreFocus: false)
-        if Paster.pasteAs(representation, item: item, store: clipboardStore, previousApp: previous) {
+        if Paster.pastePlainText(item, store: clipboardStore, previousApp: previous) {
             selectClip(item)
-        } else {
-            reportUnavailable(item)
         }
     }
 
@@ -142,34 +147,6 @@ final class ClipboardCoordinator {
         }
     }
 
-    func copyAs(_ item: ClipboardItem, representation: ClipboardRepresentation) {
-        paletteCoordinator.hidePalette(restoreFocus: false)
-        if Paster.copyAs(representation, item: item, store: clipboardStore) {
-            selectClip(item)
-        } else {
-            reportUnavailable(item)
-        }
-    }
-
-    func copyQR(_ payload: ClipboardQRPayload) {
-        paletteCoordinator.hidePalette(restoreFocus: false)
-        Paster.copyPlainText(payload.value)
-    }
-
-    func renameClip(_ item: ClipboardItem) {
-        onRenameClip?(item)
-    }
-
-    func saveTextAsFile(_ item: ClipboardItem) {
-        guard item.kind == .text else { return }
-        onSaveTextAsFile?(item)
-    }
-
-    func saveTextAsSnippet(_ item: ClipboardItem) {
-        guard item.kind == .text else { return }
-        onSaveTextAsSnippet?(item)
-    }
-
     /// Unmarked, so a converted colour enters history itself — it is one you meant to keep.
     func copyColor(_ color: ColorValue, as format: ColorFormat) {
         paletteCoordinator.hidePalette(restoreFocus: false)
@@ -185,23 +162,8 @@ final class ClipboardCoordinator {
     /// Nil only for a vanished file, which the HUD reports rather than hand over a dead path.
     func dragPayload(for item: ClipboardItem) -> ClipDragPayload? {
         let payload = item.dragPayload
-        switch payload {
-        case .file:
-            return clipURL(for: item).map(ClipDragPayload.file)
-        case .files(let urls):
-            guard urls.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
-                reportUnavailable(item)
-                return nil
-            }
-            return payload
-        case .link, .text:
-            return payload
-        }
-    }
-
-    /// A landed drop is a finished errand, so the palette leaves as it does after a paste.
-    func clipDropped() {
-        paletteCoordinator.hidePalette(restoreFocus: false)
+        guard case .file = payload else { return payload }
+        return clipURL(for: item).map(ClipDragPayload.file)
     }
 
     func openClip(_ item: ClipboardItem) {
@@ -212,11 +174,10 @@ final class ClipboardCoordinator {
 
     /// Unmarked, so the path enters history like any other copy the reader meant to make.
     func copyClipPath(_ item: ClipboardItem) {
-        let paths = clipboardStore.fileURLs(for: item).map(\.path)
-        guard !paths.isEmpty else { return }
+        guard let path = item.filePath else { return }
         paletteCoordinator.hidePalette(restoreFocus: false)
-        Paster.copyPlainText(paths.joined(separator: "\n"))
-        core.showMessage(paths.count == 1 ? "Copied path" : "Copied paths")
+        Paster.copyPlainText(path)
+        core.showMessage("Copied path")
     }
 
     /// Nil once the file is gone, so every action reports rather than silently no-opping.

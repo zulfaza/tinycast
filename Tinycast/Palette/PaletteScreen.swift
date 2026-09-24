@@ -96,16 +96,8 @@ private extension MenuPanelCorner {
         switch self {
         case .bottomLeading: .bottomLeading
         case .bottomTrailing: .bottomTrailing
-        case .belowHeaderTrailing, .belowHeaderField: .none
+        case .belowHeaderTrailing: .none
         }
-    }
-}
-
-struct PaletteHeaderFieldFramesKey: PreferenceKey {
-    static let defaultValue: [String: CGRect] = [:]
-
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
     }
 }
 
@@ -138,12 +130,10 @@ struct PaletteHeaderFieldFramesKey: PreferenceKey {
     func activate(at selection: Int)
     /// ⌘↵. False when the selection has no secondary action, leaving the key unhandled.
     func secondary(at selection: Int) -> Bool
-    /// ⇧⌘↵. False falls through to the screen's ordinary ⌘↵ action.
+    /// ⌃⌘↵. False when the selection has no third action, leaving the chord to `secondary`.
     func tertiary(at selection: Int) -> Bool
     /// ⌥↵. False on every screen with nothing to paste, which is most of them.
     func pasteKeepingWindowOpen(at selection: Int) -> Bool
-    /// Calculator-only keyboard actions; false for every other screen.
-    func perform(_ shortcut: CalcShortcut, at selection: Int) -> Bool
     /// False when the screen has no answer to the chord, leaving the key unhandled.
     func perform(_ shortcut: PaletteShortcut, at selection: Int) -> Bool
     /// The selection an arrow key lands on, or nil to leave the key to the palette's own default.
@@ -176,9 +166,8 @@ extension PaletteScreen {
                 placeholder: "Search for actions…", placement: .bottom),
             onActivate: onActivate, preferredSelection: filtered.bestMatch)
     }
-    func pasteKeepingWindowOpen(at selection: Int) -> Bool { false }
-    func perform(_ shortcut: CalcShortcut, at selection: Int) -> Bool { false }
     func tertiary(at selection: Int) -> Bool { false }
+    func pasteKeepingWindowOpen(at selection: Int) -> Bool { false }
     func perform(_ shortcut: PaletteShortcut, at selection: Int) -> Bool { false }
     func move(_ delta: Int, axis: PaletteAxis, from selection: Int) -> Int? { nil }
     func headerAccessory(
@@ -241,15 +230,12 @@ struct PaletteHeaderAccessory {
     let firstIncompleteField: String?
     /// A field whose value is chosen rather than typed hands back its menu; nil means free text.
     let optionsMenu: (String) -> PopoverMenuContent?
-    /// Moves a focused option field; false leaves arrows to the palette's normal navigation.
-    let moveOption: (String, Int) -> Bool
     let placement: Placement
     let view: AnyView
 
     init(
         width: CGFloat, fieldNames: [String], firstIncompleteField: String?,
         optionsMenu: @escaping (String) -> PopoverMenuContent? = { _ in nil },
-        moveOption: @escaping (String, Int) -> Bool = { _, _ in false },
         placement: Placement = .afterQuery,
         view: AnyView
     ) {
@@ -257,7 +243,6 @@ struct PaletteHeaderAccessory {
         self.fieldNames = fieldNames
         self.firstIncompleteField = firstIncompleteField
         self.optionsMenu = optionsMenu
-        self.moveOption = moveOption
         self.placement = placement
         self.view = view
     }
