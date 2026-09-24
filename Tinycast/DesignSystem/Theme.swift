@@ -382,6 +382,51 @@ enum Theme {
 
         /// The ramp's inverse: the scrim darkens the dark surface and lightens the light one.
         static let panelScrim = adaptive(dark: .srgbInk(0, alpha: 0.40), light: .srgbInk(1, alpha: 0.55))
+
+        /// The panel fill follows the selected theme, including its optional gradient.
+        @MainActor
+        static func panelSurface() -> AnyShapeStyle {
+            let appearance = NSApp.effectiveAppearance
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            if let palette = customPalette(for: isDark) {
+                if let gradient = palette.gradient {
+                    let radians = gradient.angle * .pi / 180
+                    let direction = CGPoint(x: cos(radians), y: sin(radians))
+                    return AnyShapeStyle(LinearGradient(
+                        colors: [color(gradient.first), color(gradient.second)],
+                        startPoint: UnitPoint(x: 0.5 - direction.x / 2, y: 0.5 - direction.y / 2),
+                        endPoint: UnitPoint(x: 0.5 + direction.x / 2, y: 0.5 + direction.y / 2)))
+                }
+                return AnyShapeStyle(color(palette.panelBackground))
+            }
+            return AnyShapeStyle(panelScrim)
+        }
+
+        static var accent: Color {
+            Color(nsColor: NSColor(name: nil) { appearance in
+                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                guard let palette = customPalette(for: isDark) else {
+                    return NSColor.controlAccentColor
+                }
+                return nsColor(palette.accent)
+            })
+        }
+
+        private static func customPalette(for isDark: Bool) -> ThemePalette? {
+            guard let data = UserDefaults.standard.data(forKey: CustomThemeStorage.userDefaultsKey),
+                let theme = try? CustomThemeDocument.decode(data)
+            else { return nil }
+            return isDark ? theme.dark : theme.light
+        }
+
+        private static func color(_ color: ThemeColor) -> Color {
+            Color(.sRGB, red: color.red, green: color.green, blue: color.blue, opacity: color.alpha)
+        }
+
+        private static func nsColor(_ color: ThemeColor) -> NSColor {
+            NSColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: color.alpha)
+        }
+
         /// Modal separation inside Tinycast: the launcher recedes while its dialog is in front.
         static let dialogDimming = adaptive(
             dark: .srgbInk(0, alpha: 0.34), light: .srgbInk(0, alpha: 0.34))

@@ -2,12 +2,31 @@ import SwiftUI
 
 /// What a row hands to the app it is dropped on, and the image that follows the pointer there.
 struct RowDragItem {
-    let writer: any NSPasteboardWriting
-    let image: NSImage
+    struct Content {
+        let writer: any NSPasteboardWriting
+        let image: NSImage
+    }
+
+    let contents: [Content]
+
+    init(writer: any NSPasteboardWriting, image: NSImage) {
+        contents = [Content(writer: writer, image: image)]
+    }
 
     /// `image` is the row's warm tile: a decode on mouse-down stalls the frame the drag begins on.
     static func file(_ url: URL, image: NSImage?) -> RowDragItem {
-        RowDragItem(writer: url as NSURL, image: image ?? NSWorkspace.shared.icon(forFile: url.path))
+        RowDragItem(
+            writer: url as NSURL, image: image ?? NSWorkspace.shared.icon(forFile: url.path))
+    }
+
+    static func files(_ urls: [URL]) -> RowDragItem {
+        RowDragItem(contents: urls.map { url in
+            Content(writer: url as NSURL, image: NSWorkspace.shared.icon(forFile: url.path))
+        })
+    }
+
+    private init(contents: [Content]) {
+        self.contents = contents
     }
 }
 
@@ -122,16 +141,19 @@ private final class RowPressView: NSView, NSDraggingSource {
     }
 
     private func beginDrag(_ item: RowDragItem, with event: NSEvent) {
-        let image = item.image
-        let dragging = NSDraggingItem(pasteboardWriter: item.writer)
-        // Sized to the image and centred on the cursor. The row's shape would stretch a thumbnail.
         let origin = convert(event.locationInWindow, from: nil)
-        dragging.setDraggingFrame(
-            NSRect(
-                x: origin.x - image.size.width / 2, y: origin.y - image.size.height / 2,
-                width: image.size.width, height: image.size.height),
-            contents: image)
-        let session = beginDraggingSession(with: [dragging], event: event, source: self)
+        let dragItems = item.contents.map { content in
+            let image = content.image
+            let dragging = NSDraggingItem(pasteboardWriter: content.writer)
+            // Sized to the image; the row's shape would stretch a thumbnail.
+            dragging.setDraggingFrame(
+                NSRect(
+                    x: origin.x - image.size.width / 2, y: origin.y - image.size.height / 2,
+                    width: image.size.width, height: image.size.height),
+                contents: image)
+            return dragging
+        }
+        let session = beginDraggingSession(with: dragItems, event: event, source: self)
         session.animatesToStartingPositionsOnCancelOrFail = true
     }
 

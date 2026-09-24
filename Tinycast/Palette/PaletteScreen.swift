@@ -241,12 +241,15 @@ struct PaletteHeaderAccessory {
     let firstIncompleteField: String?
     /// A field whose value is chosen rather than typed hands back its menu; nil means free text.
     let optionsMenu: (String) -> PopoverMenuContent?
+    /// Left and right cycle a closed option field without opening its menu.
+    let moveOption: (String, Int) -> Bool
     let placement: Placement
     let view: AnyView
 
     init(
         width: CGFloat, fieldNames: [String], firstIncompleteField: String?,
         optionsMenu: @escaping (String) -> PopoverMenuContent? = { _ in nil },
+        moveOption: @escaping (String, Int) -> Bool = { _, _ in false },
         placement: Placement = .afterQuery,
         view: AnyView
     ) {
@@ -254,6 +257,7 @@ struct PaletteHeaderAccessory {
         self.fieldNames = fieldNames
         self.firstIncompleteField = firstIncompleteField
         self.optionsMenu = optionsMenu
+        self.moveOption = moveOption
         self.placement = placement
         self.view = view
     }

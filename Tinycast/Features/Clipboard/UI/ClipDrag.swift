@@ -12,6 +12,8 @@ extension ClipDragPayload {
                 ImageThumbnail.cached(url, maxPixel: Self.previewPixel)
                 ?? FilePreviewThumbnail.cached(url, maxPixel: Self.previewPixel)
             return .file(url, image: tile)
+        case .files(let urls):
+            return .files(urls)
         case .link(let url, let text):
             let item = NSPasteboardItem()
             item.setString(url.absoluteString, forType: .URL)

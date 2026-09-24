@@ -41,7 +41,9 @@ final class AppCore {
     let updateChecker = UpdateCheckStore()
     let supportReminders: SupportReminderStore
     let emojiIndex = EmojiIndex()
+    let emojiKeywords = EmojiKeywordStore()
     let frequentEmoji = FrequentEmojiStore()
+    let customThemes = CustomThemeStore()
     let pinnedEmoji = PinnedEmojiStore()
     let runningApps = RunningAppsMonitor()
     let palette = PaletteState()
@@ -115,7 +117,8 @@ final class AppCore {
         paletteCoordinator: paletteCoordinator, settingsCoordinator: settingsCoordinator,
         core: self)
     @ObservationIgnored private(set) lazy var customCommandCoordinator = CustomCommandCoordinator(
-        store: customCommands, settings: settings, appIndex: appIndex,
+        store: customCommands, argumentSession: customCommandArguments,
+        settings: settings, appIndex: appIndex,
         paletteCoordinator: paletteCoordinator, settingsCoordinator: settingsCoordinator,
         hotKeys: hotKeys, favorites: favorites, visibility: visibility,
         ranking: launcherRanking, aliases: aliases, activationPolicy: activationPolicy, core: self)
@@ -129,6 +132,9 @@ final class AppCore {
         store: notesStore,
         settings: settings,
         appIndex: appIndex,
+        emojiIndex: emojiIndex,
+        emojiKeywords: emojiKeywords,
+        frequentEmoji: frequentEmoji,
         core: self,
         isFormattingBarExpanded: UserDefaults.standard.bool(forKey: Self.noteFormattingBarKey),
         saveFormattingBarExpanded: {
@@ -199,7 +205,7 @@ final class AppCore {
 
     @ObservationIgnored private lazy var windowController = PaletteWindowController(core: self)
     @ObservationIgnored private lazy var messageHUD = MessageHUDController(settings: settings)
-    @ObservationIgnored private lazy var clipboardEditor = ClipboardEditorWindowController(core: self)
+    @ObservationIgnored private(set) lazy var customCommandArguments = CustomCommandArgumentSession()
     private(set) var isShowingDialog = false
     var isDimmingPaletteForDialog: Bool { isShowingDialog && windowController.isVisible }
     /// Every confirmation, report and prompt; it also stops a held hotkey stacking them.
@@ -368,20 +374,6 @@ final class AppCore {
                 windowLayoutIDs: Set(windowLayouts.layouts.map(\.id)),
                 customWindowSizeIDs: Set(customWindowSizes.sizes.map(\.id)),
                 quickActionIDs: Set(customQuickActions.actions.map(\.id)))
-            clipboardCoordinator.onRenameClip = { [weak self] item in
-                guard let self else { return }
-                self.paletteCoordinator.hidePalette(restoreFocus: false)
-                self.clipboardEditor.rename(item)
-            }
-            clipboardCoordinator.onSaveTextAsFile = { [weak self] item in
-                guard let self else { return }
-                self.paletteCoordinator.hidePalette(restoreFocus: false)
-                self.clipboardEditor.saveAsFile(item)
-            }
-            clipboardCoordinator.onSaveTextAsSnippet = { [weak self] item in
-                guard let self else { return }
-                self.snippetCoordinator.saveClipboardAsSnippet(text: item.text, name: item.name)
-            }
             // Keeps running while Carbon pauses: the recorder needs its rewritten flags.
             hyperKeyTap.start(settings: settings)
 
