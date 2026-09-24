@@ -211,6 +211,7 @@ final class SnippetCoordinator {
         let target = windowController.previousTarget
         // One of our own editors is only reachable again once the palette hands key back to it.
         paletteCoordinator.hidePalette(restoreFocus: target?.ownEditor != nil)
+        paletteCoordinator.popToRootNow()
         expandSnippet(id: id, target: target, userArguments: userArguments)
     }
 

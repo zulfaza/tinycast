@@ -71,6 +71,13 @@ final class ExtensionCoordinator {
         guard settings.extensionsEnabled,
             let entry = extensions.launcherEntry(forEntryID: entryID)
         else { return }
+        // The shortcut's second press closes its command, as a mode command's does.
+        if paletteCoordinator.isShowing(.extensionCommand),
+            extensions.running == ExtensionCommandRef(entryID: entryID)
+        {
+            paletteCoordinator.hidePalette()
+            return
+        }
         runExtensionCommand(entry)
     }
 
@@ -180,6 +187,7 @@ final class ExtensionCoordinator {
             if !paletteCoordinator.isVisible {
                 paletteCoordinator.showPalette(mode: .extensionCommand)
             }
+            if let fallbackText, !fallbackText.isEmpty { palette.query = fallbackText }
         case .noView, .menuBar:
             // A no-view command's own HUD is the feedback, so the palette gets out of the way.
             if launchType == .userInitiated { paletteCoordinator.hidePalette(restoreFocus: false) }

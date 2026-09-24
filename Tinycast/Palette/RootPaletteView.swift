@@ -96,11 +96,12 @@ struct RootPaletteView: View {
                 scrollToFollow: { scroll = ScrollIntent(kind: .follow) })
         case .ai:
             return AIScreen(
-                vm: vm, metrics: metrics, chat: core.aiChat, settings: core.aiSettings,
-                coordinator: core.aiChatCoordinator)
+                vm: vm, metrics: metrics, chat: quickAI,
+                coordinator: core.quickAICoordinator, chatCoordinator: core.aiChatCoordinator,
+                openAttachments: toggleAIAttachments)
         case .aiHistory:
             return ChatHistoryScreen(
-                history: core.chatHistory, chat: core.aiChat, coordinator: core.aiChatCoordinator,
+                history: core.chatHistory, chat: quickAI, coordinator: core.quickAICoordinator,
                 vm: vm, openActions: openActions, metrics: metrics)
         case .dictionary:
             return DictionaryScreen(session: dictionary, core: core, vm: vm)
@@ -242,12 +243,16 @@ struct RootPaletteView: View {
             return headerMenu(emojiCategoryContent, width: metrics.size.emojiCategoryMenuWidth)
         case .aiModel:
             return headerMenu(
-                AIModelMenu.models(coordinator: core.aiChatCoordinator),
+                AIModelMenu.models(coordinator: core.aiChatCoordinator, chat: quickAI),
                 width: metrics.size.menuWidth)
         case .aiReasoning:
             return headerMenu(
-                AIModelMenu.reasoning(
-                    coordinator: core.aiChatCoordinator, settings: core.aiSettings),
+                AIModelMenu.reasoning(coordinator: core.aiChatCoordinator, chat: quickAI),
+                width: metrics.size.menuWidth)
+        case .aiAttachments:
+            guard !quickAI.pendingAttachments.isEmpty else { return nil }
+            return headerMenu(
+                AIModelMenu.attachments(coordinator: core.aiChatCoordinator, chat: quickAI),
                 width: metrics.size.menuWidth)
         case .argumentOptions:
             guard let field = argumentOptionsField,
@@ -358,8 +363,7 @@ struct RootPaletteView: View {
     /// Split from `body` for the same reason `keyHandlers` is: one chain cannot carry them all.
     @ViewBuilder
     private func stateObservers(_ content: some View) -> some View {
-        menuObservers(
-            emojiObservers(content)
+        emojiObservers(content)
             // Every show bumps focusToken so the search field refocuses.
             .onChange(of: vm.focusToken) {
                 searchFocused = !screen.hidesSearchField
@@ -441,20 +445,6 @@ struct RootPaletteView: View {
             .onChange(of: vm.favoriteSlotToken) {
                 if let index = vm.favoriteSlotIndex { performShortcut(.favoriteSlot(index)) }
             }
-        )
-        .onDisappear(perform: tearDownPaletteSurface)
-        .onAppear { searchFocused = !screen.hidesSearchField }
-        .modifier(SearchFieldHiding(hidden: hidesSearchField, apply: applySearchFieldHiding))
-        // Several paths flip `paletteIsCollapsed`, so resize the window to match.
-        .onChange(of: core.paletteCoordinator.paletteIsCollapsed) {
-            core.paletteCoordinator.syncPaletteSize()
-        }
-    }
-
-    /// Menu presentation is isolated from the broader state observer chain.
-    @ViewBuilder
-    private func menuObservers(_ content: some View) -> some View {
-        content
             // One optional makes "exactly one menu" structural; this only presents it.
             .onChange(of: openMenu) {
                 guard menuOpen else { return }
@@ -463,13 +453,19 @@ struct RootPaletteView: View {
             // The hosted tree is its own hierarchy, so the highlight has to be pushed into it.
             .onChange(of: menuSelection) { syncMenuPanel(presenting: false) }
             .onChange(of: vm.menuQuery) { menuQueryChanged() }
-    }
-
-    private func tearDownPaletteSurface() {
-        menuPanel.hide()
-        guard let panel = hostWindow as? PalettePanel else { return }
-        panel.onHeaderFieldBoundaryArrow = nil
-        panel.onHeaderOptionArrow = nil
+            .onDisappear {
+                menuPanel.hide()
+                if let panel = hostWindow as? PalettePanel {
+                    panel.onHeaderFieldBoundaryArrow = nil
+                    panel.onHeaderOptionArrow = nil
+                }
+            }
+            .onAppear { searchFocused = !screen.hidesSearchField }
+            .modifier(SearchFieldHiding(hidden: hidesSearchField, apply: applySearchFieldHiding))
+            // Several paths flip `paletteIsCollapsed`, so resize the window to match.
+            .onChange(of: core.paletteCoordinator.paletteIsCollapsed) {
+                core.paletteCoordinator.syncPaletteSize()
+            }
     }
 
     /// Split from `body`: one chain of this length is past what the type-checker will infer.
@@ -717,14 +713,14 @@ struct RootPaletteView: View {
             if !isCollapsed, vm.mode == .ai {
                 headerGutter(width: metrics.spacing.md)
                 AIModelButton(
-                    title: core.aiChatCoordinator.selectedModelTitle,
-                    icon: core.aiChatCoordinator.selectedModelIcon,
+                    title: core.aiChatCoordinator.selectedModelTitle(for: quickAI),
+                    icon: core.aiChatCoordinator.selectedModelIcon(for: quickAI),
                     isOpen: openMenu == .aiModel,
                     action: toggleAIModel)
-                if !core.aiChatCoordinator.reasoningEfforts.isEmpty {
+                if !core.aiChatCoordinator.reasoningEfforts(for: quickAI).isEmpty {
                     headerGutter(width: metrics.spacing.md)
                     AIReasoningButton(
-                        title: core.aiChatCoordinator.selectedReasoningTitle,
+                        title: core.aiChatCoordinator.selectedReasoningTitle(for: quickAI),
                         isOpen: openMenu == .aiReasoning,
                         action: toggleAIReasoning)
                 }
@@ -760,6 +756,7 @@ struct RootPaletteView: View {
         .frame(maxWidth: .infinity)
         // Set after the show, so the field it names is focused rather than the search field.
         .onChange(of: vm.pendingArgumentEntryID) { focusPendingArgument() }
+        .onChange(of: quickAI.pendingAttachments.map(\.id)) { refreshAttachmentsMenu() }
     }
 
     /// Mode-gated ahead of the cast, which would otherwise cost every other mode a list build.
@@ -1035,8 +1032,23 @@ struct RootPaletteView: View {
         }
     }
 
+    private var quickAI: AIChatState { core.aiChats.quickAI }
+
     private var aiModelHighlight: Int {
-        AIModelMenu.modelHighlight(coordinator: core.aiChatCoordinator, settings: core.aiSettings)
+        AIModelMenu.modelHighlight(coordinator: core.aiChatCoordinator, chat: quickAI)
+    }
+
+    private func toggleAIAttachments() {
+        if openMenu == .aiAttachments {
+            closeMenus()
+            return
+        }
+        open(.aiAttachments, highlighting: 0)
+    }
+
+    private func refreshAttachmentsMenu() {
+        guard openMenu == .aiAttachments, quickAI.pendingAttachments.isEmpty else { return }
+        closeMenus()
     }
 
     private func toggleAIReasoning() {
@@ -1047,7 +1059,7 @@ struct RootPaletteView: View {
         open(
             .aiReasoning,
             highlighting: AIModelMenu.reasoningHighlight(
-                coordinator: core.aiChatCoordinator, settings: core.aiSettings))
+                coordinator: core.aiChatCoordinator, chat: quickAI))
     }
 
     /// Every header menu states its own width, so resizing one never moves another.
@@ -1203,7 +1215,7 @@ struct RootPaletteView: View {
                 .map(MenuPanelCorner.belowHeaderField)
                 ?? .belowHeaderTrailing
         case .clipboardFilter, .fileSearchFilter, .emojiCategory, .aiModel, .aiReasoning,
-            .extensionAccessory:
+            .aiAttachments, .extensionAccessory:
             .belowHeaderTrailing
         case nil: nil
         }
@@ -1302,7 +1314,7 @@ struct RootPaletteView: View {
             vm.resetNavigation()
         case .carryQuery(let mode): vm.pushCarryingQuery(mode: mode)
         case .freshScreen(let mode): vm.push(mode: mode)
-        case .ask: core.aiChatCoordinator.ask(vm.query)
+        case .ask: core.quickAICoordinator.ask(vm.query)
         }
     }
 
@@ -1419,6 +1431,7 @@ private enum OpenMenu {
     case emojiCategory
     case aiModel
     case aiReasoning
+    case aiAttachments
 }
 
 /// Its own modifier: the palette's body is already at the type-checker's limit.

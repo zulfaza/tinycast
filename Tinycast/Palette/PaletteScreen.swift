@@ -138,7 +138,7 @@ struct PaletteHeaderFieldFramesKey: PreferenceKey {
     func activate(at selection: Int)
     /// ⌘↵. False when the selection has no secondary action, leaving the key unhandled.
     func secondary(at selection: Int) -> Bool
-    /// ⇧⌘↵. False falls through to the screen's ordinary ⌘↵ action.
+    /// ⌃⌘↵. False when the selection has no third action, leaving the chord to `secondary`.
     func tertiary(at selection: Int) -> Bool
     /// ⌥↵. False on every screen with nothing to paste, which is most of them.
     func pasteKeepingWindowOpen(at selection: Int) -> Bool
@@ -176,9 +176,9 @@ extension PaletteScreen {
                 placeholder: "Search for actions…", placement: .bottom),
             onActivate: onActivate, preferredSelection: filtered.bestMatch)
     }
-    func pasteKeepingWindowOpen(at selection: Int) -> Bool { false }
-    func perform(_ shortcut: CalcShortcut, at selection: Int) -> Bool { false }
-    func tertiary(at selection: Int) -> Bool { false }
+     func pasteKeepingWindowOpen(at selection: Int) -> Bool { false }
+     func perform(_ shortcut: CalcShortcut, at selection: Int) -> Bool { false }
+     func tertiary(at selection: Int) -> Bool { false }
     func perform(_ shortcut: PaletteShortcut, at selection: Int) -> Bool { false }
     func move(_ delta: Int, axis: PaletteAxis, from selection: Int) -> Int? { nil }
     func headerAccessory(
@@ -241,7 +241,7 @@ struct PaletteHeaderAccessory {
     let firstIncompleteField: String?
     /// A field whose value is chosen rather than typed hands back its menu; nil means free text.
     let optionsMenu: (String) -> PopoverMenuContent?
-    /// Moves a focused option field; false leaves arrows to the palette's normal navigation.
+    /// Left and right cycle a closed option field without opening its menu.
     let moveOption: (String, Int) -> Bool
     let placement: Placement
     let view: AnyView

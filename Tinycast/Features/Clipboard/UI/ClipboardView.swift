@@ -68,14 +68,14 @@ struct ClipboardList: View {
                             .contentShape(Rectangle())
                             // The light catcher: `.contextMenu` stalls.
                             .onRightClick { onActions(item) }
-                            .clipDraggable(
-                                payload: { onDragPayload(item) },
-                                onSelect: { onSelect(item) },
-                                onActivate: {
+                            .onRowClick(
+                                select: { onSelect(item) },
+                                activate: {
                                     onSelect(item)
                                     onActivate()
                                 },
-                                onDropped: onDropped
+                                drag: RowDrag(
+                                    item: { onDragPayload(item)?.dragItem }, dropped: onDropped)
                             )
                         }
                     }
@@ -167,7 +167,6 @@ private struct ClipboardRow: View {
     }
 
     private var previewText: String {
-        if let name = item.name { return name }
         switch item.kind {
         // Cap before trimming: never walk a multi-MB clipboard string per row.
         case .text:
@@ -175,8 +174,9 @@ private struct ClipboardRow: View {
                 in: .whitespacesAndNewlines)
         case .image: return "Image"
         case .file:
-            if item.filePaths.count > 1 { return "\(item.filePaths.count) Files" }
-            return item.filePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "File"
+            return item.filePath.map {
+                URL(filePath: $0, directoryHint: .inferFromPath).lastPathComponent
+            } ?? "File"
         }
     }
 
@@ -216,7 +216,10 @@ private struct ClipboardRow: View {
         }
     }
 
-    private var fileURL: URL? { item.filePath.map { URL(fileURLWithPath: $0) } }
+    // Not `fileURLWithPath:`, which stats the path: on a network mount that stalls the render.
+    private var fileURL: URL? {
+        item.filePath.map { URL(filePath: $0, directoryHint: .inferFromPath) }
+    }
 
     private var fileKind: ClipboardFileKind {
         item.filePath.map { ClipboardFileKind.of(path: $0) } ?? .other
@@ -236,31 +239,32 @@ private struct ClipboardRow: View {
     }
 }
 
-/// A downsampled thumbnail, decoding misses off the main thread.
-private struct AsyncThumbnail<Content: View, Placeholder: View>: View {
-    /// ImageIO for a blob we hold; QuickLook for a referenced file, which may be any type.
-    enum Source {
-        case image
-        case file
+/// ImageIO for a blob we hold; QuickLook for a referenced file, which may be any type.
+private enum ThumbnailSource {
+    case image
+    case file
 
-        func cached(_ url: URL, maxPixel: CGFloat) -> NSImage? {
-            switch self {
-            case .image: return ImageThumbnail.cached(url, maxPixel: maxPixel)
-            case .file: return FilePreviewThumbnail.cached(url, maxPixel: maxPixel)
-            }
-        }
-
-        func loadAsync(_ url: URL, maxPixel: CGFloat) async -> NSImage? {
-            switch self {
-            case .image: return await ImageThumbnail.loadAsync(url, maxPixel: maxPixel)
-            case .file: return await FilePreviewThumbnail.loadAsync(url, maxPixel: maxPixel)
-            }
+    func cached(_ url: URL, maxPixel: CGFloat) -> NSImage? {
+        switch self {
+        case .image: return ImageThumbnail.cached(url, maxPixel: maxPixel)
+        case .file: return FilePreviewThumbnail.cached(url, maxPixel: maxPixel)
         }
     }
 
+    func loadAsync(_ url: URL, maxPixel: CGFloat) async -> NSImage? {
+        switch self {
+        case .image: return await ImageThumbnail.loadAsync(url, maxPixel: maxPixel)
+        case .file: return await FilePreviewThumbnail.loadAsync(url, maxPixel: maxPixel)
+        }
+    }
+}
+
+/// A downsampled thumbnail, decoding misses off the main thread.
+private struct AsyncThumbnail<Content: View, Placeholder: View>: View {
     let url: URL?
     let maxPixel: CGFloat
-    var source: Source = .image
+    /// Not nested here: the off-main decode would carry this view's isolated `View` conformances.
+    var source: ThumbnailSource = .image
     @ViewBuilder let content: (Image) -> Content
     @ViewBuilder let placeholder: () -> Placeholder
 
@@ -348,7 +352,6 @@ struct ClipboardPreview: View {
 /// The "Information" block; disk-touching details are gathered off the main actor.
 private struct ClipboardInfoSection: View {
     @Environment(\.metrics) private var metrics
-    @Environment(ClipboardStore.self) private var store
     let item: ClipboardItem
     let imageURL: URL?
 
@@ -451,11 +454,6 @@ private struct ClipboardInfoSection: View {
         }
         rows.append(
             InfoRow(label: "Copied", value: Self.copiedFormatter.string(from: item.createdAt)))
-        for (index, payload) in store.qrPayloads(for: item).enumerated() {
-            rows.append(
-                InfoRow(
-                    label: index == 0 ? "QR Code" : "QR Code (\(index + 1))", value: payload.value))
-        }
         return rows
     }
 

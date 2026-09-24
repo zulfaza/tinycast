@@ -65,7 +65,7 @@ struct SnippetEditorView: View {
         .frame(width: metrics.size.panelWidth, height: metrics.size.panelHeight)
         .environment(\.metrics, metrics)
         .background(Theme.Colors.panelSurface())
-        .background(VisualEffectView())
+        .background(GlassEffectView())
         .background(
             SnippetEditorEventMonitor(
                 onEscape: onDismiss))

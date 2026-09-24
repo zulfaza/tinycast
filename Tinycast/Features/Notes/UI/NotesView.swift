@@ -9,8 +9,8 @@ struct NotesView: View {
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.Colors.panelSurface())
-        .background(VisualEffectView())
+        .background(Theme.Colors.panelScrim)
+        .background(GlassEffectView())
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
         // The band above is the title bar; AppKit must not inset the content a second time.
         .ignoresSafeArea()
@@ -57,8 +57,7 @@ struct NotesView: View {
                 onSourceChange: notes.updateSource,
                 onCharacterCountChange: notes.updateCharacterCount,
                 onFormattingChange: notes.updateFormatting,
-                onReady: notes.editorReady,
-                completionProvider: notes.inlineCompletion
+                onReady: notes.editorReady
             )
             .overlay(alignment: .topLeading) { placeholder }
             if notes.showsFormattingBar {

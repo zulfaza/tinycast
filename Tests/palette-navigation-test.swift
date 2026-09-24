@@ -97,6 +97,13 @@ struct PaletteNavigationTests {
             !ringed.canGoBack && ringed.mode == .clipboard,
             "closing the Tab ring drops the stack without disturbing the screen")
 
+        let shortcutSwitch = searchingLauncher()
+        shortcutSwitch.push(mode: .clipboard)
+        shortcutSwitch.prepare(mode: .snippets)
+        expect(
+            shortcutSwitch.mode == .snippets && !shortcutSwitch.canGoBack,
+            "a feature shortcut opens its screen as a new root")
+
         let hopped = searchingLauncher()
         hopped.pushCarryingQuery(mode: .clipboard)
         expect(

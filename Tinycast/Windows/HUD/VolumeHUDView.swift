@@ -10,7 +10,7 @@ struct VolumeHUDView: View {
                 name: VolumeLevel.symbol(level: state.level, muted: state.muted),
                 size: Theme.Size.dialogIcon
             )
-            .foregroundStyle(Theme.Colors.textPrimary)
+            .foregroundStyle(Color.primary)
             HStack(spacing: Theme.Spacing.md) {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
@@ -34,8 +34,8 @@ struct VolumeHUDView: View {
         .padding(.vertical, Theme.Spacing.xxl)
         .padding(.horizontal, Theme.Spacing.xl)
         .frame(width: Theme.Size.hudWidth, height: Theme.Size.hudHeight)
-        .background(Theme.Colors.panelSurface())
-        .background(VisualEffectView())
+        .background(Theme.Colors.panelScrim)
+        .background(GlassEffectView())
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.dialog, style: .continuous))
         .panelEntrance()
         // A repeat command slides the bar to its new value instead of cutting to it.
