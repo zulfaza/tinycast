@@ -450,13 +450,7 @@ struct RootPaletteView: View {
             // The hosted tree is its own hierarchy, so the highlight has to be pushed into it.
             .onChange(of: menuSelection) { syncMenuPanel(presenting: false) }
             .onChange(of: vm.menuQuery) { menuQueryChanged() }
-            .onDisappear {
-                menuPanel.hide()
-                if let panel = hostWindow as? PalettePanel {
-                    panel.onHeaderFieldBoundaryArrow = nil
-                    panel.onHeaderOptionArrow = nil
-                }
-            }
+            .onDisappear(perform: paletteViewDisappeared)
             .onAppear { searchFocused = !screen.hidesSearchField }
             .modifier(SearchFieldHiding(hidden: hidesSearchField, apply: applySearchFieldHiding))
             // Several paths flip `paletteIsCollapsed`, so resize the window to match.
@@ -1103,6 +1097,13 @@ struct RootPaletteView: View {
     private func menuPresentationChanged() {
         guard menuOpen else { return }
         syncMenuPanel(presenting: true)
+    }
+
+    private func paletteViewDisappeared() {
+        menuPanel.hide()
+        guard let panel = hostWindow as? PalettePanel else { return }
+        panel.onHeaderFieldBoundaryArrow = nil
+        panel.onHeaderOptionArrow = nil
     }
 
     /// Drives the menu's window from the two pieces of state that decide what it shows.
