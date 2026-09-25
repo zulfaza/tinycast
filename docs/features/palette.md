@@ -132,7 +132,8 @@ whole stack for that same root search from any depth.
 
 `EscapeKeyBehavior` (General settings) can trade the walk back for the old behavior: under
 `closeAndPopToRoot` an empty field closes the window and resets it immediately, whatever Pop to Root
-Search says. Clearing the query is still the first press either way.
+Search says. Under either behavior, Escape that closes the palette resets to the launcher immediately,
+so a quick reopen starts at Home. Clearing the query is still the first press either way.
 
 The header draws a back chevron on **every** screen but the launcher: leaving is what the icon
 slot means once you are off the root, and a slot that changed shape with provenance would read
