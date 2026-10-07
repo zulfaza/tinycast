@@ -62,7 +62,9 @@ SwiftUI search field re-focuses. `prepare` is one of four motions over the scree
 
 Hiding schedules Pop to Root Search, and `PaletteWindowController.popToRoot` is its only path: the
 palette returns to the launcher *and* chat starts a new conversation, at once or after
-`popToRootTimeout`, unless a re-summon inside that window consumes the pending reset first. An
+`popToRootTimeout`, unless a re-summon inside that window consumes the pending reset first. The launcher hotkey resumes
+only a session rooted at the launcher: a screen summoned by its own shortcut (Snippets on ⌥⇧V) has
+nothing behind it, so ⌘Space after it opens the root search instead. An
 unfinished chat is a thing being done, exactly like a typed query, so the screen and the conversation
 are reset together rather than the screen alone. A reply still streaming is the one exception — it was
 asked for, and resetting would throw the answer away. Nothing is lost either way: a conversation is

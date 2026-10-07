@@ -60,7 +60,9 @@ final class PaletteCoordinator {
         if isShowing(.launcher) {
             hidePalette()
         } else {
-            showPalette(mode: .launcher, restoreAnyMode: true)
+            // A screen its own shortcut summoned has no launcher under it, so this starts at root.
+            let resumesSession = palette.mode == .launcher || palette.canGoBack
+            showPalette(mode: .launcher, restoreAnyMode: resumesSession)
         }
     }
 
