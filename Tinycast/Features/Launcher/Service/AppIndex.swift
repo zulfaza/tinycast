@@ -363,7 +363,7 @@ final class AppIndex {
             AppEntry(
                 id: command.entryID, name: command.name,
                 url: URL(string: "tinycast://system-action/" + command.id.rawValue)!,
-                bundleID: nil, kind: .systemAction)
+                bundleID: nil, kind: .systemAction, iconOverride: command.icon)
         }
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 

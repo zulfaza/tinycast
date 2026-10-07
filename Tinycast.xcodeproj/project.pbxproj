@@ -379,6 +379,7 @@
 		73C3912866D29C26E4CED1D2 /* AIModelSelectionRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94D1EA2460590C49B4A66C64 /* AIModelSelectionRows.swift */; };
 		73CD3D94F57F1A1DEF7FD3AB /* RoomWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 332C754034F4F575C155E7AB /* RoomWindow.swift */; };
 		743C70ACA40F61F635DB0B55 /* CalendarStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D0A2005448E6F88C3F78489 /* CalendarStore.swift */; };
+		745456E49144B6DCEE62EE42 /* SystemActionIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B6871E0A64E33FA861033A2 /* SystemActionIcon.swift */; };
 		74BE9E8319C8302EF525E6B2 /* QuicklinkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 685FB7FD7E4E5BE6606440D0 /* QuicklinkStore.swift */; };
 		753FEBB891DBCE13C4C59935 /* AIConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DE1B6753513C787B3FFE423 /* AIConnection.swift */; };
 		7553B38E8B1C40EF4945EDF1 /* ModifierKeyDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B5E917A4EFDC153C6780E8 /* ModifierKeyDetector.swift */; };
@@ -1202,6 +1203,7 @@
 		68952539C0BD045BA175CBB6 /* SettingsRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRootView.swift; sourceTree = "<group>"; };
 		6951305850D11CA90D16A162 /* WindowLayoutRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowLayoutRunner.swift; sourceTree = "<group>"; };
 		6AF26598BE61F114D5999541 /* NotesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesSettingsView.swift; sourceTree = "<group>"; };
+		6B6871E0A64E33FA861033A2 /* SystemActionIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemActionIcon.swift; sourceTree = "<group>"; };
 		6C045C66BB654E4CB407A673 /* AppActionsMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppActionsMenu.swift; sourceTree = "<group>"; };
 		6C7717F4851345ED38592B1C /* LauncherMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherMatch.swift; sourceTree = "<group>"; };
 		6D469F0ACEE4F696616EA39B /* WindowSwitchList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSwitchList.swift; sourceTree = "<group>"; };
@@ -2024,6 +2026,7 @@
 			isa = PBXGroup;
 			children = (
 				63AEA7984BF00BEDCB7F8EEE /* SystemActionFailure.swift */,
+				6B6871E0A64E33FA861033A2 /* SystemActionIcon.swift */,
 				2AEDBB526AB2C0406D8226D5 /* SystemActionRunner.swift */,
 				8A620ADCF5605E82F103968A /* SystemActionRunner+Microphone.swift */,
 				28B962318915EF7AEAC4996D /* VolumeState.swift */,
@@ -4534,6 +4537,7 @@
 				71AA40FC4B8C57FFDE5F8DFC /* SystemAction.swift in Sources */,
 				A11EB7D1852FB3D56DDBE7C3 /* SystemActionCoordinator.swift in Sources */,
 				E633D7EBA2E2EAA3A3E2405D /* SystemActionFailure.swift in Sources */,
+				745456E49144B6DCEE62EE42 /* SystemActionIcon.swift in Sources */,
 				450CDAD2E0F40C6D4496403E /* SystemActionRunner+Microphone.swift in Sources */,
 				0047FE6A50E746CCF0FC6810 /* SystemActionRunner.swift in Sources */,
 				82D95EF7539498A9A484B3D1 /* SystemActionsSettingsView.swift in Sources */,
