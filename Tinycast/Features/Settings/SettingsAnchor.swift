@@ -14,7 +14,11 @@ extension SettingsAnchor {
     static let generalAppearance = Self(tab: .general, title: "Appearance")
     static let generalCalculator = Self(tab: .general, title: "Calculator")
     static let generalGeneral = Self(tab: .general, title: "General")
-    static let customThemesTheme = Self(tab: .customThemes, title: "Custom theme")
+    static let customThemesTheme = Self(tab: .customThemes, title: "Theme")
+    static let customThemesBackground = Self(tab: .customThemes, title: "Background")
+    static let customThemesText = Self(tab: .customThemes, title: "Text")
+    static let customThemesAccents = Self(tab: .customThemes, title: "Accents")
+    static let customThemesFile = Self(tab: .customThemes, title: "Theme File")
 
     static let applicationsSearchScopes = Self(tab: .applications, title: "Search Scopes")
     static let applicationsApplications = Self(tab: .applications, title: "Applications")

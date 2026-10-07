@@ -178,7 +178,14 @@ enum SettingsSearchCatalog {
     ]
 
     private static let customThemes: [SettingsSearchEntry] = [
-        .init(pane: .customThemes, keywords: ["appearance", "colors", "gradient"])
+        .init(pane: .customThemes, keywords: ["appearance", "colors", "gradient"]),
+        .init(.customThemesTheme, "Name", keywords: ["preview", "light", "dark"]),
+        .init(group: .customThemesBackground, "Background", keywords: ["panel", "gradient", "angle"]),
+        .init(group: .customThemesText, "Text", keywords: ["primary", "secondary", "font colour"]),
+        .init(
+            group: .customThemesAccents, "Accents",
+            keywords: ["accent", "success", "destructive", "selection"]),
+        .init(group: .customThemesFile, "Theme File", keywords: ["import", "export", "reset", "json"])
     ]
 
     private static let applications: [SettingsSearchEntry] = [
