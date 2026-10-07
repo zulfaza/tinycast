@@ -8,21 +8,30 @@ struct RaycastImportSelection: View {
         let option: RaycastImportOptions
         let symbol: String
         let label: String
+        let tint: TileTint
         var id: Int { option.rawValue }
     }
 
     private static let categories: [Category] = [
-        .init(option: .shortcuts, symbol: "command", label: "Shortcuts"),
-        .init(option: .favorites, symbol: "star", label: "Favorites"),
-        .init(option: .aliases, symbol: "character.cursor.ibeam", label: "Aliases"),
-        .init(option: .emojiSkinTone, symbol: "face.smiling", label: "Emoji skin tone"),
-        .init(option: .launchAtLogin, symbol: "power", label: "Launch at login"),
-        .init(option: .menuBarVisibility, symbol: "menubar.rectangle", label: "Menu-bar icon"),
-        .init(option: .clipboardHistory, symbol: "doc.on.clipboard", label: "Clipboard history"),
-        .init(option: .snippets, symbol: "curlybraces", label: "Snippets"),
-        .init(option: .quicklinks, symbol: Quicklink.sfSymbol, label: "Quicklinks"),
-        .init(option: .popToRoot, symbol: "arrow.uturn.backward", label: "Pop to root"),
-        .init(option: .compactMode, symbol: "macwindow", label: "Compact mode")
+        .init(option: .shortcuts, symbol: "command", label: "Shortcuts", tint: .gray),
+        .init(option: .favorites, symbol: "star.fill", label: "Favorites", tint: .yellow),
+        .init(
+            option: .aliases, symbol: "character.cursor.ibeam", label: "Aliases", tint: .teal),
+        .init(
+            option: .emojiSkinTone, symbol: "face.smiling.inverse", label: "Emoji skin tone",
+            tint: .yellow),
+        .init(option: .launchAtLogin, symbol: "power", label: "Launch at login", tint: .gray),
+        .init(
+            option: .menuBarVisibility, symbol: "menubar.rectangle", label: "Menu-bar icon",
+            tint: .gray),
+        .init(
+            option: .clipboardHistory, symbol: "doc.on.clipboard.fill", label: "Clipboard history",
+            tint: .brown),
+        .init(option: .snippets, symbol: "curlybraces", label: "Snippets", tint: .cyan),
+        .init(option: .quicklinks, symbol: Quicklink.sfSymbol, label: "Quicklinks", tint: .blue),
+        .init(
+            option: .popToRoot, symbol: "arrow.uturn.backward", label: "Pop to root", tint: .gray),
+        .init(option: .compactMode, symbol: "macwindow", label: "Compact mode", tint: .pink)
     ]
 
     private static let columns = Array(
@@ -40,9 +49,7 @@ struct RaycastImportSelection: View {
                 ForEach(Self.categories) { category in
                     Toggle(isOn: included(category.option)) {
                         HStack(spacing: Theme.Spacing.sm) {
-                            Image(systemName: category.symbol)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16)
+                            SettingsSymbolTile(symbol: category.symbol, tint: category.tint)
                             Text(category.label).lineLimit(1)
                         }
                     }

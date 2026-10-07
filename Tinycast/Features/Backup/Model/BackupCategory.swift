@@ -27,7 +27,7 @@ enum BackupCategory: String, CaseIterable, Identifiable, Sendable {
                 countNoun: nil)
         case .clipboard:
             return .init(
-                label: "Clipboard History", symbol: "doc.on.clipboard", subpath: "clipboard",
+                label: "Clipboard History", symbol: "doc.on.clipboard.fill", subpath: "clipboard",
                 countNoun: "clips")
         case .snippets:
             return .init(

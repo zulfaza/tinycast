@@ -35,9 +35,8 @@ struct BackupCategorySelection: View {
                 ForEach(offered) { category in
                     Toggle(isOn: included(category)) {
                         HStack(spacing: Theme.Spacing.sm) {
-                            Image(systemName: category.descriptor.symbol)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16)
+                            SettingsSymbolTile(
+                                symbol: category.descriptor.symbol, tint: category.tileTint)
                             Text(category.descriptor.label).lineLimit(1)
                             if let subtitle = subtitle(category) {
                                 Text(subtitle)
@@ -57,5 +56,18 @@ struct BackupCategorySelection: View {
         }
         .font(.callout)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+extension BackupCategory {
+    /// The pane each slice comes from, so the picker reads like the sidebar.
+    fileprivate var tileTint: TileTint {
+        switch self {
+        case .configuration: SettingsTab.general.tileTint
+        case .clipboard: SettingsTab.clipboard.tileTint
+        case .snippets: SettingsTab.snippets.tileTint
+        case .notes: SettingsTab.notes.tileTint
+        case .learning: SettingsTab.applications.tileTint
+        }
     }
 }
