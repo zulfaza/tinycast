@@ -233,12 +233,14 @@ enum Theme {
         static let emojiSkinToneGlyph: CGFloat = 13
         /// One density preview; five fit across the Emoji settings detail pane.
         static let emojiSettingsGridPreview: CGFloat = 72
-        /// The Custom Themes preview: a palette in miniature, wide enough for a row and its badge.
-        static let themePreviewWidth: CGFloat = 340
-        static let themePreviewRowIcon: CGFloat = 16
-        /// The preview's selected row: the accent at the strength the palette paints selection.
-        static let themePreviewSelectionAlpha: Double = 0.18
-        static let themePreviewHairlineAlpha: Double = 0.22
+        /// The Custom Themes preview draws the palette at its real size, then shrinks it to this.
+        static let themePreviewScale: CGFloat = 0.72
+        /// Enough of the palette for two sections, the footer and the open Actions menu.
+        static let themePreviewPanelHeight: CGFloat = 420
+        /// The preview's neutral row highlight, the strength `Colors.selection` paints in Dark.
+        static let themePreviewSelectionAlpha: Double = 0.10
+        static let themePreviewHairlineAlpha: Double = 0.12
+        static let themePreviewShadowAlpha: Double = 0.3
         /// The layout editor. Height is stated so selecting an entry cannot resize the panel.
         static let layoutEditorSheet = CGSize(width: 900, height: 660)
         /// The inspector column; the preview takes the rest, keeping the split two-to-one.
