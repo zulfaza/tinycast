@@ -98,8 +98,12 @@ private struct MCPServerRow: View {
 
     var body: some View {
         SettingsRow(title: server.title, subtitle: subtitle) {
-            Image(systemName: "wrench.and.screwdriver")
-                .foregroundStyle(.primary)
+            Image(
+                nsImage: IconCache.symbolIcon(
+                    named: "wrench.and.screwdriver.fill", tint: SettingsTab.ai.tileTint.symbolTint)
+            )
+            .resizable()
+            .frame(width: SettingsListMetrics.iconSize, height: SettingsListMetrics.iconSize)
         } trailing: {
             Button(action: onEdit) { Image(systemName: "pencil") }
                 .buttonStyle(.plain)

@@ -1,6 +1,6 @@
 extension AppEntry {
-    /// Commands draw as their pane's tile, so a row and the sidebar agree on what owns it.
-    var commandTint: TileTint? {
+    /// Symbol rows draw as their pane's tile, so a row and the sidebar agree on what owns it.
+    var tileTint: TileTint? {
         switch kind {
         case .command, .quickAction:
             guard let command = CommandCatalog.command(for: self) else {
@@ -8,7 +8,12 @@ extension AppEntry {
             }
             return command.owner?.tileTint ?? command.unownedTint
         case .customCommand: return SettingsTab.commands.tileTint
-        default: return nil
+        case .snippet: return SettingsTab.snippets.tileTint
+        case .quicklink: return SettingsTab.quicklinks.tileTint
+        case .systemAction: return SettingsTab.systemActions.tileTint
+        case .windowCommand, .windowLayout, .windowRoom: return SettingsTab.windowManagement.tileTint
+        case .meeting: return SettingsTab.calendar.tileTint
+        case .application, .systemSettings, .appleShortcut, .extensionCommand: return nil
         }
     }
 }

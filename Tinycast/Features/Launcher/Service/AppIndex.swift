@@ -213,13 +213,10 @@ struct AppEntry: Identifiable, Hashable, Sendable {
     /// What this row draws, and the only thing any icon path needs to ask.
     var iconSource: EntryIcon { iconOverride ?? defaultIcon }
 
-    /// Derived from the kind alone: synthetic entries get a symbol tile, everything else its file.
+    /// Derived from the kind alone: synthetic entries get a coloured tile, everything else its file.
     private var defaultIcon: EntryIcon {
         guard kind.descriptor.isSymbolIcon else { return .file(stamp: iconStamp) }
-        if let tint = commandTint {
-            return .tintedSymbol(name: symbolName ?? kindSymbol, tint: tint.symbolTint)
-        }
-        return .symbol(symbolName ?? kindSymbol)
+        return .tintedSymbol(name: symbolName ?? kindSymbol, tint: (tileTint ?? .gray).symbolTint)
     }
 
     private var kindSymbol: String {
@@ -267,6 +264,13 @@ extension AppEntry {
             bundleID: nil, kind: .windowRoom)
     }
 
+    init(_ command: WindowCommand) {
+        self.init(
+            id: command.entryID, name: command.name,
+            url: URL(string: "tinycast://window-command/" + command.id.rawValue)!,
+            bundleID: nil, kind: .windowCommand)
+    }
+
     /// A custom size shares the window commands' kind and section, as custom Quick Actions do.
     init(_ size: CustomWindowSize) {
         self.init(
@@ -299,6 +303,13 @@ extension AppEntry {
             bundleID: nil, kind: .quicklink,
             symbolName: quicklink.iconSymbol
                 ?? QuicklinkDestination.detect(quicklink.link)?.defaultSymbol)
+    }
+
+    /// The one row a snippet draws, wherever it is offered from.
+    init(_ record: StoredSnippet) {
+        self.init(
+            id: record.entryID, name: record.snippet.name, url: record.fileURL, bundleID: nil,
+            kind: .snippet, alternateTitles: [record.snippet.keyword].compactMap { $0 })
     }
 
     /// No bundle id: that would key every shortcut's alias and ranking to the Shortcuts app.
@@ -371,12 +382,7 @@ final class AppIndex {
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
     private static let allWindowCommandEntries: [AppEntry] = WindowCommandCatalog.all
-        .map { command in
-            AppEntry(
-                id: command.entryID, name: command.name,
-                url: URL(string: "tinycast://window-command/" + command.id.rawValue)!,
-                bundleID: nil, kind: .windowCommand)
-        }
+        .map(AppEntry.init)
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
     private var discoveredEntries: [AppEntry] = []
@@ -533,15 +539,7 @@ final class AppIndex {
         let entries =
             records
             .filter { $0.snippet.isEnabled }
-            .map { record in
-                AppEntry(
-                    id: record.entryID,
-                    name: record.snippet.name,
-                    url: record.fileURL,
-                    bundleID: nil,
-                    kind: .snippet,
-                    alternateTitles: [record.snippet.keyword].compactMap { $0 })
-            }
+            .map(AppEntry.init)
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         guard entries != snippetEntries else { return }
         snippetEntries = entries

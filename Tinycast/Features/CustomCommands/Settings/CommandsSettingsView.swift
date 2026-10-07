@@ -101,7 +101,8 @@ private struct CustomCommandSettingsRow: View {
 
     var body: some View {
         SettingsRow(title: command.name, subtitle: command.command) {
-            Image(systemName: command.symbol)
+            AppIconView(app: AppEntry(command))
+                .frame(width: SettingsListMetrics.iconSize, height: SettingsListMetrics.iconSize)
         } trailing: {
             // An alias only reaches the ranker through the launcher slice, so it dims with it.
             AliasField(key: command.entryID, name: command.name)
