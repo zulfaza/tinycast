@@ -3,6 +3,7 @@ import SwiftUI
 struct PaletteBackground: View {
     @Environment(\.colorScheme) private var colorScheme
     let window: NSWindow?
+    let glassHeight: CGFloat
 
     private var usesSystemShadow: Bool {
         colorScheme != .dark
@@ -11,7 +12,8 @@ struct PaletteBackground: View {
     var body: some View {
         Rectangle()
             .fill(Theme.Colors.panelSurface())
-            .background(GlassEffectView())
+            // Liquid Glass thins with its own size, so the compact bar keeps the full panel's glass.
+            .background(alignment: .top) { GlassEffectView().frame(height: glassHeight) }
             .onChange(of: window, initial: true) { applyShadow() }
             .onChange(of: usesSystemShadow) { applyShadow() }
     }
