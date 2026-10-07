@@ -153,6 +153,7 @@ run launcher-settings-file-test \
                            Tinycast/Features/Launcher/Service/AliasStore.swift \
                            Tinycast/Features/Launcher/Service/VisibilityStore.swift \
                            Tinycast/Features/Settings/SettingsTab.swift \
+                           Tinycast/Platform/Images/TileTint.swift \
                            Tinycast/Features/Settings/Model/*.swift \
                            Tinycast/Features/HotKeys/Service/HotKeySettingsFile.swift \
                            Tinycast/Features/HotKeys/Service/KeyShortcut.swift \
@@ -387,13 +388,13 @@ run callout-test          Tinycast/Platform/Appearance.swift \
                            Tinycast/DesignSystem/InterfaceMetrics.swift \
                            Tinycast/Features/HotKeys/UI/CalloutPlacement.swift
 run icon-cache-test        Tinycast/Platform/Appearance.swift \
-                           Tinycast/Platform/Images/IconCache.swift
+                           Tinycast/Platform/Images/IconCache.swift Tinycast/Platform/Images/TileTint.swift
 run entry-icon-test        Tinycast/Platform/Appearance.swift \
-                           Tinycast/Platform/Images/IconCache.swift \
+                           Tinycast/Platform/Images/IconCache.swift Tinycast/Platform/Images/TileTint.swift \
                            Tinycast/Platform/Images/FileIconStamp.swift
 run ext-icon-test          Tinycast/Platform/Appearance.swift \
                            Tinycast/Platform/AppDisplayName.swift \
-                           Tinycast/Platform/Images/IconCache.swift \
+                           Tinycast/Platform/Images/IconCache.swift Tinycast/Platform/Images/TileTint.swift \
                            Tinycast/Platform/AppPaths.swift \
                            Tinycast/Platform/Compression/Zlib.swift \
                            Tinycast/DesignSystem/Theme.swift \
@@ -644,7 +645,7 @@ run slow ext-test          -parse-as-library \
                            $E/UI/ExtensionMenuBarImage.swift \
                            Tinycast/Platform/Appearance.swift \
                            Tinycast/Platform/AppDisplayName.swift \
-                           Tinycast/Platform/Images/IconCache.swift \
+                           Tinycast/Platform/Images/IconCache.swift Tinycast/Platform/Images/TileTint.swift \
                            Tinycast/Platform/AppPaths.swift \
                            Tinycast/DesignSystem/Theme.swift \
                            Tinycast/DesignSystem/CustomTheme.swift \
@@ -679,6 +680,7 @@ run slow ext-test          -parse-as-library \
                            Tinycast/Features/Clipboard/Model/ColorValue.swift \
                            Tinycast/Features/Clipboard/Model/ColorSpaces.swift
 run settings-history-test  Tinycast/Features/Settings/SettingsTab.swift \
+                           Tinycast/Platform/Images/TileTint.swift \
                            Tinycast/Features/Settings/SettingsHistory.swift \
                            Tinycast/Features/Settings/SettingsAnchor.swift \
                            Tinycast/Features/Settings/SettingsNavigationState.swift \

@@ -21,7 +21,7 @@ struct SettingsTabIcon: View {
             .foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(
-                tab.tileColor.gradient,
+                Color(nsColor: tab.tileTint.color).gradient,
                 in: RoundedRectangle(
                     cornerRadius: Theme.Radius.thumbnail * scale, style: .continuous))
     }

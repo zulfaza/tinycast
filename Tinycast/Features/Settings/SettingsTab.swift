@@ -1,5 +1,3 @@
-import SwiftUI
-
 enum SettingsTab: CaseIterable, Identifiable {
     case general, customThemes, applications, systemSettings, systemActions, commands, quicklinks,
         appleShortcuts, fallbacks, clipboard, snippets, fileSearch, windowManagement, navigation, notes,
@@ -66,7 +64,7 @@ enum SettingsTab: CaseIterable, Identifiable {
     }
 
     /// The tile behind the glyph, as System Settings colours each pane.
-    var tileColor: Color {
+    var tileTint: TileTint {
         switch self {
         case .general, .systemSettings, .fallbacks, .about: return .gray
         case .customThemes, .dictation: return .pink

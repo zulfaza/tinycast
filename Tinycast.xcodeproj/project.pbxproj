@@ -108,6 +108,7 @@
 		1F8F2135470F74627A644ACC /* ClipboardFilterButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B45A6AB1413A8A08EF7F0A9E /* ClipboardFilterButton.swift */; };
 		1FB8ECBAD6F4DD3C01D1E117 /* PasteSequence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1460DE41607E1352EB9F7427 /* PasteSequence.swift */; };
 		208FFC22E116E53E7BF3D147 /* CalcQuantity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF9F16C3F5567240FF03122 /* CalcQuantity.swift */; };
+		217D74E38F4E21442E3F2077 /* TileTint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F251C7555623979F2533A65 /* TileTint.swift */; };
 		21812A1B54A4DFDC88604C16 /* ReleaseChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 198E4EC8AECAAD0D90C4BA50 /* ReleaseChannel.swift */; };
 		223A40FF358A8B7980425093 /* ChatSuggestionChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FF03BE6BFAB22681ECD6ADE /* ChatSuggestionChips.swift */; };
 		22420E8A41685143315904F5 /* RaycastImportSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B711492A6DA473E6DC9646C /* RaycastImportSelection.swift */; };
@@ -642,6 +643,7 @@
 		C7468FBE50BAEC5084D4DB17 /* AIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 848E14DE51403235A82BC287 /* AIProvider.swift */; };
 		C75868B7FBA96939089EDBA6 /* CustomWindowSizesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F81A385A824D02C1466F8BF8 /* CustomWindowSizesSection.swift */; };
 		C785431D09E6A27D49C310C3 /* DictationInsertionContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77BF823C2A041D9F5F03A854 /* DictationInsertionContext.swift */; };
+		C888DC609AED5B2E164A5DC8 /* CommandTileTint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 250C295713FF8D66F1D55A11 /* CommandTileTint.swift */; };
 		C890F517AA487C4C6CD25298 /* MathNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9E140AF0EE4548DDC4814D7 /* MathNode.swift */; };
 		C8D4DDD0DDA678429552E062 /* MCPOAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222F9EE432F608B5C907E7C2 /* MCPOAuth.swift */; };
 		C9A7290682E9D0881713C009 /* ExtensionGridGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F85C82C66132C7723272E873 /* ExtensionGridGeometry.swift */; };
@@ -964,6 +966,7 @@
 		23F7C8CBD0AA75D016DBFC06 /* SettingsPaneScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPaneScanner.swift; sourceTree = "<group>"; };
 		24386713685FB65FB46A5516 /* DictationAudioDucker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationAudioDucker.swift; sourceTree = "<group>"; };
 		2438C33DEAF16B26E4F195EB /* ExecutableLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExecutableLocator.swift; sourceTree = "<group>"; };
+		250C295713FF8D66F1D55A11 /* CommandTileTint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandTileTint.swift; sourceTree = "<group>"; };
 		2575583134BE03EA9FA719CD /* ActivationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationPolicy.swift; sourceTree = "<group>"; };
 		25EA21DCF61666DB736D5B82 /* RaycastQuicklinkImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RaycastQuicklinkImport.swift; sourceTree = "<group>"; };
 		261AA09F2C6FE579667B9F97 /* NoteTextViewEditing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteTextViewEditing.swift; sourceTree = "<group>"; };
@@ -1057,6 +1060,7 @@
 		3DFB07ADF9EB031DC659362D /* CustomCommandEditorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomCommandEditorPanel.swift; sourceTree = "<group>"; };
 		3E16AEF81320A101E384098E /* KeyShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyShortcut.swift; sourceTree = "<group>"; };
 		3E4A7E45F7D1CC5FB8868715 /* SearchScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchScopes.swift; sourceTree = "<group>"; };
+		3F251C7555623979F2533A65 /* TileTint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileTint.swift; sourceTree = "<group>"; };
 		3FCA6A3F125163DD10E56564 /* ChatCitations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCitations.swift; sourceTree = "<group>"; };
 		3FD57D9B2C6C46B5ADDDE173 /* MCPHTTPTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPHTTPTransport.swift; sourceTree = "<group>"; };
 		3FE591549F24AE554C13CD0C /* FavoriteSlots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteSlots.swift; sourceTree = "<group>"; };
@@ -3395,6 +3399,7 @@
 				8C39345D0335ACA895133ABD /* IconStyleMonitor.swift */,
 				36C6775BBA0FC6F134296606 /* ImageThumbnail.swift */,
 				102B53830D247FAE19479BCA /* ThumbnailCache.swift */,
+				3F251C7555623979F2533A65 /* TileTint.swift */,
 			);
 			path = Images;
 			sourceTree = "<group>";
@@ -3416,6 +3421,7 @@
 				8E58EBB08450BA3426DF0565 /* AppIndex.swift */,
 				33994DC2FB0A6B23A403CA29 /* AppLauncher.swift */,
 				57694B58B0A17CAC1D697FAA /* BundleNameCache.swift */,
+				250C295713FF8D66F1D55A11 /* CommandTileTint.swift */,
 				75614189EED9B440D911B412 /* FallbackStore.swift */,
 				D43F1080FB443A1D0616790E /* FavoritesStore.swift */,
 				A65369C9F6E1AE2770348BD6 /* LauncherSettingsFile.swift */,
@@ -4018,6 +4024,7 @@
 				BEAAD72E748375E0039AC90F /* CommandID.swift in Sources */,
 				51E8877F53ABA0E51B2493FA /* CommandOutputPresenter.swift in Sources */,
 				C45CCAE9AE2D3BCAC2BF80BE /* CommandOutputView.swift in Sources */,
+				C888DC609AED5B2E164A5DC8 /* CommandTileTint.swift in Sources */,
 				4640C7CC8DCA6E6FA49394A8 /* CommandsSettingsView.swift in Sources */,
 				1545F0D79421A893EA104C3A /* CompactFavoritesRow.swift in Sources */,
 				A024F68213FEB918BEF31255 /* CountryZoneData.generated.swift in Sources */,
@@ -4550,6 +4557,7 @@
 				36968DFA1E201E681F0BCD42 /* Theme.swift in Sources */,
 				6A0C45313C7B73349C7B17E0 /* ThinScrollbar.swift in Sources */,
 				FEA3CEC6870A030FAF1F4331 /* ThumbnailCache.swift in Sources */,
+				217D74E38F4E21442E3F2077 /* TileTint.swift in Sources */,
 				68FCC30764DD44ED72EFB6BA /* TinycastApp.swift in Sources */,
 				2C8F7F5073D77EDC1070E639 /* ToolRunner.swift in Sources */,
 				867B82EDC8A12BBC51592786 /* Tooltip.swift in Sources */,

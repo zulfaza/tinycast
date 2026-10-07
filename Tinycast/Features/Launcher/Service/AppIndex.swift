@@ -216,6 +216,9 @@ struct AppEntry: Identifiable, Hashable, Sendable {
     /// Derived from the kind alone: synthetic entries get a symbol tile, everything else its file.
     private var defaultIcon: EntryIcon {
         guard kind.descriptor.isSymbolIcon else { return .file(stamp: iconStamp) }
+        if let tint = commandTint {
+            return .tintedSymbol(name: symbolName ?? kindSymbol, tint: tint.symbolTint)
+        }
         return .symbol(symbolName ?? kindSymbol)
     }
 
