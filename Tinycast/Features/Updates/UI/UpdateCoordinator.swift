@@ -23,9 +23,10 @@ final class UpdateCoordinator {
     private let store: UpdateCheckStore
     /// Environment injection and activity reads only — never for state this type owns.
     private unowned let core: AppCore
+    /// A background check can open it while another app refuses us activation, so it floats.
     @ObservationIgnored private lazy var window = AppWindowController(
         title: "Software Update", contentSize: UpdateWindowView.initialSize,
-        activation: core.activationPolicy)
+        activation: core.activationPolicy, level: .floating)
     @ObservationIgnored private var installTask: Task<Void, Never>?
 
     init(store: UpdateCheckStore, core: AppCore) {
