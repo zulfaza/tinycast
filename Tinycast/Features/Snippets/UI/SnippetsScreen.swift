@@ -53,7 +53,25 @@ struct SnippetsScreen: PaletteScreen {
                 for: record, coordinator: core.snippetCoordinator, vm: vm))
     }
 
-    func secondary(at selection: Int) -> Bool { false }
+    /// ⌘↵ reveals the file, as it does for every file-backed launcher row.
+    func secondary(at selection: Int) -> Bool {
+        guard let record = record(at: selection) else { return false }
+        core.snippetCoordinator.showSnippetInFinder(record)
+        return true
+    }
+
+    func perform(_ shortcut: PaletteShortcut, at selection: Int) -> Bool {
+        switch shortcut {
+        case .edit:
+            guard let record = record(at: selection), store.isWritable(record) else { return false }
+            core.snippetCoordinator.editSnippet(record)
+        case .newItem:
+            core.snippetCoordinator.editSnippet(nil)
+        default:
+            return false
+        }
+        return true
+    }
 
     func headerAccessory(
         at selection: Int, focus: FocusState<String?>.Binding
@@ -115,16 +133,20 @@ enum SnippetActionsMenu {
         ]
         if canEdit {
             items.append(
-                PopoverMenuItem(title: "Edit Snippet", systemImage: "pencil", startsSection: true) {
+                PopoverMenuItem(
+                    title: "Edit Snippet", systemImage: "pencil", startsSection: true, shortcut: "⌘E"
+                ) {
                     core.snippetCoordinator.editSnippet(record)
                 })
         }
         items.append(
-            PopoverMenuItem(title: "Create Snippet", systemImage: "plus") {
+            PopoverMenuItem(title: "Create Snippet", systemImage: "plus", shortcut: "⌘N") {
                 core.snippetCoordinator.editSnippet(nil)
             })
         items.append(
-            PopoverMenuItem(title: "Show in Finder", systemImage: "folder", startsSection: true) {
+            PopoverMenuItem(
+                title: "Show in Finder", systemImage: "folder", startsSection: true, shortcut: "⌘↵"
+            ) {
                 core.snippetCoordinator.showSnippetInFinder(record)
             })
         return PopoverMenuContent(
