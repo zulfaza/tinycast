@@ -88,6 +88,8 @@ struct PaletteShortcutTests {
         expect(resolve("j", command: true), .continueInChat, "⌘J continues Quick AI in AI Chat")
         expect(resolve("n", command: true), .newItem, "⌘N starts a new one")
         expect(resolve("n", command: true, shift: true), nil, "⇧⌘N is not the new-item chord")
+        expect(resolve("e", command: true), .edit, "⌘E edits the selected row")
+        expect(resolve("e", command: true, shift: true), nil, "⇧⌘E is not the edit chord")
         expect(resolve(",", command: true, option: true), .settings, "⌥⌘, opens the screen's settings")
         expect(resolve(",", command: true), nil, "⌘, stays the app's own Settings")
 
@@ -97,7 +99,7 @@ struct PaletteShortcutTests {
 
         let expanded: [PaletteShortcut] = [
             .copyFile, .copyName, .copyPath, .copyText, .pasteFile, .quickLook, .openInApp,
-            .showDetails, .toggleFavorite, .hideFromSearch, .quit, .forceQuit, .restart
+            .showDetails, .toggleFavorite, .hideFromSearch, .quit, .forceQuit, .restart, .edit
         ]
         let anywhere: [PaletteShortcut] = [
             .commandDelete, .delete, .deleteAll, .pin, .favoriteSlot(0), .continueInChat, .newItem,
@@ -112,7 +114,8 @@ struct PaletteShortcutTests {
 
         let closing: [PaletteShortcut] = [
             .delete, .deleteAll, .copyFile, .copyName, .copyPath, .copyText, .copyCalculation,
-            .quickLook, .openInApp, .showDetails, .toggleFavorite, .hideFromSearch, .newItem, .settings
+            .quickLook, .openInApp, .showDetails, .toggleFavorite, .hideFromSearch, .newItem, .settings,
+            .edit
         ]
         let leaving: [PaletteShortcut] = [
             .commandDelete, .pasteFile, .quit, .forceQuit, .restart, .pin, .favoriteSlot(0),

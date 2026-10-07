@@ -270,7 +270,8 @@ submits through the normal expansion path. A missing required value focuses the 
 which reads `previousApp` before hiding the panel and then calls the same `expandSnippet` funnel a
 launcher row does — so template expansion, cursor placement, the Accessibility prompt, the
 confirmation HUD and the pasteboard lease are the ones described below, not a second copy of them.
-The rest of the menu is **Edit Snippet** (local files only), **Create Snippet**, and **Show in Finder**.
+The rest of the menu is **Edit Snippet** (⌘E, local files only), **Create Snippet** (⌘N), and **Show
+in Finder** (⌘↵, as for every file-backed launcher row); each chord works with the menu closed too.
 Shared-library records are visibly read-only; Settings disables edit/delete and the browser omits Edit.
 
 `Create Snippet` is a launcher command as well as a menu row because the palette swallows ⌘K when a
