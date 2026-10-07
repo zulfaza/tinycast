@@ -1,25 +1,6 @@
 import AppKit
-import Carbon
 import CoreAudio
 import Darwin
-
-struct SystemActionFailure: LocalizedError, Sendable {
-    enum Settings: Sendable {
-        case accessibility
-        case automation
-        case bluetooth
-    }
-
-    let message: String
-    let settings: Settings?
-
-    init(_ message: String, settings: Settings? = nil) {
-        self.message = message
-        self.settings = settings
-    }
-
-    var errorDescription: String? { message }
-}
 
 struct SystemActionFeedback: Sendable {
     let title: String
@@ -51,7 +32,7 @@ enum SystemActionRunner {
     {
         switch id {
         case .lockScreen:
-            try postKey(keyCode: CGKeyCode(kVK_ANSI_Q), flags: [.maskControl, .maskCommand])
+            try lockScreen()
         case .sleep:
             try await runProcess("/usr/bin/pmset", arguments: ["sleepnow"])
         case .sleepDisplays:
@@ -84,6 +65,11 @@ enum SystemActionRunner {
             try postMediaKey(18)
         case .toggleMute:
             try toggleMute()
+        case .toggleMicrophoneMute:
+            let muted = try await Task.detached {
+                try await toggleMicrophoneMute()
+            }.value
+            return SystemActionFeedback(muted ? "Microphone Muted" : "Microphone Unmuted")
         case .volumeUp:
             try stepVolume(up: true)
         case .volumeDown:
@@ -101,9 +87,12 @@ enum SystemActionRunner {
         case .volume100:
             try setVolume(1)
         case .showDesktop:
-            try await runProcess(
-                "/System/Applications/Mission Control.app/Contents/MacOS/Mission Control",
-                arguments: ["1"])
+            // Executing the binary directly is SIGKILLed; only a LaunchServices launch is allowed.
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.arguments = ["1"]
+            _ = try await NSWorkspace.shared.openApplication(
+                at: URL(fileURLWithPath: "/System/Applications/Mission Control.app"),
+                configuration: configuration)
         case .toggleAppearance:
             // The script returns the resulting state, so the confirmation can name it.
             let result = try await runAppleScript(
@@ -166,6 +155,15 @@ enum SystemActionRunner {
             return SystemActionFeedback(on ? "Bluetooth On" : "Bluetooth Off")
         }
         return nil
+    }
+
+    /// Finder writes the key only once the box is changed, so an absent key is its default: on.
+    static var finderWarnsBeforeEmptyingTrash: Bool {
+        let key = "WarnOnEmptyTrash"
+        guard let finder = UserDefaults(suiteName: "com.apple.finder"),
+            finder.object(forKey: key) != nil
+        else { return true }
+        return finder.bool(forKey: key)
     }
 
     static func currentVolume() throws -> Float32 {
@@ -327,20 +325,17 @@ enum SystemActionRunner {
         }
     }
 
-    private static func postKey(keyCode: CGKeyCode, flags: CGEventFlags) throws {
-        guard Permissions.ensureAccessibility() else {
-            throw SystemActionFailure(
-                "Allow Tinycast to control your Mac in Accessibility settings, then try again.",
-                settings: .accessibility)
+    private static func lockScreen() throws {
+        let path = "/System/Library/PrivateFrameworks/login.framework/Versions/Current/login"
+        guard let handle = dlopen(path, RTLD_NOW) else {
+            throw SystemActionFailure("Screen locking is unavailable on this Mac.")
         }
-        let source = CGEventSource(stateID: .combinedSessionState)
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
-            let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
-        else { throw SystemActionFailure("macOS could not create the keyboard event.") }
-        down.flags = flags
-        up.flags = flags
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        defer { dlclose(handle) }
+        typealias LockScreen = @convention(c) () -> Int32
+        guard let symbol = dlsym(handle, "SACLockScreenImmediate") else {
+            throw SystemActionFailure("This macOS version does not expose screen locking.")
+        }
+        _ = unsafeBitCast(symbol, to: LockScreen.self)()
     }
 
     private static func postMediaKey(_ key: Int32) throws {
@@ -602,12 +597,11 @@ enum SystemActionRunner {
             process.standardInput = FileHandle.nullDevice
             process.standardOutput = stdout
             process.standardError = stderr
-            do { try process.run() } catch {
+            do { try process.runObservingExit().wait() } catch {
                 throw SystemActionFailure(
                     "\(URL(fileURLWithPath: executable).lastPathComponent) could not start: \(error.localizedDescription)"
                 )
             }
-            process.waitUntilExit()
             let outData = stdout.fileHandleForReading.readDataToEndOfFile()
             let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
             return ProcessOutput(

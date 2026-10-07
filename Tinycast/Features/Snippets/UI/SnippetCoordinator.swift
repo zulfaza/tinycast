@@ -14,7 +14,7 @@ final class SnippetCoordinator {
     private let paletteCoordinator: PaletteCoordinator
     private let editorPanel: SnippetEditorPanelController
     /// Routed out so `MessageHUDController` stays owned by `AppCore`.
-    private let showMessage: @MainActor (String) -> Void
+    private let showMessage: @MainActor (String, DialogTone) -> Void
     /// The consent dialog and standalone editor panel are owned by this coordinator.
     private unowned let core: AppCore
 
@@ -29,7 +29,7 @@ final class SnippetCoordinator {
         settings: AppSettings,
         windowController: PaletteWindowController,
         paletteCoordinator: PaletteCoordinator,
-        showMessage: @escaping @MainActor (String) -> Void,
+        showMessage: @escaping @MainActor (String, DialogTone) -> Void,
         core: AppCore
     ) {
         self.store = store
@@ -49,6 +49,20 @@ final class SnippetCoordinator {
 
     func revealSnippetsInFinder() {
         NSWorkspace.shared.open(store.snippetsDirectory)
+    }
+
+    /// Points the library at a folder as it is; nothing is moved out of the old one.
+    func chooseSnippetsFolder() {
+        guard
+            let url = FolderPicker.choose(
+                message: "Choose the folder your snippets are kept in.",
+                startingAt: store.snippetsDirectory)
+        else { return }
+        settings.snippetsFolder = AppPaths.contentFolderSetting(for: url, named: "Snippets")
+    }
+
+    func resetSnippetsFolder() {
+        settings.snippetsFolder = nil
     }
 
     /// The switch funnels here so enabling, which is also consent, confirms first.
@@ -219,6 +233,23 @@ final class SnippetCoordinator {
         SnippetTemplateEngine.declaredArguments(in: record, snippets: store.snippets)
     }
 
+    /// A shortcut lands where the caret is; over the palette, that's what the palette covered.
+    func expandSnippetFromHotKey(id: StoredSnippet.ID) {
+        guard settings.snippetsEnabled, store.record(id: id)?.snippet.isEnabled == true else {
+            return
+        }
+        if windowController.isVisible {
+            expandSnippetFromPalette(id: id)
+            return
+        }
+        // A window of ours that isn't an editor, such as Settings, has no caret to type at.
+        guard let target = InjectionTarget.current() else {
+            showMessage("Click into a text field first", .neutral)
+            return
+        }
+        expandSnippet(id: id, target: target)
+    }
+
     func expandSnippet(
         id: StoredSnippet.ID,
         target: InjectionTarget?,
@@ -360,7 +391,7 @@ final class SnippetCoordinator {
             onDelivered: { [weak self] in
                 guard let self else { return }
                 self.store.recordUse(id: recordID)
-                if let confirmation { self.showMessage(confirmation) }
+                if let confirmation { self.showMessage(confirmation, .success) }
             })
     }
 }

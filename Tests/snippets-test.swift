@@ -44,6 +44,12 @@ struct SnippetsTests {
         check("stored identity is the standardized source path", first.id == "/tmp/one.md")
         check("identical snippets at different paths keep distinct identities", first.id != second.id)
         check(
+            "a launcher entry id resolves back to its snippet",
+            StoredSnippet.id(fromEntryID: first.entryID) == first.id)
+        check(
+            "another kind's entry id resolves to no snippet",
+            StoredSnippet.id(fromEntryID: "quicklink:" + first.id) == nil)
+        check(
             "source revision is deterministic",
             SnippetSourceRevision(content: "same") == SnippetSourceRevision(content: "same"))
         check(
@@ -390,6 +396,18 @@ struct SnippetsTests {
         } catch SnippetRepository.RepositoryError.invalidFileLocation {
             check("shared library records are read-only", true)
         }
+        let chosenFolder = root.appendingPathComponent("dotfiles/snippets", isDirectory: true)
+        let chosen = SnippetRepository(
+            bundleIdentifier: "com.tinycast.app", applicationSupportRoot: channelRoot,
+            snippetsDirectory: chosenFolder)
+        let signOff = try chosen.create(Snippet(name: "Sign-off", text: "Thanks"))
+        let stableAfter = try stable.load()
+        let chosenAfter = try chosen.load()
+        check(
+            "a chosen folder holds the library instead of the channel's",
+            signOff.fileURL.deletingLastPathComponent().standardizedFileURL.path
+                == chosenFolder.standardizedFileURL.path
+                && stableAfter.records.isEmpty && chosenAfter.records.count == 1)
 
         let corruptRoot = root.appendingPathComponent("partial-load", isDirectory: true)
         let corruptRepository = SnippetRepository(
@@ -411,6 +429,9 @@ struct SnippetsTests {
             "malformed files are returned as per-file issues",
             partial.issues.count == 1
                 && partial.issues[0].fileURL.standardizedFileURL.path == invalidURL.standardizedFileURL.path)
+        check(
+            "a malformed file still counts as present on disk",
+            partial.fileIDs == [validURL.standardizedFileURL.path, invalidURL.standardizedFileURL.path])
 
         let directoryEntryURL = corruptRepository.snippetsDirectory.appendingPathComponent(
             "folder.md",
@@ -1583,15 +1604,20 @@ struct SnippetsTests {
                 in: "{argument name=\"Repo\"}/{argument name=\"Branch\"}?q={argument name=\"Repo\"}"
             ).map(\.name) == ["Repo", "Branch"])
         check(
-            "an argument that answers itself is never asked for",
+            "an argument with a default is still offered, but optional",
             SnippetTemplateEngine.declaredArguments(
-                in: "{argument name=\"Tone\" default=\"happy\"}"
-            ).isEmpty)
+                in: "{argument name=\"Tone\" default=\"happy\"}")
+                == [.init(name: "Tone", options: [], isOptional: true)])
+        check(
+            "an occurrence without a default leaves the argument owed",
+            SnippetTemplateEngine.declaredArguments(
+                in: "{argument name=\"Tone\" default=\"happy\"}/{argument name=\"Tone\"}")
+                == [.init(name: "Tone", options: [], isOptional: false)])
         check(
             "options travel with a declared argument as they do with a missing one",
             SnippetTemplateEngine.declaredArguments(
                 in: "{argument name=\"Tone\" options=\"happy, sad\"}")
-                == [.init(name: "Tone", options: ["happy", "sad"])])
+                == [.init(name: "Tone", options: ["happy", "sad"], isOptional: false)])
         check(
             "a template that reads only the clipboard declares no arguments",
             SnippetTemplateEngine.declaredArguments(in: "https://x.dev/?q={clipboard}").isEmpty)

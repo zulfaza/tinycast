@@ -32,10 +32,12 @@ final class PaletteState {
     private(set) var isVisible = false
     /// Changes every time the palette is shown so the search field can re-focus.
     var focusToken = UUID()
-    /// Bumped when a screen opens fresh, so lists snap to the top even when nothing else changed.
+    /// Bumped when a screen opens fresh, so its list lands again even when nothing else changed.
     var resetToken = UUID()
     /// Bumped when an action reorders the list, so the highlight scrolls back into view.
     var followToken = UUID()
+    /// Bumped when an action rewrites the query, so the field lands with the caret after it.
+    private(set) var queryRewriteToken = UUID()
     /// AppKit binds ⌘. to `cancelOperation:`, so the field editor eats it before `onKeyPress`.
     private(set) var pinChordToken = UUID()
     /// Bumped when AppKit resolves ⌘1…⌘0 to a slot index from the physical number row.
@@ -114,7 +116,7 @@ final class PaletteState {
         openScreen(frame.mode)
         query = frame.query
         selection = frame.selection
-        // Not `resetToken`: snapping to the top would throw away the selection restored here.
+        // Not `resetToken`: landing the list again would throw away the selection restored here.
         followToken = UUID()
         return true
     }
@@ -173,6 +175,11 @@ final class PaletteState {
 
     func noteMenuPresentation() {
         menuPresentationToken = UUID()
+    }
+
+    func rewriteQuery(_ text: String) {
+        query = text
+        queryRewriteToken = UUID()
     }
 
     func noteFavoriteSlot(_ index: Int) {

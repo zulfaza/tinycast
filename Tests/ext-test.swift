@@ -34,6 +34,9 @@ struct ExtensionTests {
                 return ExtensionRuntime.jsonString(
                     from: try await ExtensionAsyncProcess.wait(arguments.first))
             }
+            if api == "proc", method == "read" {
+                return ExtensionRuntime.jsonString(from: try await ExtensionAsyncProcess.read(arguments))
+            }
             if api == "fetch" {
                 return ExtensionRuntime.jsonString(from: try await fetcher.request(arguments.first))
             }
@@ -196,6 +199,8 @@ struct ExtensionTests {
         await runtimeChecks()
         await searchAccessoryRuntimeChecks()
         await nodeContractChecks()
+        await bufferEventChecks()
+        await webAssemblyChecks()
         await asyncComponentChecks()
         await menuBarRuntimeChecks()
         await menuBarHostChecks()
@@ -403,6 +408,15 @@ struct ExtensionTests {
                     "name": "w", "platforms": ["Windows"],
                     "commands": [["name": "c", "title": "C"]]
                 ])?.supportsMacOS == false)
+        let commands = [["name": "c", "title": "C"]]
+        check(
+            "the store lists an organisation's extension under its owner",
+            ExtensionManifest(json: ["name": "o", "author": "me", "owner": "org", "commands": commands])?
+                .storeHandle == "org")
+        check(
+            "and anyone else's under its author",
+            ExtensionManifest(json: ["name": "a", "author": "me", "commands": commands])?.storeHandle
+                == "me")
 
         // Launcher round-trip: an entry id must decode back to the same command.
         let reference = ExtensionCommandRef(extensionName: "@scope/demo", commandName: "search")
@@ -1503,6 +1517,101 @@ struct ExtensionTests {
             "node file, zlib and stream contracts", host.huds == ["archive IO passed"],
             recorder.failures.joined(separator: "|"))
         await runtime.stop(session: "archive")
+        runtime.shutdown()
+    }
+
+    @MainActor
+    static func bufferEventChecks() async {
+        for (name, body) in [
+            (
+                "slow-buffer",
+                """
+                  const { Buffer } = require("buffer");
+                  const SafeBuffer = Buffer.from && Buffer.alloc && Buffer.allocUnsafe && Buffer.allocUnsafeSlow
+                    ? Buffer : function (size) { return Buffer(size); };
+                  assert.equal(new SafeBuffer(4).length, 4);
+                  assert(Object.keys(Buffer).includes("allocUnsafeSlow"));
+                  const first = SafeBuffer.allocUnsafeSlow(4), second = SafeBuffer.allocUnsafeSlow(4);
+                  first[0] = 91;
+                  assert.equal(Array.from(second).join(), "0,0,0,0");
+                  assert(first.buffer !== second.buffer);
+                  assert(Buffer.isBuffer(Buffer.allocUnsafeSlow(0)));
+                  assert.equal(Buffer.allocUnsafeSlow(0).length, 0);
+                """
+            ),
+            (
+                "once-receiver",
+                """
+                  const { EventEmitter } = require("events");
+                  const emitter = new EventEmitter(), calls = [];
+                  assert(emitter.once("ready", function (...args) {
+                    calls.push([this === emitter, ...args, emitter.listenerCount("ready")]);
+                    emitter.emit("ready", "recursive");
+                  }) === emitter);
+                  assert(emitter.emit("ready", "value", 7));
+                  assert.equal(JSON.stringify(calls), '[[true,"value",7,0]]');
+                  assert(!emitter.emit("ready", "again"));
+                  let removedCalls = 0;
+                  function removed() { removedCalls++; }
+                  emitter.once("removed", removed).removeListener("removed", removed);
+                  emitter.emit("removed");
+                  assert.equal(removedCalls, 0);
+                  const ordinary = [];
+                  emitter.on("ordinary", function (value) { ordinary.push([this === emitter, value]); });
+                  emitter.emit("ordinary", 1);
+                  emitter.emit("ordinary", 2);
+                  assert.equal(JSON.stringify(ordinary), "[[true,1],[true,2]]");
+                """
+            )
+        ] {
+            let (runtime, host, recorder) = makeRuntime()
+            try? await runtime.boot(
+                config: .current(supportDirectory: FileManager.default.temporaryDirectory))
+            let command = """
+                module.exports.default = async () => {
+                  const assert = require("assert");
+                  \(body)
+                  await require("@raycast/api").showHUD("\(name) passed");
+                };
+                """
+            await runtime.start(
+                session: name, code: command,
+                file: FileManager.default.temporaryDirectory.appendingPathComponent("\(name).js"),
+                mode: .noView, context: launchContext(mode: .noView))
+            await settle()
+            check(name, host.huds == ["\(name) passed"], recorder.failures.joined(separator: "|"))
+            await runtime.stop(session: name)
+            runtime.shutdown()
+        }
+    }
+
+    /// sql.js loads through `WebAssembly.instantiate`, whose promise never settled on the JS queue.
+    @MainActor
+    static func webAssemblyChecks() async {
+        let (runtime, host, recorder) = makeRuntime()
+        try? await runtime.boot(
+            config: .current(supportDirectory: FileManager.default.temporaryDirectory))
+        let command = """
+            module.exports.default = async () => {
+              const add = "AGFzbQEAAAABBwFgAn9/AX8DAgEABwcBA2FkZAAACgkBBwAgACABags=";
+              const bytes = Buffer.from(add, "base64");
+              const { module, instance } = await WebAssembly.instantiate(bytes);
+              const compiled = await WebAssembly.instantiate(await WebAssembly.compile(bytes));
+              const invalid = await WebAssembly.instantiate(new Uint8Array([0, 1, 2])).then(
+                () => "resolved", (error) => error instanceof WebAssembly.CompileError);
+              const sum = instance.exports.add(2, 3) + compiled.exports.add(4, 5);
+              const isModule = module instanceof WebAssembly.Module;
+              await require("@raycast/api").showHUD(`${isModule} ${sum} ${invalid}`);
+            };
+            """
+        await runtime.start(
+            session: "wasm", code: command, file: URL(fileURLWithPath: "/tmp/wasm.js"),
+            mode: .noView, context: launchContext(mode: .noView))
+        await settle()
+        check(
+            "WebAssembly promise APIs settle", host.huds == ["true 14 true"],
+            "\(host.huds) \(recorder.failures.joined(separator: "|"))")
+        await runtime.stop(session: "wasm")
         runtime.shutdown()
     }
 

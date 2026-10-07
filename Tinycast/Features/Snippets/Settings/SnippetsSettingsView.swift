@@ -20,20 +20,26 @@ struct SnippetsSettingsView: View {
                 isEnabled: Binding(
                     get: { settings.snippetsEnabled },
                     set: { core.snippetCoordinator.setSnippetsEnabled($0) }),
-                showsInLauncher: $settings.snippetsShowInLauncher)
+                showsInLauncher: $settings.snippetsShowInLauncher,
+                showsIcon: true,
+                showsHeader: false)
 
             if settings.snippetsEnabled, core.snippetListener.status == .needsAccessibility {
                 Section {
                     LabeledContent {
                         Button("Grant Access…") { Permissions.openAccessibilitySettings() }
                     } label: {
-                        Label(
-                            "Keyword expansion needs the Accessibility permission.",
-                            systemImage: "exclamationmark.triangle"
-                        )
-                        .foregroundStyle(.orange)
-                        Text(
-                            "The same grant pasting uses. Launcher search keeps working meanwhile.")
+                        HStack(alignment: .center, spacing: Theme.Spacing.lg) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .frame(width: SettingsListMetrics.iconSize)
+                            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                                Text("Keyword expansion needs Accessibility access")
+                                    .foregroundStyle(.orange)
+                                Text("Launcher search still works.")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
             }
@@ -155,11 +161,15 @@ struct SnippetsSettingsView: View {
             }
 
             LabeledContent {
+                if settings.snippetsFolder != nil {
+                    Button("Use Default", action: core.snippetCoordinator.resetSnippetsFolder)
+                }
+                Button("Choose…", action: core.snippetCoordinator.chooseSnippetsFolder)
                 Button("Open Folder", action: core.snippetCoordinator.revealSnippetsInFinder)
-                    .accessibilityHint("Reveals this Tinycast channel’s snippets folder in Finder.")
+                    .accessibilityHint("Reveals the snippets folder in Finder.")
             } label: {
                 SettingsRowTitle(.snippetsLibrary, "Snippets Folder")
-                Text("Plain Markdown files in this channel’s Application Support folder.")
+                Text((snippetsStore.snippetsDirectory.path as NSString).abbreviatingWithTildeInPath)
             }
         } header: {
             SettingsSectionHeader(.snippetsLibrary)
@@ -240,7 +250,13 @@ private struct SnippetSettingsRow: View {
     var body: some View {
         SettingsRow(title: record.snippet.name, subtitle: metadata) {
             Image(systemName: "doc.text")
+                .font(.system(size: Theme.Size.settingsRowIcon - Theme.Spacing.xs))
+                .frame(width: SettingsListMetrics.iconSize, height: SettingsListMetrics.iconSize)
         } trailing: {
+            // A disabled snippet's shortcut fires into the funnel's refusal, so it dims too.
+            ShortcutRecorder(action: .snippet(id: record.id))
+                .settingsEnabled(record.snippet.isEnabled)
+
             Button(action: onEdit) {
                 Image(systemName: "pencil")
             }

@@ -54,10 +54,12 @@ struct AIStreamDecoder: Sendable {
         var id = ""
         var name = ""
         var arguments = ""
+        var thoughtSignature: String?
     }
 
     private let shape: AIHTTPConfiguration.APIShape
     private var parser = SSEParser()
+    private var thinkTags = AIThinkTagDecoder()
     private var usage = AIUsage()
     private var partialToolCalls: [Int: PartialToolCall] = [:]
     private(set) var isTerminal = false
@@ -74,7 +76,9 @@ struct AIStreamDecoder: Sendable {
         return calls.compactMap { call in
             guard !call.name.isEmpty else { return nil }
             return .toolCallRequested(
-                AIToolCall(id: call.id, name: call.name, arguments: call.arguments))
+                AIToolCall(
+                    id: call.id, name: call.name, arguments: call.arguments,
+                    thoughtSignature: call.thoughtSignature))
         }
     }
 
@@ -83,7 +87,9 @@ struct AIStreamDecoder: Sendable {
     }
 
     mutating func finish() throws -> [AIStreamEvent] {
-        try decode(parser.finish())
+        var events = try decode(parser.finish())
+        if shape == .openAICompatible, !isTerminal { events += thinkTags.finish() }
+        return events
     }
 
     private mutating func decode(_ payloads: [String]) throws -> [AIStreamEvent] {
@@ -91,6 +97,7 @@ struct AIStreamDecoder: Sendable {
         for payload in payloads where !isTerminal {
             if payload == "[DONE]" {
                 isTerminal = true
+                if shape == .openAICompatible { events += thinkTags.finish() }
                 events.append(contentsOf: flushToolCalls())
                 events.append(.finished)
                 continue
@@ -121,7 +128,7 @@ struct AIStreamDecoder: Sendable {
         var events: [AIStreamEvent] = []
         if let choice = chunk.choices?.first {
             if let content = choice.delta?.content, !content.isEmpty {
-                events.append(.text(content))
+                events += thinkTags.feed(content)
             } else if let reasoning = choice.delta?.reasoningText {
                 events += [.thinking, .reasoning(reasoning)]
             }
@@ -145,6 +152,9 @@ struct AIStreamDecoder: Sendable {
         if let id = fragment.id, !id.isEmpty { partial.id = id }
         if let name = fragment.function?.name, !name.isEmpty { partial.name = name }
         partial.arguments += fragment.function?.arguments ?? ""
+        if let signature = fragment.extraContent?.google?.thoughtSignature {
+            partial.thoughtSignature = signature
+        }
         partialToolCalls[fragment.index ?? 0] = partial
     }
 
@@ -217,9 +227,27 @@ private struct OpenAIChunk: Decodable {
                     let arguments: String?
                 }
 
+                struct ExtraContent: Decodable {
+                    struct Google: Decodable {
+                        let thoughtSignature: String?
+
+                        enum CodingKeys: String, CodingKey {
+                            case thoughtSignature = "thought_signature"
+                        }
+                    }
+
+                    let google: Google?
+                }
+
                 let index: Int?
                 let id: String?
                 let function: Function?
+                let extraContent: ExtraContent?
+
+                enum CodingKeys: String, CodingKey {
+                    case index, id, function
+                    case extraContent = "extra_content"
+                }
             }
 
             let content: String?

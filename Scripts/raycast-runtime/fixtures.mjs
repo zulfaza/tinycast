@@ -38,7 +38,7 @@ async function run(name, source, mode, verify, options) {
   harness.boot(bootConfig());
   const code = compile(source);
   harness.start("s1", code, "/fixtures/cmd.js", "/fixtures", mode, {});
-  await wait();
+  await wait(options?.settle);
   await verify(harness);
   harness.stop("s1");
 }
@@ -251,6 +251,50 @@ export default function Command() {
 }
 `;
 
+const slowBufferSource = `
+const { Buffer } = require("buffer");
+
+module.exports.default = () => {
+  const SafeBuffer = Buffer.from && Buffer.alloc && Buffer.allocUnsafe && Buffer.allocUnsafeSlow
+    ? Buffer : function (size) { return Buffer(size); };
+  const selected = new SafeBuffer(4);
+  const first = SafeBuffer.allocUnsafeSlow(4);
+  const second = SafeBuffer.allocUnsafeSlow(4);
+  first[0] = 91;
+  globalThis.__slowBuffer = {
+    selected: Buffer.isBuffer(selected) && selected.length === 4,
+    enumerable: Object.keys(Buffer).includes("allocUnsafeSlow"),
+    bytes: Array.from(second),
+    independent: first.buffer !== second.buffer,
+    empty: Buffer.isBuffer(Buffer.allocUnsafeSlow(0)) && Buffer.allocUnsafeSlow(0).length === 0,
+  };
+};
+`;
+
+const onceSource = `
+const { EventEmitter } = require("events");
+
+module.exports.default = () => {
+  const emitter = new EventEmitter();
+  const calls = [];
+  const chained = emitter.once("ready", function (...args) {
+    calls.push([this === emitter, ...args, emitter.listenerCount("ready")]);
+    emitter.emit("ready", "recursive");
+  }) === emitter;
+  const emitted = emitter.emit("ready", "value", 7);
+  const repeated = emitter.emit("ready", "again");
+  let removedCalls = 0;
+  function removed() { removedCalls++; }
+  emitter.once("removed", removed).removeListener("removed", removed);
+  emitter.emit("removed");
+  const ordinary = [];
+  emitter.on("ordinary", function (value) { ordinary.push([this === emitter, value]); });
+  emitter.emit("ordinary", 1);
+  emitter.emit("ordinary", 2);
+  globalThis.__once = { calls, chained, emitted, repeated, removedCalls, ordinary };
+};
+`;
+
 // Bundled HTTP clients (axios) construct and probe a Response at module scope, before any component
 // mounts — a host-shaped constructor took the whole command down with them.
 const responseSource = `
@@ -357,7 +401,15 @@ export default async function Command() {
     child.on("close", () => resolve(chunks.join("")));
   });
 
-  globalThis.__spawn = { iterated: iterated.join(""), late, grouped };
+  const streamed = await new Promise((resolve) => {
+    const events = [];
+    const child = spawn("/bin/sh", ["-c", "echo a; sleep 0.2; echo b"]);
+    child.on("spawn", () => events.push("spawn"));
+    child.stdout.once("data", () => events.push(child.exitCode === null ? "live" : "after-exit"));
+    child.on("close", () => resolve(events.join(",")));
+  });
+
+  globalThis.__spawn = { iterated: iterated.join(""), late, grouped, streamed };
 }
 `;
 
@@ -476,6 +528,52 @@ export default async function Command() {
 `;
 
 // A member `__toESM` cannot see lands as an opaque `The superclass is not a constructor`.
+const undiciSurfaceSource = `
+import diagnostics from "node:diagnostics_channel";
+import { markAsUncloneable } from "node:worker_threads";
+import { getHashes } from "node:crypto";
+
+class Ping extends Event {
+  constructor() {
+    super("ping", { cancelable: true });
+  }
+}
+
+export default async function Command() {
+  const request = diagnostics.channel("undici:request:create");
+  const idle = request.hasSubscribers;
+  const published = [];
+  diagnostics.subscribe("undici:request:create", (message, name) => published.push([message.id, name]));
+  request.publish({ id: 1 });
+
+  const target = new EventTarget();
+  const calls = [];
+  target.addEventListener("ping", () => calls.push("once"), { once: true });
+  target.addEventListener("ping", { handleEvent: (event) => { calls.push(event.target === target); event.preventDefault(); } });
+  const notCancelled = target.dispatchEvent(new Ping());
+  target.dispatchEvent(new Ping());
+
+  const { port1, port2 } = new MessageChannel();
+  port1.postMessage({ n: 1 });
+  let delivered = false;
+  const received = new Promise((resolve) => port2.addEventListener("message", (event) => resolve((delivered = true) && event.data)));
+  const early = delivered;
+  const data = await received;
+
+  globalThis.__undiciSurface = {
+    idle,
+    subscribed: request.hasSubscribers,
+    published,
+    guarded: typeof (markAsUncloneable || null),
+    hashes: getHashes(),
+    calls,
+    notCancelled,
+    data,
+    early,
+  };
+}
+`;
+
 const namespaceImportSource = `
 import * as net from "node:net";
 import * as vm from "node:vm";
@@ -828,6 +926,24 @@ export async function runFixtures() {
     check("one screen after pop", screens.length === 1, String(screens.length));
   });
 
+  await run("safe-buffer selects the modern Buffer API", slowBufferSource, "no-view", async (harness) => {
+    const result = harness.call("globalThis.__slowBuffer");
+    check("safe-buffer's modern capability guard avoids the callable fallback", result?.selected === true, harness.state.failures.join(" | "));
+    check("slow allocation is copied by statics-enumerating consumers", result?.enumerable === true);
+    check("slow allocations are zero-filled", JSON.stringify(result?.bytes) === "[0,0,0,0]");
+    check("slow allocations do not share backing memory", result?.independent === true);
+    check("zero-sized slow allocations remain Buffers", result?.empty === true);
+  });
+
+  await run("EventEmitter.once preserves the emitter receiver", onceSource, "no-view", async (harness) => {
+    const result = harness.call("globalThis.__once");
+    check("once forwards its receiver and arguments", JSON.stringify(result?.calls) === '[[true,"value",7,0]]', JSON.stringify(result?.calls));
+    check("once remains chainable", result?.chained === true);
+    check("once removes itself before recursive emission", result?.emitted === true && result?.repeated === false);
+    check("once can still be removed using the original listener", result?.removedCalls === 0);
+    check("ordinary listeners retain their receiver and repeated delivery", JSON.stringify(result?.ordinary) === "[[true,1],[true,2]]");
+  });
+
   await run("Node shims and web globals", nodeSource, "view", async (harness) => {
     const markdown = findNode(harness.state.trees.at(-1), "Detail").props.markdown.split("\n");
     const expected = [
@@ -971,7 +1087,8 @@ export async function runFixtures() {
     check("async iteration collects stdout", result?.iterated === "hello\n", JSON.stringify(result?.iterated));
     check("a listener attached after exit still gets it", result?.late === "world\n", JSON.stringify(result?.late));
     check("a detached child that pipes stdout is still awaited", result?.grouped === "group\n", JSON.stringify(result?.grouped));
-  });
+    check("output streams before exit, after spawn", result?.streamed === "spawn,live", JSON.stringify(result?.streamed));
+  }, { settle: 800 });
 
   const httpSpecs = [];
   await run(
@@ -1073,6 +1190,18 @@ export async function runFixtures() {
 
   const cookieSpecs = [];
   const cookies = ["a=1; Expires=Wed, 21 Oct 2037 07:28:00 GMT; Path=/", "b=2; Path=/"];
+  await run("undici's load-time surface is real", undiciSurfaceSource, "no-view", async (harness) => {
+    const result = harness.call("globalThis.__undiciSurface");
+    check("a fresh channel has no subscribers", result?.idle === false, JSON.stringify(result));
+    check("a subscriber receives what the channel publishes", JSON.stringify(result?.published) === JSON.stringify([[1, "undici:request:create"]]), JSON.stringify(result?.published));
+    check("a channel reports its subscriber", result?.subscribed === true, String(result?.subscribed));
+    check("markAsUncloneable is a function, so an || guard is moot", result?.guarded === "function", String(result?.guarded));
+    check("getHashes lists the digests the host computes", JSON.stringify(result?.hashes) === JSON.stringify(["md5", "sha1", "sha256", "sha384", "sha512"]), JSON.stringify(result?.hashes));
+    check("a once listener fires once and handleEvent sees the target", JSON.stringify(result?.calls) === JSON.stringify(["once", true, true]), JSON.stringify(result?.calls));
+    check("preventDefault cancels a cancelable event", result?.notCancelled === false, String(result?.notCancelled));
+    check("a port delivers a clone after posting returns", result?.data?.n === 1 && result?.early === false, JSON.stringify(result));
+  });
+
   await run("a namespace import keeps the shim's named members", namespaceImportSource, "no-view", async (harness) => {
     const result = harness.call("globalThis.__namespaceImport");
     const kinds = JSON.stringify(result?.kinds);

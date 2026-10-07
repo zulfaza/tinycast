@@ -11,6 +11,7 @@ struct AppEntry: Identifiable, Hashable, Sendable {
         case systemAction
         case windowCommand
         case windowLayout
+        case windowRoom
         case quicklink
         case appleShortcut
         case extensionCommand
@@ -63,6 +64,11 @@ struct AppEntry: Identifiable, Hashable, Sendable {
                     label: "Window Layout", sectionTitle: "Window Layouts",
                     openVerb: "Arrange Windows", canHideFromSearch: true,
                     canRevealInFinder: false, canDragOut: false, isSymbolIcon: true, rankPriority: 3)
+            case .windowRoom:
+                return KindDescriptor(
+                    label: "Room", sectionTitle: "Rooms", openVerb: "Enter Room",
+                    canHideFromSearch: true, canRevealInFinder: false, canDragOut: false,
+                    isSymbolIcon: true, rankPriority: 3)
             case .quicklink:
                 return KindDescriptor(
                     label: "Quicklink", sectionTitle: "Quicklinks",
@@ -184,11 +190,15 @@ struct AppEntry: Identifiable, Hashable, Sendable {
             return CustomWindowSize.id(fromEntryID: id).map { .customWindowSize(id: $0) }
         case .windowLayout:
             return WindowLayout.id(fromEntryID: id).map { .windowLayout(id: $0) }
+        case .windowRoom:
+            return Room.id(fromEntryID: id).map { .windowRoom(id: $0) }
         case .quicklink:
             return Quicklink.id(fromEntryID: id).map { .quicklink(id: $0) }
         case .appleShortcut:
             return AppleShortcut.id(fromEntryID: id).map { .appleShortcut(id: $0) }
-        case .snippet, .extensionCommand, .meeting:
+        case .snippet:
+            return StoredSnippet.id(fromEntryID: id).map { .snippet(id: $0) }
+        case .extensionCommand, .meeting:
             return nil
         }
     }
@@ -222,6 +232,7 @@ struct AppEntry: Identifiable, Hashable, Sendable {
             return WindowCommandCatalog.command(forEntryID: id)?.sfSymbol
                 ?? CustomWindowSize.sfSymbol
         case .windowLayout: return WindowLayout.sfSymbol
+        case .windowRoom: return Room.sfSymbol
         case .meeting: return "video.fill"
         case .application, .systemSettings, .appleShortcut, .extensionCommand: return "questionmark"
         }
@@ -244,6 +255,13 @@ extension AppEntry {
             id: layout.entryID, name: layout.name,
             url: URL(string: "tinycast://window-layout/" + layout.id.uuidString)!,
             bundleID: nil, kind: .windowLayout, symbolName: layout.iconSymbol)
+    }
+
+    init(_ room: Room) {
+        self.init(
+            id: room.entryID, name: room.name,
+            url: URL(string: "tinycast://window-room/" + room.id.uuidString)!,
+            bundleID: nil, kind: .windowRoom)
     }
 
     /// A custom size shares the window commands' kind and section, as custom Quick Actions do.
@@ -312,6 +330,7 @@ final class AppIndex {
     struct Results: Equatable {
         var entries: [AppEntry] = []
         var favoriteCount = 0
+        var meetingCount = 0
         var suggestionCount = 0
     }
 
@@ -362,6 +381,7 @@ final class AppIndex {
     private var windowCommandEntries: [AppEntry] = []
     private var customWindowSizeEntries: [AppEntry] = []
     private var windowLayoutEntries: [AppEntry] = []
+    private var windowRoomEntries: [AppEntry] = []
     private var quicklinkEntries: [AppEntry] = []
     private var appleShortcutEntries: [AppEntry] = []
     private var customQuickActionEntries: [AppEntry] = []
@@ -498,13 +518,21 @@ final class AppIndex {
         publishEntries()
     }
 
+    /// Replaces the room slice, which publishes between the layouts and the window commands.
+    func setWindowRooms(_ rooms: [Room]) {
+        let entries = rooms.sorted(by: Room.precedes).map(AppEntry.init)
+        guard entries != windowRoomEntries else { return }
+        windowRoomEntries = entries
+        publishEntries()
+    }
+
     func updateSnippets(_ records: [StoredSnippet]) {
         let entries =
             records
             .filter { $0.snippet.isEnabled }
             .map { record in
                 AppEntry(
-                    id: "snippet:\(record.id)",
+                    id: record.entryID,
                     name: record.snippet.name,
                     url: record.fileURL,
                     bundleID: nil,
@@ -630,7 +658,8 @@ final class AppIndex {
             Self.named(meetingEntries) + discoveredEntries
             + Self.named(
                 extensionEntries + quicklinkEntries + appleShortcutEntries + snippetEntries
-                    + Self.systemActionEntries + windowLayoutEntries + windowCommandEntries
+                    + Self.systemActionEntries + windowLayoutEntries + windowRoomEntries
+                    + windowCommandEntries
                     + customWindowSizeEntries + customCommandEntries + quickActionEntries
                     + commandEntries)
         guard updated != apps else { return }
@@ -676,13 +705,16 @@ final class AppIndex {
                 showsSuggestions ? suggestions(from: split.rest, usage: usage, hotKeys: hotKeys) : []
             let shown = Set(suggested.map(\.id))
             let rest = byUsage(split.rest.filter { !shown.contains($0.id) }, usage: usage)
+            // Above Suggestions: a meeting is worth opening only until it ends.
+            let meetings = rest.filter { $0.kind == .meeting }
             return Results(
-                entries: split.favorites + suggested + rest, favoriteCount: split.favorites.count,
+                entries: split.favorites + meetings + suggested + rest.filter { $0.kind != .meeting },
+                favoriteCount: split.favorites.count, meetingCount: meetings.count,
                 suggestionCount: suggested.count)
         }
     }
 
-    private var sensitivity: SearchSensitivity { settings?.rootSearchSensitivity ?? .high }
+    private var sensitivity: SearchSensitivity { settings?.rootSearchSensitivity ?? .default }
 
     private func matchKey(_ query: String) -> MatchKey {
         MatchKey(
@@ -699,7 +731,6 @@ final class AppIndex {
         }
     }
 
-    /// Each kind's run sorted by usage; the runs keep publication order, which is section order.
     private func byUsage(_ entries: [AppEntry], usage: LauncherRankingStore.Snapshot) -> [AppEntry] {
         var ordered: [AppEntry] = []
         ordered.reserveCapacity(entries.count)
@@ -707,8 +738,12 @@ final class AppIndex {
         while start < entries.endIndex {
             let kind = entries[start].kind
             let end = entries[start...].firstIndex { $0.kind != kind } ?? entries.endIndex
-            ordered += LauncherOrder.byUsage(
-                Array(entries[start..<end]), signals: { self.signals(for: $0, usage: usage) })
+            if kind == .meeting {
+                ordered.append(contentsOf: entries[start..<end])
+            } else {
+                ordered += LauncherOrder.byUsage(
+                    Array(entries[start..<end]), signals: { self.signals(for: $0, usage: usage) })
+            }
             start = end
         }
         return ordered

@@ -18,7 +18,7 @@ final class SnippetsStore {
     private(set) var issues: [SnippetRepository.Issue] = []
     private(set) var operationError: String?
 
-    let snippetsDirectory: URL
+    private(set) var snippetsDirectory: URL
     var sharedLibraryDirectories: [URL] { repository.sharedLibraryDirectories }
     var onSnapshot: ((SnippetRepository.Snapshot) -> Void)?
 
@@ -61,6 +61,23 @@ final class SnippetsStore {
         watcherRetryTask?.cancel()
         watcherRetryTask = nil
         stopWatchers()
+    }
+
+    /// Moves to another folder; a running store stops, swaps, and loads the new one.
+    func relocate(to repository: SnippetRepository) async {
+        guard repository.snippetsDirectory != snippetsDirectory else { return }
+        let wasStarted = isStarted
+        stop()
+        self.repository = repository
+        snippetsDirectory = repository.snippetsDirectory
+        // Emptied first, so a folder that fails to load leaves no old snippet expanding.
+        if !snippets.isEmpty || !issues.isEmpty {
+            snippets = []
+            issues = []
+            onSnapshot?(SnippetRepository.Snapshot(records: [], issues: []))
+        }
+        guard wasStarted else { return }
+        await start()
     }
 
     func retry() {

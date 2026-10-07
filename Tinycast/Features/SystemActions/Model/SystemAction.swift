@@ -13,6 +13,7 @@ struct SystemAction: Identifiable, Hashable, Sendable {
         case nextTrack = "next-track"
         case previousTrack = "previous-track"
         case toggleMute = "toggle-mute"
+        case toggleMicrophoneMute = "toggle-microphone-mute"
         case volumeUp = "volume-up"
         case volumeDown = "volume-down"
         case setVolume = "set-volume"
@@ -39,6 +40,8 @@ struct SystemAction: Identifiable, Hashable, Sendable {
     enum Confirmation: Hashable, Sendable {
         case none
         case required(title: String, message: String)
+        /// Asks only while Finder's own "Show warning before emptying the Trash" is on.
+        case followsFinder(title: String, message: String)
         /// Quit All alone counts its targets before asking, so its copy is built at call time.
         case computed
     }
@@ -84,6 +87,7 @@ enum SystemActionCatalog {
         case .nextTrack: return "Next Track"
         case .previousTrack: return "Previous Track"
         case .toggleMute: return "Toggle Mute"
+        case .toggleMicrophoneMute: return "Toggle Microphone Mute"
         case .volumeUp: return "Turn Volume Up"
         case .volumeDown: return "Turn Volume Down"
         case .setVolume: return "Set Volume…"
@@ -120,6 +124,7 @@ enum SystemActionCatalog {
         case .nextTrack: return "forward.end"
         case .previousTrack: return "backward.end"
         case .toggleMute: return "speaker.slash"
+        case .toggleMicrophoneMute: return "mic.slash"
         case .volumeUp: return "speaker.plus"
         case .volumeDown: return "speaker.minus"
         case .setVolume, .volume0, .volume25, .volume50, .volume75, .volume100:
@@ -152,7 +157,7 @@ enum SystemActionCatalog {
         case .logOut:
             return .required(title: "Log out now?", message: sessionEndingMessage)
         case .emptyTrash:
-            return .required(
+            return .followsFinder(
                 title: "Empty Trash?",
                 message: "The items in the Trash will be permanently deleted.")
         case .quitAllApps:

@@ -45,8 +45,8 @@ in (see Currency below).
 
 `CalcEngine.evaluate` runs:
 
-Single ASCII words return immediately except Raycast v2's `now`, `time`, `today`, `tomorrow` and
-`yesterday`; a bare app name or constant never earns a card.
+Single ASCII words return immediately: a bare app name, constant or date keyword never earns a card.
+The one exception is the five words that name the current moment or its neighbours — see grammar G.
 
 1. Natural-language date/time (`CalcDateTime`, e.g. `hrs till 9am`, `days till 9april`,
    `today + 3 weeks`)
@@ -78,8 +78,8 @@ When a trailing operator keeps a conversion visible, its input is reconstructed 
 display rounding never feeds back into evaluation.
 
 `UnitDef` is an immutable, Sendable reference shared by its aliases and parsed values. The catalog
-stores 150 base definitions as compact text records rather than repeated construction code, then adds
-SI and transfer-rate prefixes once on first use, for 679 aliases. `CalcUnitCatalog` owns this data;
+stores base definitions as compact text records rather than repeated construction code, then adds
+SI and transfer-rate prefixes once on first use. `CalcUnitCatalog` owns this data;
 `CalcUnits` owns conversion policy.
 
 Typed arithmetic precedes simple conversion so `1 / 20ms to hz` divides by a duration,
@@ -99,7 +99,7 @@ parser, while the separator still chooses ISO, month-first or day-first interpre
 - **D** — difference between two moments: `jul 4 - today`
 - **E** — a leading duration: `5 weekdays from now`, `3 days from today`, `2 weeks ago`
 - **F** — a weekday inside a future week: `monday in 3 weeks`, `friday in 2 weeks`
-- **G** — a named moment: `tomorrow`, `tomorrow at 9am`, `next monday`, `last friday`
+- **G** — a named moment: `today`, `now`, `time`, `tomorrow at 9am`, `next monday`, `last friday`
 
 **An answered moment badges its weekday.** Grammars C and E resolve to a date, and the day of the
 week is the thing a date does not say out loud — so `5 weekdays from now` reads `4 September` under
@@ -126,10 +126,15 @@ which is the more common thing to type.
 The same convention writes an **ordinal dot** after the day, so `28. aug + 3` reads as 28 August.
 Only a trailing dot is dropped, which is why `28.5 aug` stays silent rather than becoming a date.
 
-Grammar G answers the five Raycast v2 root words directly: `now`, `time`, `today`, `tomorrow` and
-`yesterday`. A leading `next` / `last` also earns a card. **A written day is qualifier enough**:
-`25. aug`, `aug 25` and `25.8.27` all answer, badged with their weekday, because nobody types a
-day-and-month pair looking for an app. A month alone still names no day, so `july` stays a search.
+Grammar G needs a qualifier for anything that recurs. `monday`, `july` and `noon` alone are app
+searches, so `at <time>` or a leading `next` / `last` earns a card. **`now`, `today`, `tomorrow`,
+`yesterday` and `time` are qualifier enough** — each names exactly one moment, so alone they answer.
+`time` is the Mac's own clock, badged with today's date and the calendar's zone the way `time in
+<place>` badges its city. The card takes row 0, so `time` + Enter copies the clock; Time Machine is
+one row down.
+**A written day is qualifier enough** too: `25. aug`, `aug 25` and `25.8.27` all answer, badged with
+their weekday, because nobody types a day-and-month pair looking for an app. A month alone still
+names no day, so `july` stays a search.
 
 A bare date takes the year it is **nearest**, not the next one — three days behind is likelier the
 date meant than the same day twelve months out. Grammar C shifts a moment, so it reads the year the
@@ -268,6 +273,12 @@ An attached `k` is a thousands suffix (`10k` → `10,000`), while whitespace kee
 (`10 k to c`); the established attached Kelvin conversion form remains valid when the temperature
 target makes the intent unambiguous (`273.15K to C`).
 
+A whole magnitude word after a literal scales it the same way, spaced or attached and in any case:
+`thousand`, `million` and `billion` (`13 million idr to usd`, `1.5 billion`). The set is closed and
+short-scale — a billion is 10⁹, since the engine reads canonical English. It scales only the literal it
+follows, so `2 * million` and `(2 + 3) million` stay silent, and plurals (`13 millions`) are not read.
+Abbreviations are deliberately absent: `m`, `b` and `k` already mean metre, byte and Kelvin.
+
 A **compound unit** (`km/h`, `m³/h`, `mbit/s`, `fl oz`) stays whole only when the table knows its
 spelling: the tokenizer looks ahead across `/` or whitespace between two alphanumeric runs,
 folds superscript powers, and keeps them together only if `CalcUnits.byName` resolves the result.
@@ -332,10 +343,6 @@ admits no other reading. The implication is the **offset's alone**: `time in 4` 
 and stays silent, and a bare `5 + 3` is arithmetic exactly as it was. It mirrors the bare number a
 moment already takes in grammar C.
 
-Calculator keyboard actions match Raycast: `↵` copies the rendered answer, `⌘↵` or `⌃↵` pastes it
-into the app behind Tinycast, `⌥⌘C` (or `⌃⌥C`) copies the unformatted answer, and
-`⌥⇧⌘C` (or `⌃⌥⇧C`) copies the question and answer.
-
 `diff paris` answers how far a zone runs from the Mac's own, and a duration may stand where a zone
 would (`time in 4 hours`, `time in 4 hours in san francisco`) — the zone table is tried first, so a
 city always outranks a duration. City names are matched **diacritic-folded**, because the identifiers
@@ -389,12 +396,23 @@ Order settles the collisions. Time zones run **last** among the named paths, aft
 currency, so `10 cordoba to usd` stays money and `1 cup to ml` stays volume. `cordoba` is the one
 word the zone and currency tables both claim.
 
+## Months and years
+
+Duration conversions use the average Gregorian year of 365.2425 days and a month of one twelfth of
+that (30.436875 days). `mo` / `month` / `months` and `yr` / `year` / `years` support fractional amounts,
+explicit conversions and quantity arithmetic: `3 months to days` is `91.310625 day`,
+`3.5 years to days` is `1,278.34875 day`, and `12 months to years` is `1 yr`.
+Bare month and year quantities auto-convert to days.
+
+Date arithmetic still uses whole calendar months and years through the injected Calendar, so
+`31.1.26 + 1 month` clamps to 28 February rather than adding an average duration.
+
 ## Timespans
 
 `145 mins to timespan` breaks a duration into the units that fit it (`2 hr 25 min`), with zero
-parts dropped. Weeks are the largest step on purpose: a month is not a fixed number of seconds, so
-carrying one would make the answer depend on which month you meant. Only a time unit converts, so
-`10 km to timespan` stays silent.
+parts dropped. Weeks remain the largest output step because actual calendar months and years vary.
+Month and year inputs use the averages above; `1 month to timespan` is `4 wk 2 day 10 hr 29 min 6 s`.
+Only a time unit converts, so `10 km to timespan` stays silent.
 
 ## Workdays
 
@@ -607,8 +625,11 @@ than `5.539e-05`.
 Date answers that display and copy identically also reuse their formatted text.
 
 When the launcher or Calculator History query evaluates to a result the card is pinned at the top of
-the list (flat selection index 0, shifting rows by one). Enter copies the formatted answer, ⌘↵ copies
-`copyText`, and ⇧⌘↵ copies the question and formatted answer; all three record it to history.
+the list (flat selection index 0, shifting rows by one) and Enter copies the answer + records it to
+`CalculatorHistoryStore`. ⌘↵ records it too, then `PaletteState.rewriteQuery` makes the answer the
+query with the caret after it, so the next step chains on. Only a `canChain` answer offers it:
+`CalcEngine` clears the flag on every `CalcDateTime` and `CalcTimeZone` answer, because a clock
+typed back reads as local time, and `CalcQuantity` clears it on a boolean.
 
 ## Number format
 
@@ -650,7 +671,9 @@ English path is byte-for-byte what it was.
 
 ## Additional units and transfer rates
 
-`MB/s` means megabytes per second; `Mbps` means megabits per second.
+`MB/s` and `MBps` mean megabytes per second; `Mbps` means megabits per second.
+The uppercase `B` distinguishes byte rates (`Bps`, `kBps` / `KBps`, `MBps`, `GBps`, `TBps`) from bits.
+`500 Mbps in MBps` gives `62.5 MBps`; bare byte rates auto-convert to the matching bit rate.
 `100Mbps to MB/s` gives `12.5 MB/s`, and `1GB / 10MB/s to s` gives `100 s`.
 Binary rates such as `MiB/s` and bit amounts such as `kbit` also work.
 SI prefixes expand for meters, grams, seconds, hertz, newtons, joules, watts and pascals,

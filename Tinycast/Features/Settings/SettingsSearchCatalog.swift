@@ -110,7 +110,7 @@ enum SettingsSearchCatalog {
     static let entries: [SettingsSearchEntry] =
         general + customThemes + applications + systemSettings + systemActions + commands + quicklinks
         + appleShortcuts + fallbacks + clipboard + snippets + fileSearch + windowManagement
-        + navigation + notes + calendar + emoji + ai + quickActions + extensions + permissions
+        + navigation + notes + calendar + emoji + ai + quickActions + dictation + extensions + permissions
         + backup + about
 
     private static let general: [SettingsSearchEntry] = [
@@ -124,6 +124,9 @@ enum SettingsSearchCatalog {
         .init(
             .generalGeneral, "Show in menu bar",
             keywords: ["menubar", "status item", "icon", "hide"]),
+        .init(
+            .generalGeneral, "Automatically check for updates",
+            keywords: ["software", "update", "automatic", "disable", "popup"]),
         .init(
             .generalGeneral, "Pop to Root Search",
             keywords: ["reset", "timeout", "back"]),
@@ -181,11 +184,11 @@ enum SettingsSearchCatalog {
     private static let applications: [SettingsSearchEntry] = [
         .init(pane: .applications, keywords: ["apps", "index", "launcher"]),
         .init(
-            group: .applicationsSearchScopes, "Search Scopes",
-            keywords: ["folders", "indexed", "locations", "add folder"]),
-        .init(
             .applicationsApplications, "Enable Applications",
             keywords: ["hide apps", "visibility"]),
+        .init(
+            group: .applicationsSearchScopes, "Search Scopes",
+            keywords: ["folders", "indexed", "locations", "add folder"]),
         .init(
             group: .applicationsApplications, "Aliases and shortcuts",
             keywords: ["alias", "hotkey", "per app", "hide"])
@@ -279,7 +282,8 @@ enum SettingsSearchCatalog {
             .aiProviders, "Providers",
             keywords: [
                 "sign in", "connect", "codex", "claude", "grok", "xai", "opencode", "cursor", "agent",
-                "api key", "connection", "base url", "openai", "anthropic", "ollama"
+                "api key", "connection", "base url", "openai", "anthropic", "ollama", "models",
+                "hide models"
             ]),
         .init(.aiDefault, "Default model", keywords: ["llm", "gpt", "claude", "grok"]),
         .init(.aiDefault, "Reasoning effort", keywords: ["thinking", "effort", "deepseek"]),
@@ -329,6 +333,20 @@ enum SettingsSearchCatalog {
             keywords: ["language", "locale"])
     ]
 
+    private static let dictation: [SettingsSearchEntry] = [
+        .init(pane: .dictation, keywords: ["speech", "voice", "transcription", "microphone"]),
+        .init(.dictationDictation, "Enable Dictation"),
+        .init(.dictationCommands, "Shortcut behavior"),
+        .init(.dictationCommands, "Shortcut"),
+        .init(.dictationModel, "Model"),
+        .init(.dictationModel, "Engine", keywords: ["parakeet", "redux", "ultra", "qwen"]),
+        .init(.dictationModel, "Language"),
+        .init(.dictationMemory, "Release model from memory"),
+        .init(.dictationOutput, "Microphone"),
+        .init(.dictationOutput, "When finished"),
+        .init(.dictationOutput, "Adapt capitalization", keywords: ["uppercase", "lowercase", "sentence"])
+    ]
+
     private static let fileSearch: [SettingsSearchEntry] = [
         .init(
             pane: .fileSearch,
@@ -353,11 +371,14 @@ enum SettingsSearchCatalog {
             .notesNotes, "Enable Notes",
             keywords: ["markdown", "scratchpad"]),
         .init(
-            .notesNotes, "Render Markdown",
+            .notesOptions, "Render Markdown",
             keywords: ["markdown", "formatting", "preview", "raw", "source"]),
         .init(
-            .notesNotes, "Show Formatting Bar",
+            .notesOptions, "Show Formatting Bar",
             keywords: ["toolbar", "format bar", "buttons", "bold", "heading", "markdown"]),
+        .init(
+            .notesOptions, "Notes Folder",
+            keywords: ["location", "path", "dotfiles", "files", "markdown"]),
         .init(
             group: .notesCommands, "Notes commands",
             keywords: ["shortcut", "new note", "search notes"])
@@ -378,7 +399,7 @@ enum SettingsSearchCatalog {
             keywords: ["add", "keyword", "expansion"]),
         .init(
             .snippetsLibrary, "Snippets Folder",
-            keywords: ["reveal", "finder", "markdown", "files"])
+            keywords: ["reveal", "finder", "markdown", "files", "location", "path", "dotfiles"])
     ]
 
     private static let navigation: [SettingsSearchEntry] = [
@@ -413,11 +434,16 @@ enum SettingsSearchCatalog {
             .windowManagementOptions, "Gap between windows",
             keywords: ["padding", "spacing", "margin", "points"]),
         .init(
+            .windowManagementOptions, "Shortcut preset",
+            keywords: ["rectangle", "magnet", "spectacle", "defaults", "import", "shortcuts"]),
+        .init(
             group: .windowManagementOptions, "Window commands",
             keywords: ["shortcut", "left half", "maximize", "center"]),
         .init(
-            group: .windowManagementLayoutCommands, "Layout commands",
-            keywords: ["shortcut", "launcher", "create layout", "capture"]),
+            group: .windowManagementLayoutCommands, "Layout and room commands",
+            keywords: [
+                "shortcut", "launcher", "create layout", "capture", "switch room", "create room"
+            ]),
         .init(
             group: .windowManagementLayouts, "Window Layouts",
             keywords: [
@@ -433,6 +459,18 @@ enum SettingsSearchCatalog {
         .init(
             .windowManagementLayouts, "Create Layout from Current Windows",
             keywords: ["capture", "snapshot", "current", "save arrangement"]),
+        .init(
+            group: .windowManagementRooms, "Rooms",
+            keywords: [
+                "room", "project", "workspace", "tile", "focus", "columns", "grid", "stack",
+                "hide other apps", "switch project"
+            ]),
+        .init(
+            .windowManagementRooms, "Show rooms in launcher",
+            keywords: ["hide", "visibility", "search"]),
+        .init(
+            .windowManagementRooms, "New Room",
+            keywords: ["add", "create", "project", "windows"]),
         .init(
             group: .windowManagementCustomSizes, "Custom Sizes",
             keywords: ["custom", "size", "resize", "dimensions", "pixels", "points", "percent"]),
@@ -491,17 +529,17 @@ enum SettingsSearchCatalog {
             .calendarCalendar, "Join meetings from Tinycast",
             keywords: ["zoom", "meet", "teams", "permission"]),
         .init(
-            .calendarSchedule, "Upcoming meetings in launcher",
+            .calendarCalendar, "Upcoming meetings in launcher",
             keywords: ["count", "limit", "events"]),
-        .init(
-            .calendarSchedule, "Include Tomorrow's Events",
-            keywords: ["next day", "range"]),
         .init(
             .calendarJoining, "Show the join card",
             keywords: ["hud", "timing", "early", "reminder"]),
         .init(
             .calendarJoining, "Auto Join Meetings",
             keywords: ["automatic", "start"]),
+        .init(
+            .calendarJoining, "Only join known meeting services",
+            keywords: ["zoom", "meet", "teams", "links", "placeholder", "skip"]),
         .init(
             .calendarJoining, "Confirm before joining",
             keywords: ["ask", "prompt"]),
@@ -514,6 +552,9 @@ enum SettingsSearchCatalog {
         .init(
             .calendarMenuBar, "Calendar in Menu Bar",
             keywords: ["status item", "menubar", "date"]),
+        .init(
+            .calendarMenuBar, "Days to Show",
+            keywords: ["tomorrow", "week", "next 7 days", "range", "agenda", "schedule"]),
         .init(
             .calendarMenuBar, "Show Upcoming Events",
             keywords: ["menubar", "next event", "title"]),
@@ -543,10 +584,10 @@ enum SettingsSearchCatalog {
             keywords: ["raycast", "third party", "javascript"]),
         .init(
             .extensionsInstall, "Search extensions",
-            keywords: ["store", "browse", "install", "registry"]),
+            keywords: ["store", "browse", "install"]),
         .init(
-            group: .extensionsInstall, "Registries",
-            keywords: ["github", "source", "store"]),
+            .extensionsInstall, "Install from GitHub",
+            keywords: ["source", "build", "repository", "package manager", "pnpm", "npm", "yarn", "bun"]),
         .init(
             .extensionsInstall, "Import from Raycast",
             keywords: ["migrate", "existing"]),
@@ -555,7 +596,9 @@ enum SettingsSearchCatalog {
             keywords: ["local", "develop", "sideload"]),
         .init(
             group: .extensionsInstalled, "Installed extensions",
-            keywords: ["library", "uninstall", "preferences", "appearance", "alias", "shortcut"]),
+            keywords: [
+                "library", "uninstall", "update", "preferences", "appearance", "alias", "shortcut"
+            ]),
         .init(
             group: .extensionsCompatibility, "Compatibility",
             keywords: ["supported", "unsupported", "raycast api"]),
@@ -573,7 +616,10 @@ enum SettingsSearchCatalog {
             keywords: ["paste", "keystrokes", "privacy", "grant"]),
         .init(
             .permissionsCalendars, "Calendars",
-            keywords: ["events", "privacy", "grant", "eventkit"])
+            keywords: ["events", "privacy", "grant", "eventkit"]),
+        .init(
+            .permissionsMicrophone, "Microphone",
+            keywords: ["dictation", "recording", "privacy", "grant"])
     ]
 
     private static let backup: [SettingsSearchEntry] = [
@@ -588,7 +634,10 @@ enum SettingsSearchCatalog {
             keywords: ["restore", "choose", "tinycast file"]),
         .init(
             .backupImportFromRaycast, "Raycast Export",
-            keywords: ["migrate", "rayconfig", "passphrase"])
+            keywords: ["migrate", "rayconfig", "passphrase"]),
+        .init(
+            .backupSettingsFile, "Sync settings file",
+            keywords: ["settings.json", "config", "json", "dotfiles", ".config", "edit"])
     ]
 
     private static let about: [SettingsSearchEntry] = [

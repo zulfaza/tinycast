@@ -8,6 +8,9 @@
 // `parallel` serves one thread per request and holds both replies until the harness releases them,
 // so two turns are live at once.
 //
+// `api-auth`, `auth-required` and `auth-undetermined` answer `account/read` the way a custom
+// provider, a signed-out OpenAI route and a server without the `requiresOpenaiAuth` flag do.
+//
 // `TC_STUB_ROOT` is the scratch directory the harness and this process signal through;
 // `TC_STUB_MODE` picks which half of the turn ID to withhold, or `parallel`.
 
@@ -168,6 +171,7 @@ function toolPair(read) {
 let initialized = false;
 let threads = 0;
 let turns = 0;
+const research = new Map();
 
 /** Answers at once, then holds the second turn until `release` and finishes both. */
 function parallelTurn(message) {
@@ -214,8 +218,43 @@ for (;;) {
     } else if (method === "thread/start") {
         record(`thread-params:${JSON.stringify(message.params ?? {})}`);
         threads += 1;
-        const thread = MODE === "parallel" ? `thread-${threads}` : THREAD;
+        const thread = MODE === "parallel" || MODE === "research" ? `thread-${threads}` : THREAD;
         emit({ id: requestID, result: { thread: { id: thread } } });
+    } else if (method === "thread/inject_items") {
+        record(`history-params:${JSON.stringify(message.params ?? {})}`);
+        emit({ id: requestID, result: {} });
+    } else if (method === "turn/start" && MODE === "research") {
+        turns += 1;
+        const thread = message.params.threadId;
+        const turn = `turn-${turns}`;
+        const prompt = message.params.input.find((item) => item.type === "text")?.text;
+        record(`turn-params:${JSON.stringify(message.params)}`);
+        emit({ id: requestID, result: { turn: { id: turn } } });
+        emit({ method: "turn/started", params: { threadId: thread, turn: { id: turn } } });
+        let text;
+        if (prompt === "Find recent benchmarks") {
+            research.set(thread, `https://example.com/${thread}/benchmark`);
+            const item = { type: "webSearch", id: `search-${turns}`, query: "recent benchmarks" };
+            emit({ method: "item/started", params: { threadId: thread, item } });
+            emit({ method: "item/completed", params: { threadId: thread, item } });
+            text = "A model benchmark.";
+        } else {
+            text = research.get(thread) ?? "Please provide the source.";
+        }
+        emit({ method: "item/agentMessage/delta", params: { threadId: thread, delta: text } });
+        if (prompt === "Hold") continue;
+        emit({
+            method: "turn/completed",
+            params: { threadId: thread, turn: { id: turn, status: prompt === "Fail" ? "failed" : "completed" } },
+        });
+    } else if (method === "turn/start" && MODE === "api-auth") {
+        emit({ method: "turn/started", params: { threadId: THREAD, turn: { id: TURN } } });
+        emit({ id: requestID, result: { turn: { id: TURN } } });
+        emit({ method: "item/agentMessage/delta", params: { threadId: THREAD, delta: "ready" } });
+        emit({
+            method: "turn/completed",
+            params: { threadId: THREAD, turn: { id: TURN, status: "completed" } },
+        });
     } else if (method === "turn/start" && MODE === "parallel") {
         parallelTurn(message);
     } else if (method === "turn/start") {
@@ -246,7 +285,14 @@ for (;;) {
         // alone. `hold-both` answers it too, so a turn named twice is still interrupted once.
         if (MODE === "hold-both") emit({ id: requestID, result: { turn: { id: TURN } } });
     } else if (method === "account/read") {
-        emit({ id: requestID, result: { account: { type: "chatgpt", planType: "plus" } } });
+        const result = MODE === "api-auth"
+            ? { account: null, requiresOpenaiAuth: false }
+            : MODE === "auth-required" ? { account: null, requiresOpenaiAuth: true }
+            : MODE === "auth-undetermined" ? { account: null }
+            : { account: { type: "chatgpt", planType: "plus" }, requiresOpenaiAuth: true };
+        emit({ id: requestID, result });
+    } else if (method === "model/list" && MODE === "api-auth") {
+        emit({ id: requestID, result: { data: [{ model: "custom-model", displayName: "Custom model" }] } });
     } else if (method === "turn/interrupt") {
         const params = message.params ?? {};
         record(`interrupt:${params.threadId}:${params.turnId}`);
