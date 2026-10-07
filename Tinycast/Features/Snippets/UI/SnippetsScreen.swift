@@ -13,20 +13,26 @@ struct SnippetsScreen: PaletteScreen {
     /// A disabled snippet is off everywhere, so the browser lists exactly what the launcher does.
     var rows: [StoredSnippet] {
         let _ = store.usageRevision
-        let enabled = store.snippets.filter { $0.snippet.isEnabled }
         let filter = SnippetFilter(query: vm.query.trimmingCharacters(in: .whitespaces))
-        let filtered = enabled.filter(filter.matches)
-        return filtered.sorted { lhs, rhs in
-            let leftGroup = SnippetUsageGroup.allCases.firstIndex(of: store.usage.group(for: lhs.id)) ?? 0
-            let rightGroup = SnippetUsageGroup.allCases.firstIndex(of: store.usage.group(for: rhs.id)) ?? 0
-            if leftGroup != rightGroup { return leftGroup < rightGroup }
-            let leftDate = store.usage.lastUsed(for: lhs.id) ?? .distantPast
-            let rightDate = store.usage.lastUsed(for: rhs.id) ?? .distantPast
-            if leftDate != rightDate { return leftDate > rightDate }
-            let names = lhs.snippet.name.localizedCaseInsensitiveCompare(rhs.snippet.name)
+        let usage = store.usage
+        // Grouping is Calendar maths and this runs several times a render, so classify once per row.
+        let keyed = store.snippets
+            .filter { $0.snippet.isEnabled && filter.matches($0) }
+            .map { record in
+                (
+                    record: record,
+                    group: SnippetUsageGroup.allCases.firstIndex(of: usage.group(for: record.id)) ?? 0,
+                    lastUsed: usage.lastUsed(for: record.id) ?? .distantPast
+                )
+            }
+        return keyed.sorted { lhs, rhs in
+            if lhs.group != rhs.group { return lhs.group < rhs.group }
+            if lhs.lastUsed != rhs.lastUsed { return lhs.lastUsed > rhs.lastUsed }
+            let names = lhs.record.snippet.name.localizedCaseInsensitiveCompare(rhs.record.snippet.name)
             if names != .orderedSame { return names == .orderedAscending }
-            return lhs.id < rhs.id
+            return lhs.record.id < rhs.record.id
         }
+        .map(\.record)
     }
 
     let primaryActionTitle = "Paste Snippet"
