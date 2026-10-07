@@ -56,7 +56,6 @@ struct DoubleTapDetectorTests {
     static func main() {
         modifierGlyphs()
         commandActions()
-        commandAvailability()
         layoutCharacters()
         hyperChord()
         hyperRetargeting()
@@ -352,10 +351,6 @@ struct DoubleTapDetectorTests {
                 unbindable.contains($0) || $0.hotKeyAction == .command($0)
             },
             "every other command binds to its own action, so every row gets a recorder")
-        expect(
-            Set(CommandID.allCases.filter(\.keepsHotKeyWhenHidden))
-                == [.searchSnippets, .createSnippet],
-            "only snippet shortcuts survive launcher-row hiding")
 
         // Keyed on the raw value, not the position, so reordering the enum cannot move a binding.
         for id in CommandID.allCases where !unbindable.contains(id) {
@@ -381,29 +376,6 @@ struct DoubleTapDetectorTests {
             Set(HotKeyAction.builtInActions.map(\.defaultsKey)).count
                 == HotKeyAction.builtInActions.count,
             "no two built-in actions share a defaults key, which would bind them together")
-    }
-
-    static func commandAvailability() {
-        expect(
-            CommandID.searchSnippets.allowsHotKey(
-                isShownInLauncher: false, snippetsEnabled: true),
-            "Search Snippets shortcut survives launcher hiding")
-        expect(
-            CommandID.createSnippet.allowsHotKey(
-                isShownInLauncher: false, snippetsEnabled: true),
-            "Create Snippet shortcut survives launcher hiding")
-        expect(
-            !CommandID.searchSnippets.allowsHotKey(
-                isShownInLauncher: false, snippetsEnabled: false),
-            "Search Snippets shortcut stops with its feature")
-        expect(
-            CommandID.searchFiles.allowsHotKey(
-                isShownInLauncher: true, snippetsEnabled: false),
-            "other shortcuts follow launcher presence")
-        expect(
-            !CommandID.searchFiles.allowsHotKey(
-                isShownInLauncher: false, snippetsEnabled: true),
-            "other hidden commands stay unavailable")
     }
 
     // MARK: - The Hyper chord

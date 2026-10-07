@@ -39,7 +39,6 @@ export function createHarness({ onRender, onFail, verbose = false, stubs = {} } 
   const state = {
     trees: [], failures: [], logs: [], finished: false, hostCalls: [], processCalls: []
   };
-  const state = { trees: [], failures: [], logs: [], finished: false, hostCalls: [] };
 
   const host = {
     log(level, message) {
@@ -354,10 +353,15 @@ async function stubHostCall(api, method, args) {
       const entry = openSockets.get(args[0].id);
       entry?.socket.send(args[0].text ?? Buffer.from(args[0].base64, "base64"));
       return null;
+    }
     case "websocket.close": {
+      const entry = openSockets.get(args[0].id);
       openSockets.delete(args[0].id);
       entry?.socket.close(args[0].code, args[0].reason);
+      return null;
+    }
     case "websocket.ping":
+      return null;
     // Positional arguments throughout, matching `src/api/oauth.js`.
     case "oauth.authorize":
       return { authorizationCode: "auth-code-12345", state: args[1] ?? "" };
@@ -389,6 +393,7 @@ async function openSocket(spec) {
   );
   socket.addEventListener("close", (event) =>
     deliver({ type: "close", code: event.code, reason: event.reason, abnormal: !event.wasClean }),
+  );
   await new Promise((resolve, reject) => {
     socket.addEventListener("open", resolve, { once: true });
     socket.addEventListener("error", () => reject(new Error(`connection to ${spec.url} failed`)), { once: true });

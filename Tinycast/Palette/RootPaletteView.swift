@@ -70,8 +70,6 @@ struct RootPaletteView: View {
             return SnippetsScreen(
                 store: snippets, core: core, vm: vm, openActions: openActions,
                 openArgumentOptions: openArgumentOptions)
-        case .customCommandArguments:
-            return CustomCommandArgumentsScreen(session: core.customCommandArguments, core: core, vm: vm)
         case .emoji:
             return EmojiScreen(
                 index: emojiIndex, frequent: frequentEmoji, pinned: core.pinnedEmoji,
@@ -380,9 +378,7 @@ struct RootPaletteView: View {
                 searchFocused = !screen.hidesSearchField
             }
             // A preserved screen re-summons as it was left, so a menu must end with the palette.
-            .onChange(of: vm.isVisible) {
-                if !vm.isVisible, menuOpen { closeMenus() }
-            }
+            .modifier(PaletteHideObserver { if menuOpen { closeMenus() } })
             .onChange(of: vm.query) {
                 if vm.collapseQueryLineBreaks() { return }
                 land()
@@ -447,7 +443,7 @@ struct RootPaletteView: View {
     @ViewBuilder
     private func paletteSessionObservers(_ content: some View) -> some View {
         content
-            // `prepare` may change nothing, so this intent still snaps the scroll to the origin.
+            // `prepare` may change nothing else, so this still lands the list as freshly opened.
             .onChange(of: vm.resetToken) {
                 if menuOpen { closeMenus() }
                 land()
@@ -683,11 +679,12 @@ struct RootPaletteView: View {
                     .onPreferenceChange(PaletteHeaderFieldFramesKey.self) {
                         headerFieldFrames = $0
                     }
-                Spacer(minLength: 0)
+                // Given room last: at the default priority it would split it with the field.
+                Spacer(minLength: 0).layoutPriority(-1)
             }
             if tabOpensChat {
                 headerGutter(width: metrics.spacing.md)
-                aiChatTabHint
+                quickAITabHint
             }
             // Keyed off the mode, which says which screen is up; the field just flexes narrower.
             if !isCollapsed, vm.mode == .clipboard {
@@ -776,16 +773,16 @@ struct RootPaletteView: View {
     }
 
     /// Nothing else advertises Tab, so the launcher says where it goes.
-    private var aiChatTabHint: some View {
+    private var quickAITabHint: some View {
         BarButton(chrome: .rounded, action: cycleMode) {
             HStack(spacing: metrics.spacing.sm) {
-                Text("AI Chat")
+                Text("Quick AI")
                     .font(metrics.typography.bar)
                     .foregroundStyle(Theme.Colors.textSecondary)
                 KeyCapChip(text: "⇥", style: .outline)
             }
         }
-        .help("Ask AI Chat what you typed  ⇥")
+        .help("Ask Quick AI what you typed  ⇥")
     }
 
     /// Resolved through `PaletteTabAction`, so the hint cannot promise the wrong destination.
@@ -802,7 +799,8 @@ struct RootPaletteView: View {
     /// The field, kept mounted and hidden rather than swapped: a branch would tear its editor down.
     private var headerField: some View {
         searchField
-            .frame(width: searchFieldWidth)
+            // A ceiling, not a size, so the row squeezes a long query before the strip overruns.
+            .frame(minWidth: searchFieldFloor, maxWidth: searchFieldWidth)
             .opacity(hidesSearchField ? 0 : 1)
             .allowsHitTesting(!hidesSearchField)
             .accessibilityHidden(hidesSearchField)
@@ -816,6 +814,10 @@ struct RootPaletteView: View {
     private var searchFieldWidth: CGFloat? {
         if hidesSearchField { return nil }
         return headerAccessory.map(searchFieldWidth)
+    }
+
+    private var searchFieldFloor: CGFloat? {
+        searchFieldWidth.map { min($0, metrics.size.searchFieldMinWidth) }
     }
 
     /// The field's own text, floored for the caret and capped so the strip stays on screen.
@@ -1465,6 +1467,18 @@ private enum OpenMenu {
     case aiModel
     case aiReasoning
     case aiAttachments
+}
+
+/// Reads visibility in its own body, so a summon never re-renders the palette's.
+private struct PaletteHideObserver: ViewModifier {
+    @Environment(PaletteState.self) private var vm
+    let onHide: () -> Void
+
+    func body(content: Content) -> some View {
+        content.onChange(of: vm.isVisible) { _, visible in
+            if !visible { onHide() }
+        }
+    }
 }
 
 /// Its own modifier: the palette's body is already at the type-checker's limit.

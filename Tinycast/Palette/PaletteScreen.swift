@@ -180,8 +180,8 @@ extension PaletteScreen {
                 placeholder: "Search for actions…", placement: .bottom),
             onActivate: onActivate, preferredSelection: filtered.bestMatch)
     }
-     func pasteKeepingWindowOpen(at selection: Int) -> Bool { false }
-     func tertiary(at selection: Int) -> Bool { false }
+    func tertiary(at selection: Int) -> Bool { false }
+    func pasteKeepingWindowOpen(at selection: Int) -> Bool { false }
     func perform(_ shortcut: PaletteShortcut, at selection: Int) -> Bool { false }
     func move(_ delta: Int, axis: PaletteAxis, from selection: Int) -> Int? { nil }
     func headerAccessory(

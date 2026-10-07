@@ -14,7 +14,12 @@ struct CalendarMenuBarLabel: View {
         case (.meetingIcon, let meeting?):
             icon(meeting.link?.provider.sfSymbol ?? "calendar", describing: meeting.title)
         case (.meetingTitle, let meeting?):
-            title(summary(for: meeting))
+            HStack(spacing: Theme.Spacing.xs) {
+                if let color = meeting.calendarColor {
+                    Image(nsImage: color.menuBarDot).accessibilityHidden(true)
+                }
+                title(summary(for: meeting))
+            }
         case (.meetingTitle, nil)
         where !AppCore.shared.calendarCoordinator.hasUpcomingMenuBarEvent:
             title("No upcoming events")

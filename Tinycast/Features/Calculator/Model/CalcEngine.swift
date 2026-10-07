@@ -16,9 +16,10 @@ struct CalcResult: Equatable, Sendable {
         /// CSS lengths copy unspaced ("24px") so the answer pastes straight into a stylesheet.
         static func measurement(_ value: Double, unit: UnitDef) -> Self {
             let text = CalcFormatter.copyText(value)
+            let copySeparator = unit.category == .pixels ? "" : " "
             return .value(
                 display: "\(CalcFormatter.grouped(text)) \(unit.symbol)",
-                copyText: text + (unit.category == .pixels ? "" : " ") + unit.symbol)
+                copyText: text + copySeparator + unit.symbol)
         }
     }
 
@@ -51,7 +52,7 @@ struct CalcResult: Equatable, Sendable {
 
 /// Raw query to answer, or nil when it isn't calculator input. See docs/features/calculator.md.
 enum CalcEngine {
-    /// `now`/`calendar`/`region` are injected so every path is deterministic under the harness.
+    /// Every environment fact is injected; the answer is canonical, for `format` to localize.
     static func evaluate(
         _ raw: String, now: Date, calendar: Calendar, rates: CurrencyRates? = nil,
         region: String? = nil, format: CalcNumberFormat = .english

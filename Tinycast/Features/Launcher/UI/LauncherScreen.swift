@@ -73,9 +73,7 @@ struct LauncherScreen: PaletteScreen {
         // No card over a pinned row: its fields hang off the selection, which must start on it.
         let calc =
             pinned == nil
-            ? CalcMemo.evaluate(
-                vm.query, rates: currencyRates.rates,
-                format: core.regionNumberFormat.format(for: core.settings.calcNumberStyle)) : nil
+            ? CalcMemo.evaluate(vm.query, rates: currencyRates.rates, format: core.calcNumberFormat) : nil
         // After the calculator: `#FF5733` is never arithmetic, so the two can't both answer.
         let color = calc == nil && pinned == nil ? ColorValue.parse(vm.query) : nil
         let fallbacks = core.fallbackCoordinator.entries(for: vm.query)
@@ -287,12 +285,6 @@ struct LauncherScreen: PaletteScreen {
         }
         guard let app = entry(at: selection), app.canRevealInFinder else { return false }
         core.launcherCoordinator.showInFinder(app)
-        return true
-    }
-
-    func tertiary(at selection: Int) -> Bool {
-        guard case .calc(let result) = row(at: selection) else { return false }
-        core.calculatorCoordinator.copyCalculationWithExpression(result)
         return true
     }
 

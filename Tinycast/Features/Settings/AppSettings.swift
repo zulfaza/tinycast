@@ -214,6 +214,7 @@ final class AppSettings {
         didSet { defaults.set(appearance.rawValue, forKey: Key.appearance.rawValue) }
     }
 
+    /// Which separators the calculator reads and writes; `.system` follows Language & Region.
     var calcNumberStyle: CalcNumberStyle {
         didSet { defaults.set(calcNumberStyle.rawValue, forKey: Key.calcNumberStyle.rawValue) }
     }
@@ -530,13 +531,14 @@ final class AppSettings {
         didSet { defaults.set(cameraPreview, forKey: Key.cameraPreview.rawValue) }
     }
 
+    /// Nil opens meeting links in the default browser.
     var meetingBrowserBundleID: String? {
         didSet {
-            if let meetingBrowserBundleID {
-                defaults.set(meetingBrowserBundleID, forKey: Key.meetingBrowser.rawValue)
-            } else {
+            guard let meetingBrowserBundleID else {
                 defaults.removeObject(forKey: Key.meetingBrowser.rawValue)
+                return
             }
+            defaults.set(meetingBrowserBundleID, forKey: Key.meetingBrowser.rawValue)
         }
     }
 
@@ -846,8 +848,9 @@ final class AppSettings {
         calendarMenuBarHidesWhenEmpty =
             defaults.bool(forKey: Key.calendarMenuBarHidesWhenEmpty.rawValue)
         hideCurrentEvent =
-            HideCurrentEvent(rawValue: defaults.integer(forKey: Key.hideCurrentEvent.rawValue))
-            ?? .dontHide
+            defaults.object(forKey: Key.hideCurrentEvent.rawValue)
+            .flatMap { $0 as? Int }
+            .flatMap(HideCurrentEvent.init(rawValue:)) ?? .dontHide
         navigationEnabled = defaults.bool(forKey: Key.navigationEnabled.rawValue)
         menuSearchDisabledApps =
             defaults.stringArray(forKey: Key.menuSearchDisabledApps.rawValue) ?? []
