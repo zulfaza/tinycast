@@ -51,11 +51,18 @@ enum CalcDateFormatters {
         case .template(let template):
             formatter.setLocalizedDateFormatFromTemplate(template)
             // ICU puts U+202F before AM/PM; a plain space keeps a pasted answer plain text.
-            formatter.dateFormat = formatter.dateFormat.replacing("\u{202F}", with: " ")
+            formatter.dateFormat = colonSeparated(formatter.dateFormat.replacing("\u{202F}", with: " "))
         }
         // A zone table plus a few patterns, so the ceiling is bounded by what the grammars format.
         if cache.count >= 64 { cache.removeAll(keepingCapacity: true) }
         cache[key] = formatter
         return formatter.string(from: date)
+    }
+
+    /// Locales like en_ID separate clock fields with `.` or `,`, which reads as a decimal here.
+    private static func colonSeparated(_ format: String) -> String {
+        format
+            .replacing(/([Hhk])[^A-Za-z']+m/) { "\($0.1):m" }
+            .replacing(/m[^A-Za-z']+s/) { _ in "m:s" }
     }
 }
