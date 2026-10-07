@@ -11,6 +11,7 @@ enum Paster {
         _ item: ClipboardItem, store: ClipboardStore, previousApp: NSRunningApplication?
     ) -> Bool {
         guard write(item, store: store) else { return false }
+        store.promote(item)
         previousApp?.activate()
         scheduleCommandV(after: .milliseconds(80))
         return true
@@ -41,7 +42,9 @@ enum Paster {
     /// Put the item on the pasteboard without pasting; the marker stops re-capture.
     @MainActor @discardableResult
     static func copy(_ item: ClipboardItem, store: ClipboardStore) -> Bool {
-        write(item, store: store)
+        guard write(item, store: store) else { return false }
+        store.promote(item)
+        return true
     }
 
     @MainActor @discardableResult
@@ -99,7 +102,7 @@ enum Paster {
         pb.setData(Data(), forType: ClipboardManager.internalType)
     }
 
-    /// Paste into `app` without activating it, so the palette stays open.
+    /// Paste into `app` without activating or promoting, so the palette and its rows hold still.
     @MainActor @discardableResult
     static func pasteInPlace(
         _ item: ClipboardItem, store: ClipboardStore, into app: NSRunningApplication?
@@ -151,8 +154,6 @@ enum Paster {
             guard PasteboardFiles.write(urls, to: pb) else { return false }
         }
         pb.setData(Data(), forType: ClipboardManager.internalType)
-        // The poller skips marked writes, so this is the only promotion point.
-        store.promote(item)
         return true
     }
 

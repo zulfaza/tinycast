@@ -8,6 +8,7 @@ struct SettingsBackup: Codable {
     var customCommands: [CustomCommand]?
     var quicklinks: [Quicklink]?
     var windowLayouts: [WindowLayout]?
+    var windowRooms: [Room]?
     var customWindowSizes: [CustomWindowSize]?
     var favoriteApps: [String]?
     var hiddenLauncherItems: [String]?
@@ -30,6 +31,7 @@ struct SettingsBackup: Codable {
         var emojiSkinTone: String?
         var emojiGridColumns: Int?
         var showInMenuBar: Bool?
+        var automaticallyCheckForUpdates: Bool?
         var popToRootSeconds: Int?
         var escapeKeyBehavior: String?
         var appearance: String?
@@ -62,6 +64,7 @@ struct SettingsBackup: Codable {
         var windowGap: Int?
         var windowCycle: String?
         var windowLayoutsShowInLauncher: Bool?
+        var windowRoomsShowInLauncher: Bool?
         // Carried, unlike `snippetsEnabled`: opening a link grants no permission class of its own.
         var quicklinksEnabled: Bool?
         var quicklinksShowInLauncher: Bool?
@@ -75,10 +78,11 @@ struct SettingsBackup: Codable {
         var calendarShowInLauncher: Bool?
         var calendarLauncherLimit: Int?
         // Carried: it narrows what is read rather than widening what may be reached.
-        var calendarIncludesTomorrow: Bool?
+        var calendarSpan: Int?
         var joinWindowMinutes: Int?
         // `autoJoinMeetings` and `cameraPreview` are absent: an import must arm neither.
         var autoJoinConfirms: Bool?
+        var autoJoinNamedProvidersOnly: Bool?
         var menuBarEvents: Int?
         var calendarMenuBarDisplay: Int?
         var menuBarLinkedEventsOnly: Bool?
@@ -100,6 +104,7 @@ struct SettingsBackup: Codable {
         var windowCommands: [String: HotKeyBinding]?
         var quicklinks: [String: HotKeyBinding]?
         var windowLayouts: [String: HotKeyBinding]?
+        var windowRooms: [String: HotKeyBinding]?
         var customWindowSizes: [String: HotKeyBinding]?
     }
 
@@ -114,6 +119,7 @@ struct SettingsBackup: Codable {
         var customCommands = 0
         var quicklinks = 0
         var windowLayouts = 0
+        var windowRooms = 0
         var customWindowSizes = 0
     }
 }
@@ -136,8 +142,8 @@ extension SettingsBackup {
             hyperKeyQuickPress: s.hyperKeyQuickPress.rawValue,
             emojiSkinTone: s.emojiSkinTone.rawValue,
             emojiGridColumns: s.emojiGridColumns.rawValue,
-            showInMenuBar: UserDefaults.standard.object(forKey: SettingsKey.showInMenuBar) as? Bool
-                ?? true,
+            showInMenuBar: s.showInMenuBar,
+            automaticallyCheckForUpdates: s.automaticallyCheckForUpdates,
             popToRootSeconds: s.popToRootTimeout.rawValue,
             escapeKeyBehavior: s.escapeKeyBehavior.rawValue,
             appearance: s.appearance.rawValue,
@@ -167,6 +173,7 @@ extension SettingsBackup {
             windowGap: s.windowGap,
             windowCycle: s.windowCycle.rawValue,
             windowLayoutsShowInLauncher: s.windowLayoutsShowInLauncher,
+            windowRoomsShowInLauncher: s.windowRoomsShowInLauncher,
             quicklinksEnabled: s.quicklinksEnabled,
             quicklinksShowInLauncher: s.quicklinksShowInLauncher,
             extensionsShowInLauncher: s.extensionsShowInLauncher,
@@ -176,9 +183,10 @@ extension SettingsBackup {
             appleShortcutsEnabled: s.appleShortcutsEnabled,
             calendarShowInLauncher: s.calendarShowInLauncher,
             calendarLauncherLimit: s.calendarLauncherLimit.rawValue,
-            calendarIncludesTomorrow: s.calendarIncludesTomorrow,
+            calendarSpan: s.calendarSpan.rawValue,
             joinWindowMinutes: s.joinWindowMinutes.rawValue,
             autoJoinConfirms: s.autoJoinConfirms,
+            autoJoinNamedProvidersOnly: s.autoJoinNamedProvidersOnly,
             menuBarEvents: s.menuBarEvents.rawValue,
             calendarMenuBarDisplay: s.calendarMenuBarDisplay.rawValue,
             menuBarLinkedEventsOnly: s.menuBarLinkedEventsOnly,
@@ -221,6 +229,10 @@ extension SettingsBackup {
             uniqueKeysWithValues: hk.boundWindowLayoutIDs.compactMap { id in
                 hk.binding(for: .windowLayout(id: id)).map { (id.uuidString.lowercased(), $0) }
             })
+        hotkeys.windowRooms = Dictionary(
+            uniqueKeysWithValues: hk.boundWindowRoomIDs.compactMap { id in
+                hk.binding(for: .windowRoom(id: id)).map { (id.uuidString.lowercased(), $0) }
+            })
         hotkeys.customWindowSizes = Dictionary(
             uniqueKeysWithValues: hk.boundCustomWindowSizeIDs.compactMap { id in
                 hk.binding(for: .customWindowSize(id: id)).map { (id.uuidString.lowercased(), $0) }
@@ -230,6 +242,7 @@ extension SettingsBackup {
         backup.customCommands = core.customCommands.commands
         backup.quicklinks = core.quicklinks.quicklinks
         backup.windowLayouts = core.windowLayouts.layouts
+        backup.windowRooms = core.rooms.rooms
         backup.customWindowSizes = core.customWindowSizes.sizes
         backup.favoriteApps = core.favorites.keys
         backup.hiddenLauncherItems = Array(core.visibility.hiddenItemKeys)
@@ -254,6 +267,9 @@ extension SettingsBackup {
         if let windowLayouts {
             summary.windowLayouts =
                 core.windowLayoutCoordinator.replaceWindowLayouts(windowLayouts)
+        }
+        if let windowRooms {
+            summary.windowRooms = core.roomCoordinator.replaceRooms(windowRooms)
         }
         if let customWindowSizes {
             summary.customWindowSizes =
@@ -291,7 +307,6 @@ extension SettingsBackup {
         }
         if let days = s.clipboardRetentionDays, let retention = ClipboardRetention(rawValue: days) {
             settings.clipboardRetention = retention
-            core.clipboardCoordinator.applyRetention(retention)
             count += 1
         }
         if let apps = s.clipboardDisabledApps {
@@ -327,7 +342,11 @@ extension SettingsBackup {
             count += 1
         }
         if let show = s.showInMenuBar {
-            UserDefaults.standard.set(show, forKey: SettingsKey.showInMenuBar)
+            settings.showInMenuBar = show
+            count += 1
+        }
+        if let automaticallyCheck = s.automaticallyCheckForUpdates {
+            settings.automaticallyCheckForUpdates = automaticallyCheck
             count += 1
         }
         if let secs = s.popToRootSeconds, let timeout = PopToRootTimeout(rawValue: secs) {
@@ -447,6 +466,10 @@ extension SettingsBackup {
             settings.windowLayoutsShowInLauncher = flag
             count += 1
         }
+        if let flag = s.windowRoomsShowInLauncher {
+            settings.windowRoomsShowInLauncher = flag
+            count += 1
+        }
         if let flag = s.quicklinksEnabled {
             settings.quicklinksEnabled = flag
             count += 1
@@ -485,8 +508,8 @@ extension SettingsBackup {
             settings.calendarLauncherLimit = limit
             count += 1
         }
-        if let flag = s.calendarIncludesTomorrow {
-            settings.calendarIncludesTomorrow = flag
+        if let raw = s.calendarSpan, let span = MeetingSpan(rawValue: raw) {
+            settings.calendarSpan = span
             count += 1
         }
         if let raw = s.joinWindowMinutes, let window = JoinWindow(rawValue: raw) {
@@ -495,6 +518,10 @@ extension SettingsBackup {
         }
         if let flag = s.autoJoinConfirms {
             settings.autoJoinConfirms = flag
+            count += 1
+        }
+        if let flag = s.autoJoinNamedProvidersOnly {
+            settings.autoJoinNamedProvidersOnly = flag
             count += 1
         }
         if let raw = s.menuBarEvents, let lead = MenuBarEvents(rawValue: raw) {
@@ -560,6 +587,10 @@ extension SettingsBackup {
             guard let id = UUID(uuidString: rawID), core.windowLayouts.layout(id: id) != nil
             else { continue }
             apply(b, .windowLayout(id: id))
+        }
+        for (rawID, b) in hotkeys.windowRooms ?? [:] {
+            guard let id = UUID(uuidString: rawID), core.rooms.room(id: id) != nil else { continue }
+            apply(b, .windowRoom(id: id))
         }
         for (rawID, b) in hotkeys.customWindowSizes ?? [:] {
             guard let id = UUID(uuidString: rawID), core.customWindowSizes.size(id: id) != nil

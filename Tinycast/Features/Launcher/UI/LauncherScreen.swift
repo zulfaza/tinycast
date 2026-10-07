@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The root search: favorites, suggestions, then one section per entry kind, led by any card.
+/// The root search: favorites, meetings, suggestions, then one section per kind, led by any card.
 struct LauncherScreen: PaletteScreen {
     let appIndex: AppIndex
     let favorites: FavoritesStore
@@ -29,7 +29,9 @@ struct LauncherScreen: PaletteScreen {
     private let pinsFavorites: Bool
     /// How many of `results` are pinned favorites; zero unless the section shows.
     private let favoriteCount: Int
-    /// How many follow the favorites as Suggestions; zero unless the field is empty.
+    /// How many follow the favorites as Meetings; zero unless the field is empty.
+    private let meetingCount: Int
+    /// How many follow the meetings as Suggestions; zero unless the field is empty.
     private let suggestionCount: Int
     /// The `Use "…" with` section, below every result; empty unless something is typed.
     private let fallbacks: [(fallback: Fallback, entry: AppEntry)]
@@ -71,9 +73,7 @@ struct LauncherScreen: PaletteScreen {
         // No card over a pinned row: its fields hang off the selection, which must start on it.
         let calc =
             pinned == nil
-            ? CalcMemo.evaluate(
-                vm.query, rates: currencyRates.rates,
-                format: core.regionNumberFormat.format(for: core.settings.calcNumberStyle)) : nil
+            ? CalcMemo.evaluate(vm.query, rates: currencyRates.rates, format: core.calcNumberFormat) : nil
         // After the calculator: `#FF5733` is never arithmetic, so the two can't both answer.
         let color = calc == nil && pinned == nil ? ColorValue.parse(vm.query) : nil
         let fallbacks = core.fallbackCoordinator.entries(for: vm.query)
@@ -89,6 +89,7 @@ struct LauncherScreen: PaletteScreen {
         self.showSections = pinsFavorites || AppEntry.Kind.named(by: vm.query) != nil
         self.pinsFavorites = pinsFavorites
         self.favoriteCount = pinsFavorites ? ordered.favoriteCount : 0
+        self.meetingCount = pinsFavorites ? ordered.meetingCount : 0
         self.suggestionCount = pinsFavorites ? ordered.suggestionCount : 0
         if let calc {
             self.rows = [.calc(calc)] + entries
@@ -264,33 +265,26 @@ struct LauncherScreen: PaletteScreen {
         }
     }
 
-    /// ⌘↵ pastes calculations; file-backed entries reveal in Finder.
+    /// The card's meeting or a meeting row's; both answer the meeting menu's chords.
+    private func meeting(at selection: Int) -> MeetingEvent? {
+        switch row(at: selection) {
+        case .meeting(let meeting): return meeting
+        case .entry(let app) where app.kind == .meeting:
+            return core.calendarCoordinator.meeting(entryID: app.id)
+        default: return nil
+        }
+    }
+
+    /// ⌘↵ — a meeting copies its link, an answer becomes the query, an entry on disk is revealed.
     func secondary(at selection: Int) -> Bool {
+        if let meeting = meeting(at: selection) {
+            return MeetingActionsMenu.secondary(meeting: meeting, core: core)
+        }
         if case .calc(let result) = row(at: selection) {
-            core.calculatorCoordinator.pasteCalculatorResult(result)
-            return true
+            return core.calculatorCoordinator.putAnswerInSearchBar(result)
         }
         guard let app = entry(at: selection), app.canRevealInFinder else { return false }
         core.launcherCoordinator.showInFinder(app)
-        return true
-    }
-
-    func tertiary(at selection: Int) -> Bool {
-        guard case .calc(let result) = row(at: selection) else { return false }
-        core.calculatorCoordinator.copyCalculationWithExpression(result)
-        return true
-    }
-
-    func perform(_ shortcut: CalcShortcut, at selection: Int) -> Bool {
-        guard case .calc(let result) = row(at: selection) else { return false }
-        switch shortcut {
-        case .pasteAnswer:
-            core.calculatorCoordinator.pasteCalculatorResult(result)
-        case .copyUnformattedAnswer:
-            core.calculatorCoordinator.copyCalculatorUnformatted(result)
-        case .copyQuestionAndAnswer:
-            core.calculatorCoordinator.copyCalculationWithExpression(result)
-        }
         return true
     }
 
@@ -306,17 +300,27 @@ struct LauncherScreen: PaletteScreen {
         switch shortcut {
         case .toggleFavorite: return toggleFavorite(at: selection)
         case .hideFromSearch: return hideFromSearch(at: selection)
-        case .quit: return quit(at: selection)
+        case .quit, .forceQuit: return quit(at: selection, force: shortcut == .forceQuit)
         case .restart: return restart(at: selection)
         case .favoriteSlot(let index): return launchFavorite(at: index)
+        case .copyCalculation: return copyCalculation(at: selection)
+        case .openInApp, .showDetails:
+            guard let meeting = meeting(at: selection) else { return false }
+            return MeetingActionsMenu.perform(shortcut, meeting: meeting, core: core)
         default: return false
         }
     }
 
-    /// ⌃⇧Q — the screen owns the chord, but only a running application has anything to quit.
-    private func quit(at selection: Int) -> Bool {
+    private func copyCalculation(at selection: Int) -> Bool {
+        guard case .calc(let result) = row(at: selection), result.isActionable else { return false }
+        core.calculatorCoordinator.copyCalculationWithExpression(result)
+        return true
+    }
+
+    /// ⌃⇧Q or ⌃⌥⇧Q — the screen owns the chord, but only a running app has anything to quit.
+    private func quit(at selection: Int, force: Bool) -> Bool {
         guard let app = runningApplication(at: selection) else { return false }
-        core.launcherCoordinator.quit(app)
+        core.launcherCoordinator.quit(app, force: force)
         return true
     }
 
@@ -434,6 +438,7 @@ struct LauncherScreen: PaletteScreen {
             results: results,
             selectedRowID: row(at: selection)?.id,
             favoriteCount: favoriteCount,
+            meetingCount: meetingCount,
             suggestionCount: suggestionCount,
             showSections: showSections,
             scroll: scroll,

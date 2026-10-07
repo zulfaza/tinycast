@@ -37,6 +37,11 @@ final class PaletteCoordinator {
 
     var isVisible: Bool { windowController.isVisible }
 
+    var panelFrame: CGRect? { windowController.visibleFrame }
+
+    /// The palette's own view, for AppKit UI anchored to it — a sharing picker, say.
+    var anchorView: NSView? { windowController.anchorView }
+
     /// The app an action acts on: the one displaced, else what a hotkey found frontmost.
     var targetApp: NSRunningApplication? {
         windowController.isVisible
@@ -55,7 +60,9 @@ final class PaletteCoordinator {
         if isShowing(.launcher) {
             hidePalette()
         } else {
-            showPalette(mode: .launcher, restoreAnyMode: true)
+            // A screen its own shortcut summoned has no launcher under it, so this starts at root.
+            let resumesSession = palette.mode == .launcher || palette.canGoBack
+            showPalette(mode: .launcher, restoreAnyMode: resumesSession)
         }
     }
 

@@ -17,6 +17,9 @@ struct CodexTurnTests {
     }
 
     static func main() async {
+        await aCustomProviderIsReadyWithoutAnAccount()
+        await aColdTurnChecksAccessItself()
+        await aSignedOutRouteIsNeverReady()
         await stopBeforeTurnStartedStillInterrupts()
         await aTurnNamedTwiceIsInterruptedOnce()
         await tinycastsServersAreLaunchedAndTheUsersOwnAreNot()
@@ -24,6 +27,7 @@ struct CodexTurnTests {
         await aRefusedCallIsAFailedRowAndAnHonestReply()
         await aForeignServersElicitationIsNeverAsked()
         await aListThatCannotBeReadRefusesToStart()
+        await theListingRunsUnderFindersPath()
         await concurrentStartsLaunchOnce()
         await aStatusCheckJoinsATurnsPendingLaunch()
         await aChangedListRelaunchesAndTheSameOneDoesNot()
@@ -35,9 +39,325 @@ struct CodexTurnTests {
         await stoppingOneChatLeavesTheOther()
         await twoChatsStartingColdShareOneHandshake()
         await aRelaunchEndsTheOtherChatsThreadWithAReason()
+        await followUpsKeepTheirChatsResearch()
+        await identicalChatsKeepSeparateResearch()
+        await changedTurnsStartWithTheSuppliedHistory()
+        await failedAndStoppedTurnsNeverBecomeContext()
+        await resettingAndRelaunchingDropRetainedThreads()
+        await enabledToolsHaveConsistentInstructions()
 
         print("\(passes) passed, \(failures) failed")
         if failures > 0 { exit(1) }
+    }
+
+    static func followUpsKeepTheirChatsResearch() async {
+        guard let server = StubServer(mode: "research") else {
+            expect(false, "the research stub installs")
+            return
+        }
+        defer { server.tearDown() }
+        let id = UUID()
+        let question = AIMessage(role: .user, text: "Find recent benchmarks")
+        let first = AIRequest(messages: [question], webSearch: true, conversationID: id)
+        let summary = await server.reply(to: first)
+        expect(summary.text == "A model benchmark." && summary.error == nil, "research completes")
+        let next = AIRequest(
+            messages: [
+                question, AIMessage(role: .assistant, text: summary.text),
+                AIMessage(role: .user, text: "Elaborate")
+            ],
+            webSearch: true, conversationID: id)
+        let detail = await server.reply(to: next)
+        expect(
+            detail.text == "https://example.com/thread-1/benchmark" && detail.error == nil,
+            "a follow-up can access the source fetched in the preceding turn")
+        expect(
+            server.received.split(separator: "\n").count { $0 == "thread/start" } == 1,
+            "a completed conversation keeps its ephemeral thread")
+        expect(!server.received.contains("thread/inject_items"), "continuing never duplicates history")
+        let withEffort = await server.reply(
+            to: AIRequest(
+                messages: next.messages + [
+                    AIMessage(role: .assistant, text: detail.text),
+                    AIMessage(role: .user, text: "Verify")
+                ],
+                webSearch: true, conversationID: id), effort: "high")
+        expect(withEffort.text == detail.text, "changing effort preserves research")
+        expect(server.parameters("turn").last?["effort"]?.stringValue == "high", "the new effort is sent")
+    }
+
+    static func identicalChatsKeepSeparateResearch() async {
+        guard let server = StubServer(mode: "research") else {
+            expect(false, "the research stub installs")
+            return
+        }
+        defer { server.tearDown() }
+        let question = AIMessage(role: .user, text: "Find recent benchmarks")
+        let firstID = UUID()
+        let secondID = UUID()
+        let first = await server.reply(
+            to: AIRequest(messages: [question], webSearch: true, conversationID: firstID))
+        let second = await server.reply(
+            to: AIRequest(messages: [question], webSearch: true, conversationID: secondID))
+        _ = await server.reply(to: AIRequest(messages: [AIMessage(role: .user, text: "Name this chat")]))
+        for (id, summary, thread) in [(firstID, first.text, "thread-1"), (secondID, second.text, "thread-2")]
+        {
+            let detail = await server.reply(
+                to: AIRequest(
+                    messages: [
+                        question, AIMessage(role: .assistant, text: summary),
+                        AIMessage(role: .user, text: "Elaborate")
+                    ],
+                    webSearch: true, conversationID: id))
+            expect(
+                detail.text == "https://example.com/\(thread)/benchmark",
+                "identical transcripts keep their own sources")
+        }
+        expect(
+            server.parameters("thread").count == 3,
+            "a title gets its own thread without disturbing either chat")
+    }
+
+    static func changedTurnsStartWithTheSuppliedHistory() async {
+        let question = AIMessage(role: .user, text: "Find recent benchmarks")
+        let followUp = AIMessage(role: .user, text: "Elaborate")
+        let complete = [question, AIMessage(role: .assistant, text: "A model benchmark."), followUp]
+        let image = AIImage(data: Data([1, 2]), mimeType: "image/png")
+        for change in ["regenerate", "trimmed", "edited", "model", "instructions", "search", "attachment"] {
+            guard let server = StubServer(mode: "research") else {
+                expect(false, "the research stub installs")
+                return
+            }
+            let id = UUID()
+            let initial = AIRequest(
+                messages: [
+                    AIMessage(role: .user, text: question.text, images: change == "attachment" ? [image] : [])
+                ],
+                webSearch: true, conversationID: id)
+            _ = await server.reply(to: initial)
+            var messages = complete
+            if change == "regenerate" { messages = [question] }
+            if change == "trimmed" { messages = [followUp] }
+            if change == "edited" { messages[1] = AIMessage(role: .assistant, text: "An edited answer.") }
+            let next = AIRequest(
+                instructions: change == "instructions" ? "Be concise." : nil,
+                messages: messages, webSearch: change != "search", conversationID: id)
+            let reply = await server.reply(
+                to: next, model: change == "model" ? "another-model" : "gpt-5-codex")
+            expect(reply.error == nil, "\(change): the replacement turn completes")
+            expect(server.parameters("thread").count == 2, "\(change): a fresh thread avoids stale context")
+            let suppliedHistory = server.parameters("history").last?["items"]?.arrayValue ?? []
+            expect(
+                suppliedHistory.count == messages.count - 1,
+                "\(change): only the supplied history is injected")
+            if change == "search" {
+                expect(
+                    server.parameters("thread").last?["config"]?.objectValue?["web_search"]?.stringValue
+                        == "disabled",
+                    "switching search off takes effect on the new thread")
+            }
+            server.tearDown()
+        }
+    }
+
+    static func failedAndStoppedTurnsNeverBecomeContext() async {
+        for prompt in ["Fail", "Hold"] {
+            guard let server = StubServer(mode: "research") else {
+                expect(false, "the research stub installs")
+                return
+            }
+            let id = UUID()
+            let question = AIMessage(role: .user, text: "Find recent benchmarks")
+            _ = await server.reply(to: AIRequest(messages: [question], webSearch: true, conversationID: id))
+            let history = [question, AIMessage(role: .assistant, text: "A model benchmark.")]
+            let pending = AIRequest(
+                messages: history + [AIMessage(role: .user, text: prompt)], webSearch: true,
+                conversationID: id)
+            if prompt == "Hold" {
+                let task = Task { await server.reply(to: pending) }
+                expect(await server.awaitTurns(2), "the turn to stop starts")
+                task.cancel()
+                _ = await task.value
+                expect(await server.awaitLog("interrupt:"), "stopping the retained thread interrupts it")
+            } else {
+                let failed = await server.reply(to: pending)
+                expect(failed.error != nil, "a failed turn is reported")
+            }
+            let next = await server.reply(
+                to: AIRequest(
+                    messages: pending.messages + [AIMessage(role: .user, text: "Elaborate")],
+                    webSearch: true, conversationID: id))
+            expect(
+                next.text == "Please provide the source.",
+                "\(prompt): the incomplete turn's context is discarded")
+            expect(server.parameters("thread").count == 2, "\(prompt): the next send rebuilds its thread")
+            server.tearDown()
+        }
+    }
+
+    static func resettingAndRelaunchingDropRetainedThreads() async {
+        for change in ["reset", "delete", "relaunch"] {
+            guard let server = StubServer(mode: "research") else {
+                expect(false, "the research stub installs")
+                return
+            }
+            let id = UUID()
+            let question = AIMessage(role: .user, text: "Find recent benchmarks")
+            _ = await server.reply(to: AIRequest(messages: [question], webSearch: true, conversationID: id))
+            if change == "reset" { server.runner.reset() }
+            if change == "delete" { server.runner.discardConversation(id: id) }
+            if change == "relaunch" {
+                do {
+                    try await server.client.start(toolServers: server.servers())
+                } catch {
+                    expect(false, "the helper relaunches: \(error)")
+                }
+            }
+            let next = await server.reply(
+                to: AIRequest(
+                    messages: [
+                        question, AIMessage(role: .assistant, text: "A model benchmark."),
+                        AIMessage(role: .user, text: "Elaborate")
+                    ],
+                    webSearch: true, conversationID: id))
+            expect(next.error == nil, "\(change): a later turn still completes")
+            expect(server.parameters("thread").count == 2, "\(change): the old thread cannot be reused")
+            expect(
+                server.parameters("history").count == 1,
+                "\(change): a new thread receives the visible history")
+            server.tearDown()
+        }
+    }
+
+    static func enabledToolsHaveConsistentInstructions() async {
+        for hasTools in [false, true] {
+            for search in [false, true] {
+                guard let server = StubServer(mode: "research") else {
+                    expect(false, "the research stub installs")
+                    return
+                }
+                let stream = server.runner.stream(
+                    AIRequest(messages: [AIMessage(role: .user, text: "Hello")], webSearch: search),
+                    model: "gpt-5-codex", effort: nil,
+                    toolServers: hasTools ? server.session(allowing: true, asked: Box()) : nil)
+                do {
+                    for try await _ in stream {}
+                } catch {
+                    expect(false, "the permission probe completes: \(error)")
+                }
+                let parameters = server.parameters("thread").last ?? [:]
+                let instructions = parameters["developerInstructions"]?.stringValue ?? ""
+                expect(parameters["ephemeral"]?.boolValue == true, "threads keep research in memory")
+                expect(
+                    instructions.contains("Never execute commands, read local files"),
+                    "local access stays forbidden")
+                expect(
+                    instructions.contains("Never invoke tools") == (!search && !hasTools),
+                    "only a turn with no tools forbids every tool")
+                expect(
+                    instructions.contains("the MCP tools supplied") == hasTools,
+                    "MCP permission matches the supplied tools")
+                expect(
+                    instructions.contains("Do not use web search.") == !search,
+                    "search permission matches the configuration")
+                server.tearDown()
+            }
+        }
+    }
+
+    /// A custom provider's `account/read` is no account and `requiresOpenaiAuth: false`.
+    static func aCustomProviderIsReadyWithoutAnAccount() async {
+        guard let server = StubServer(mode: "api-auth") else {
+            expect(false, "the custom provider stub installs")
+            return
+        }
+        let manager = ChatGPTSubscriptionManager(supportDirectory: server.root)
+        defer {
+            manager.stop()
+            server.tearDown()
+        }
+
+        await manager.refresh().value
+        expect(
+            manager.isConnected && manager.access == .provider && manager.account == nil,
+            "a custom provider is ready without an OpenAI account")
+        expect(
+            manager.models.map(\.id) == ["custom-model"],
+            "the custom provider's models are listed")
+
+        let first = await reply(from: manager)
+        let second = await reply(from: manager)
+        expect(
+            first.text == "ready" && second.text == "ready",
+            "turns run on the custom provider: \(first.error ?? second.error ?? "")")
+        expect(
+            server.received.split(separator: "\n").count { $0 == "account/read" } == 1,
+            "access is read once by the check, not again before every turn")
+    }
+
+    /// The turn guard, not only the status check, has to accept a custom provider.
+    static func aColdTurnChecksAccessItself() async {
+        guard let server = StubServer(mode: "api-auth") else {
+            expect(false, "the custom provider stub installs")
+            return
+        }
+        let manager = ChatGPTSubscriptionManager(supportDirectory: server.root)
+        defer {
+            manager.stop()
+            server.tearDown()
+        }
+
+        let cold = await reply(from: manager)
+        expect(
+            cold.text == "ready" && manager.isConnected && manager.access == .provider,
+            "a turn with no check before it runs on a custom provider: \(cold.error ?? "")")
+    }
+
+    /// No account means sign-in, unless Codex says outright that none is needed.
+    static func aSignedOutRouteIsNeverReady() async {
+        for mode in ["auth-required", "auth-undetermined"] {
+            guard let server = StubServer(mode: mode) else {
+                expect(false, "the \(mode) stub installs")
+                continue
+            }
+            let checked = ChatGPTSubscriptionManager(supportDirectory: server.root)
+            await checked.refresh().value
+            expect(
+                checked.phase == .signedOut && !checked.isConnected && checked.models.isEmpty,
+                "\(mode): a check without an account is signed out")
+            checked.stop()
+
+            let stops = { server.received.split(separator: "\n").count { $0 == "stdin-closed" } }
+            let checkStopped = await server.awaitCondition { stops() == 1 }
+            let cold = ChatGPTSubscriptionManager(supportDirectory: server.root)
+            let attempt = await reply(from: cold)
+            expect(
+                attempt.error?.contains("codex login") == true && cold.phase == .signedOut,
+                "\(mode): a turn without an account asks for sign-in and shows signed out")
+            let turnStopped = await server.awaitCondition { stops() == 2 }
+            expect(
+                checkStopped && turnStopped,
+                "\(mode): the signed-out server is stopped, as after a check")
+            cold.stop()
+            server.tearDown()
+        }
+    }
+
+    private static func reply(
+        from manager: ChatGPTSubscriptionManager
+    ) async -> (text: String, error: String?) {
+        let stream = manager.turns.stream(
+            AIRequest(messages: [AIMessage(role: .user, text: "Hello")]),
+            model: "custom-model", effort: nil)
+        var text = ""
+        do {
+            for try await event in stream {
+                if case .text(let delta) = event { text += delta }
+            }
+        } catch {
+            return (text, error.localizedDescription)
+        }
+        return (text, nil)
     }
 
     /// The launch is the boundary: ours named, the reader's disabled, their config never written.
@@ -116,6 +436,57 @@ struct CodexTurnTests {
                 "\(mode): Codex does not start, and says why, rather than run the reader's servers")
             server.tearDown()
         }
+    }
+
+    /// A Finder-launched app's PATH has no `node`, and an npm or Homebrew `codex` is `env node`.
+    static func theListingRunsUnderFindersPath() async {
+        let rule = ExecutableLocator.environment(
+            running: URL(fileURLWithPath: "/opt/tools/bin/codex"),
+            adding: ["PATH": "/elsewhere", "NO_COLOR": "0", "TOKEN": "t"],
+            inherited: ["PATH": "/usr/bin:/bin", "HOME": "/Users/reader"])
+        expect(
+            rule["PATH"] == "/opt/tools/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+            "a CLI's own folder leads its PATH, then Homebrew's, then the PATH the app inherited")
+        expect(
+            rule["NO_COLOR"] == "1" && rule["TOKEN"] == "t" && rule["HOME"] == "/Users/reader",
+            "added variables arrive, but never override the PATH or NO_COLOR")
+
+        guard let server = StubServer(mode: "mcp") else {
+            expect(false, "the stub app-server installs")
+            return
+        }
+        defer { server.tearDown() }
+        let bin = server.root.appending(path: "bin", directoryHint: .isDirectory)
+        let codex = bin.appending(path: "codex")
+        let work = server.root.appending(path: "work", directoryHint: .isDirectory)
+        let node = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":")
+            .map { URL(fileURLWithPath: String($0)).appending(path: "node") }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+        // Beside the CLI, as npm and nvm keep it, so finding it needs no Homebrew on this machine.
+        guard let node,
+            (try? FileManager.default.createSymbolicLink(
+                at: bin.appending(path: "node"), withDestinationURL: node)) != nil
+        else {
+            expect(false, "node is linked beside the stub")
+            return
+        }
+        var finder = ProcessInfo.processInfo.environment
+        finder["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+
+        let names = await CodexAppServerClient.foreignServerNames(
+            executable: codex, workspace: work,
+            codexHome: server.root.appending(path: "home", directoryHint: .isDirectory),
+            inherited: finder)
+        expect(
+            names?.contains("probe") == true,
+            "the reader's servers are read under Finder's PATH, so Codex can start")
+
+        let shellPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        setenv("PATH", finder["PATH"] ?? "", 1)
+        let probe = await InstalledAIProbe.run(
+            executable: codex, arguments: ["mcp", "list", "--json"], workspace: work)
+        setenv("PATH", shellPath, 1)
+        expect(probe.status == 0, "a status probe of an `env node` CLI runs under Finder's PATH too")
     }
 
     /// A status check racing a turn, or two quick sends, must share one app-server.
@@ -587,6 +958,11 @@ final class StubServer {
         setenv("PATH", "\(executable.deletingLastPathComponent().path):\(inherited)", 1)
         // The locator asks a login shell first; the user's rc files would put a real `codex` ahead.
         setenv("ZDOTDIR", root.path, 1)
+        // `/etc/zprofile`'s path_helper puts a Homebrew `codex` ahead of the stub; undo that.
+        try? #"export TINYCAST_SAVED_PATH="$PATH""#.write(
+            to: root.appending(path: ".zshenv"), atomically: true, encoding: .utf8)
+        try? #"[ -n "$TINYCAST_SAVED_PATH" ] && export PATH="$TINYCAST_SAVED_PATH""#.write(
+            to: root.appending(path: ".zprofile"), atomically: true, encoding: .utf8)
         setenv("TC_STUB_ROOT", root.path, 1)
         setenv("TC_STUB_MODE", mode, 1)
 
@@ -630,6 +1006,22 @@ final class StubServer {
             for try await event in stream { events.append(event) }
         } catch {}
         return events
+    }
+
+    func reply(
+        to request: AIRequest, model: String = "gpt-5-codex", effort: String? = nil
+    )
+        async -> (text: String, error: String?)
+    {
+        var text = ""
+        do {
+            for try await event in runner.stream(request, model: model, effort: effort) {
+                if case .text(let delta) = event { text += delta }
+            }
+            return (text, nil)
+        } catch {
+            return (text, error.localizedDescription)
+        }
     }
 
     func streamError(toolServers: AIToolServerSession?) async -> String? {
@@ -695,6 +1087,16 @@ final class StubServer {
 
     var received: String {
         (try? String(contentsOf: root.appending(path: "received.log"), encoding: .utf8)) ?? ""
+    }
+
+    func parameters(_ kind: String) -> [[String: JSONValue]] {
+        let prefix = "\(kind)-params:"
+        return received.split(separator: "\n").compactMap { line in
+            guard line.hasPrefix(prefix), let data = line.dropFirst(prefix.count).data(using: .utf8) else {
+                return nil
+            }
+            return JSONValue(data: data)?.objectValue
+        }
     }
 
     var argv: [String] {

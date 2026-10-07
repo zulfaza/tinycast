@@ -56,11 +56,14 @@ struct DoubleTapDetectorTests {
     static func main() {
         modifierGlyphs()
         commandActions()
-        commandAvailability()
         layoutCharacters()
         hyperChord()
         hyperRetargeting()
+        hyperModifierIsolation()
+        recorderKeycaps()
+        spelling()
         globeTap()
+        sidedModifiers()
         globeChord()
         firing()
         timing()
@@ -73,22 +76,89 @@ struct DoubleTapDetectorTests {
         if failures > 0 { exit(1) }
     }
 
+    // MARK: - Spelling
+
+    /// Enough of a US layout to spell with; the app reads its own through `ASCIIKeyboardLayout`.
+    private static let usKeys = [
+        kVK_ANSI_K: "k", kVK_ANSI_1: "1", kVK_ANSI_Keypad1: "1", kVK_ANSI_Slash: "/",
+        kVK_ANSI_Equal: "="
+    ]
+    private static let hyperModifiers = controlKey | optionKey | shiftKey | cmdKey
+
+    static func spelling() {
+        let plain = HotKeySpelling(characters: usKeys, hyperModifiers: nil)
+        let hyper = HotKeySpelling(characters: usKeys, hyperModifiers: hyperModifiers)
+        func combo(_ keyCode: Int, _ modifiers: Int) -> HotKeyBinding {
+            .combo(KeyShortcut(carbonKeyCode: keyCode, carbonModifiers: modifiers))
+        }
+        func roundTrips(_ binding: HotKeyBinding, as text: String, _ spelling: HotKeySpelling) {
+            expect(spelling.text(for: binding) == text, "\(text) is how the binding spells")
+            expect(spelling.binding(from: text) == binding, "\(text) reads back as the same binding")
+        }
+
+        roundTrips(combo(kVK_LeftArrow, controlKey | optionKey), as: "ctrl+option+left", plain)
+        roundTrips(combo(kVK_ANSI_K, shiftKey | cmdKey), as: "shift+cmd+k", plain)
+        roundTrips(combo(kVK_Space, optionKey), as: "option+space", plain)
+        roundTrips(combo(kVK_F5, 0), as: "f5", plain)
+        roundTrips(combo(kVK_ANSI_Slash, cmdKey), as: "cmd+/", plain)
+        roundTrips(combo(kVK_UpArrow, kEventKeyModifierFnMask | controlKey), as: "fn+ctrl+up", plain)
+        roundTrips(combo(kVK_ANSI_Keypad1, cmdKey), as: "cmd+keypad-1", plain)
+        roundTrips(combo(kVK_ANSI_1, cmdKey), as: "cmd+1", plain)
+        roundTrips(combo(110, controlKey), as: "ctrl+key-110", plain)
+        roundTrips(.doubleTap(.command), as: "double-tap cmd", plain)
+        roundTrips(.doubleTap(.control), as: "double-tap ctrl", plain)
+        roundTrips(.globe, as: "globe", plain)
+        roundTrips(.doubleGlobe, as: "double-tap globe", plain)
+        roundTrips(combo(kVK_ANSI_K, hyperModifiers), as: "hyper+k", hyper)
+        roundTrips(combo(kVK_ANSI_K, controlKey | optionKey | cmdKey), as: "ctrl+option+cmd+k", hyper)
+
+        expect(
+            plain.binding(from: " Command+Shift+K ") == combo(kVK_ANSI_K, shiftKey | cmdKey),
+            "modifiers read in any order, case and alias")
+        expect(
+            plain.binding(from: "alt+space") == combo(kVK_Space, optionKey), "alt reads as option")
+        expect(
+            plain.binding(from: "double-tap command") == .doubleTap(.command),
+            "a double-tap reads its modifier's alias")
+        expect(
+            plain.text(for: combo(kVK_ANSI_K, hyperModifiers)) == "ctrl+option+shift+cmd+k",
+            "without a Hyper key the chord is spelled out")
+        expect(plain.binding(from: "hyper+k") == nil, "without a Hyper key, hyper means nothing")
+
+        let plusKey = HotKeySpelling(characters: [kVK_ANSI_Equal: "+"], hyperModifiers: nil)
+        expect(
+            plusKey.binding(from: "cmd++") == combo(kVK_ANSI_Equal, cmdKey),
+            "a layout's plus key is spelled after the separator")
+
+        expect(plain.binding(from: "k") == nil, "a bare key is refused, as the recorder refuses it")
+        expect(plain.binding(from: "shift+k") == nil, "Shift alone does not command")
+        expect(plain.binding(from: "cmd+") == nil, "a chord needs a key")
+        expect(plain.binding(from: "cmd+nope") == nil, "an unknown key is refused")
+        expect(plain.binding(from: "cmd+key-999") == nil, "a raw key code must be a real one")
+        expect(plain.binding(from: "double-tap fn") == nil, "fn has no double-tap")
+    }
+
     // MARK: - Model
 
     static func globeTap() {
-        var detector = GlobeTapDetector()
+        var detector = ModifierKeyDetector()
+        var globeDown = false
         func globe(
             _ down: Bool, at time: TimeInterval, physical: Bool = true, other: Bool = false
-        ) -> GlobeTapDetector.Gesture? {
-            detector.handle(
-                isGlobeKey: physical, functionDown: down, hasOtherModifiers: other, at: time)
+        ) -> HotKeyBinding? {
+            if physical { globeDown = down }
+            var keys: Set<ModifierKey> = globeDown ? [.globe] : []
+            if other { keys.insert(.leftShift) }
+            guard case .released(let key, let doubleTap, false) = detector.handle(keys, at: time)
+            else { return nil }
+            return doubleTap ? key.doubleBinding : key.singleBinding
         }
 
         expect(globe(true, at: 0) == nil, "Globe press waits for release")
-        expect(globe(false, at: 0.05) == .single, "lone Globe fires on release")
+        expect(globe(false, at: 0.05) == .globe, "lone Globe fires on release")
         expect(globe(false, at: 0.10) == nil, "a second release without a press does nothing")
         expect(globe(true, at: 0.25) == nil, "a second Globe press waits for release")
-        expect(globe(false, at: 0.30) == .double, "two quick Globe presses form a double tap")
+        expect(globe(false, at: 0.30) == .doubleGlobe, "two quick Globe presses form a double tap")
 
         _ = globe(true, at: 1)
         _ = globe(true, at: 1.02, physical: false, other: true)
@@ -101,9 +171,9 @@ struct DoubleTapDetectorTests {
         expect(globe(false, at: 3.05, physical: false) == nil, "an F-key cannot finish Globe")
 
         _ = globe(true, at: 4)
-        expect(globe(false, at: 4.05) == .single, "first release remains a single candidate")
+        expect(globe(false, at: 4.05) == .globe, "first release remains a single candidate")
         _ = globe(true, at: 4.40)
-        expect(globe(false, at: 4.45) == .single, "a late second press starts a new tap")
+        expect(globe(false, at: 4.45) == .globe, "a late second press starts a new tap")
         _ = globe(true, at: 5)
         expect(globe(false, at: 5.30) == nil, "holding Globe is not a tap")
 
@@ -135,6 +205,100 @@ struct DoubleTapDetectorTests {
             KeyShortcut(carbonKeyCode: kVK_ANSI_J, carbonModifiers: Int.max).carbonModifiers
                 == KeyShortcut.carbonModifiers(from: [.function, .control, .option, .shift, .command]),
             "decoding keeps fn but still discards unrelated modifier bits")
+    }
+
+    static func sidedModifiers() {
+        let spelling = HotKeySpelling(characters: usKeys, hyperModifiers: nil)
+        let physicalMasks: [(UInt64, ModifierKey)] = [
+            (0x1, .leftControl), (0x2000, .rightControl),
+            (0x20, .leftOption), (0x40, .rightOption),
+            (0x2, .leftShift), (0x4, .rightShift),
+            (0x8, .leftCommand), (0x10, .rightCommand)
+        ]
+        for (mask, key) in physicalMasks {
+            expect(
+                ModifierKey.held(in: mask | 0xFFFF_0000, globeDown: false) == [key],
+                "\(key) comes from its own device flag, not generic flags")
+        }
+        expect(
+            ModifierKey.held(in: 0, globeDown: true) == [.globe],
+            "only a physical Globe transition introduces Globe")
+        for key in ModifierKey.allCases {
+            for binding in [key.singleBinding, key.doubleBinding] {
+                let encoded = try? JSONEncoder().encode(binding)
+                expect(
+                    encoded.flatMap { try? JSONDecoder().decode(HotKeyBinding.self, from: $0) }
+                        == binding, "\(binding) persists without losing its side")
+                expect(
+                    spelling.binding(from: spelling.text(for: binding)) == binding,
+                    "\(binding) round-trips in settings.json")
+            }
+            var detector = ModifierKeyDetector()
+            expect(detector.handle([key], at: 0) == .pressed(key), "\(key) presses immediately")
+            expect(
+                detector.handle([], at: 0.05) == .released(key, doubleTap: false, held: false),
+                "\(key) single tap")
+            _ = detector.handle([key], at: 0.2)
+            expect(
+                detector.handle([], at: 0.25) == .released(key, doubleTap: true, held: false),
+                "\(key) double tap")
+            _ = detector.handle([key], at: 1)
+            expect(
+                detector.handle([], at: 2) == .released(key, doubleTap: false, held: true),
+                "\(key) can be recorded by holding")
+            _ = detector.handle([key], at: 3)
+            detector.cancel()
+            expect(detector.handle([], at: 4) == nil, "\(key) a chord cannot finish a hold")
+            _ = detector.handle([key], at: 5)
+            detector.reset()
+            expect(detector.handle([], at: 6) == nil, "\(key) reset discards a held key")
+        }
+
+        var detector = ModifierKeyDetector()
+        _ = detector.handle([.leftCommand], at: 0)
+        _ = detector.handle([], at: 0.05)
+        _ = detector.handle([.rightCommand], at: 0.1)
+        expect(
+            detector.handle([], at: 0.15)
+                == .released(.rightCommand, doubleTap: false, held: false),
+            "opposite sides cannot complete each other's double tap")
+        _ = detector.handle([.leftCommand], at: 1)
+        expect(
+            detector.handle([.leftCommand, .rightCommand], at: 1.1) == .cancelled,
+            "both Command keys held cancels the lone press")
+        expect(
+            detector.handle([.rightCommand], at: 1.2) == .cancelled,
+            "unwinding a chord does not start a fresh hold")
+        expect(detector.handle([], at: 1.3) == nil, "a chord release cannot trigger a tap")
+        expect(
+            ModifierKey.held(in: 0x18, globeDown: false) == [.leftCommand, .rightCommand],
+            "device flags distinguish both Command keys")
+        expect(
+            ModifierKey.held(in: 0xFFFF_0080, globeDown: false).isEmpty,
+            "generic flags and Caps Lock alone cannot invent a physical key")
+        expect(
+            ModifierKey.leftCommand.singleBinding.keycaps == ["Left", "⌘"],
+            "the physical side is visible in every shortcut display")
+        expect(
+            !HotKeyBinding.modifier(.leftCommand).conflicts(with: .modifier(.rightCommand)),
+            "different sides can hold separate actions")
+        expect(
+            HotKeyBinding.doubleTap(.command).conflicts(with: .doubleModifier(.leftCommand)),
+            "generic and sided double taps overlap")
+        expect(
+            !HotKeyBinding.modifier(.leftCommand).conflicts(with: .doubleModifier(.leftCommand)),
+            "a single and double tap can coexist")
+        expect(
+            HotKeyBinding.modifier(.leftCommand).conflicts(
+                with: .doubleModifier(.leftCommand), holdsModifier: true),
+            "a hold reserves its key across single and double taps")
+        expect(
+            HotKeyBinding.modifier(.leftCommand).conflicts(
+                with: .doubleTap(.command), holdsModifier: true),
+            "a hold cannot shadow a generic double tap")
+        expect(
+            spelling.binding(from: "left cmd+k") == nil,
+            "ordinary combinations remain side-agnostic")
     }
 
     static func modifierGlyphs() {
@@ -170,6 +334,14 @@ struct DoubleTapDetectorTests {
     // MARK: - Built-in command mappings
 
     static func commandActions() {
+        expect(
+            HotKeyAction.systemAction(id: .toggleMicrophoneMute).defaultsKey
+                == "hotkey.systemAction.toggle-microphone-mute",
+            "microphone mute persists under its own global hotkey key")
+        expect(
+            HotKeyAction.systemAction(id: .toggleMicrophoneMute).defaultsKey
+                != HotKeyAction.systemAction(id: .toggleMute).defaultsKey,
+            "microphone and output mute can have independent hotkeys")
         let unbindable = Set(CommandID.allCases.filter { $0.hotKeyAction == nil })
         expect(
             unbindable == [.openInBrowser, .runShellCommand, .quit],
@@ -179,10 +351,6 @@ struct DoubleTapDetectorTests {
                 unbindable.contains($0) || $0.hotKeyAction == .command($0)
             },
             "every other command binds to its own action, so every row gets a recorder")
-        expect(
-            Set(CommandID.allCases.filter(\.keepsHotKeyWhenHidden))
-                == [.searchSnippets, .createSnippet],
-            "only snippet shortcuts survive launcher-row hiding")
 
         // Keyed on the raw value, not the position, so reordering the enum cannot move a binding.
         for id in CommandID.allCases where !unbindable.contains(id) {
@@ -208,29 +376,6 @@ struct DoubleTapDetectorTests {
             Set(HotKeyAction.builtInActions.map(\.defaultsKey)).count
                 == HotKeyAction.builtInActions.count,
             "no two built-in actions share a defaults key, which would bind them together")
-    }
-
-    static func commandAvailability() {
-        expect(
-            CommandID.searchSnippets.allowsHotKey(
-                isShownInLauncher: false, snippetsEnabled: true),
-            "Search Snippets shortcut survives launcher hiding")
-        expect(
-            CommandID.createSnippet.allowsHotKey(
-                isShownInLauncher: false, snippetsEnabled: true),
-            "Create Snippet shortcut survives launcher hiding")
-        expect(
-            !CommandID.searchSnippets.allowsHotKey(
-                isShownInLauncher: false, snippetsEnabled: false),
-            "Search Snippets shortcut stops with its feature")
-        expect(
-            CommandID.searchFiles.allowsHotKey(
-                isShownInLauncher: true, snippetsEnabled: false),
-            "other shortcuts follow launcher presence")
-        expect(
-            !CommandID.searchFiles.allowsHotKey(
-                isShownInLauncher: false, snippetsEnabled: true),
-            "other hidden commands stay unavailable")
     }
 
     // MARK: - The Hyper chord
@@ -323,6 +468,107 @@ struct DoubleTapDetectorTests {
                 expect(
                     shortcut.retargetingHyper(includesShift: includesShift) == shortcut,
                     "\(KeyShortcut.modifierSymbols(from: flags).joined()) is not a Hyper chord")
+            }
+        }
+    }
+
+    static func recorderKeycaps() {
+        for (key, prefix, glyph) in [
+            (ModifierKey.leftControl, "L", "⌃"), (.rightControl, "R", "⌃"),
+            (.leftOption, "L", "⌥"), (.rightOption, "R", "⌥"),
+            (.leftShift, "L", "⇧"), (.rightShift, "R", "⇧"),
+            (.leftCommand, "L", "⌘"), (.rightCommand, "R", "⌘")
+        ] {
+            expect(key.singleBinding.recorderPrefix == prefix, "\(key) uses a compact side label")
+            expect(key.singleBinding.recorderKeycaps == [glyph], "\(key) needs only one cap")
+            expect(key.doubleBinding.recorderPrefix == nil, "double \(key) has no side label")
+            expect(key.doubleBinding.keycaps == [glyph, glyph], "double \(key) displays only glyphs")
+            expect(key.doubleBinding.recorderKeycaps == [glyph, glyph], "double \(key) has two caps")
+        }
+        for binding in [
+            HotKeyBinding.globe, .doubleGlobe, .doubleTap(.command),
+            .combo(combo([.command, .shift]))
+        ] {
+            expect(binding.recorderPrefix == nil, "\(binding) has no physical side label")
+            expect(binding.recorderKeycaps == binding.keycaps, "\(binding) keeps its existing caps")
+        }
+    }
+
+    static func hyperModifierIsolation() {
+        let previousChord = KeyShortcut.displayedHyperChord
+        defer { KeyShortcut.displayedHyperChord = previousChord }
+        for includesShift in [false, true] {
+            let chord = KeyShortcut.hyperChord(includesShift: includesShift)
+            KeyShortcut.displayedHyperChord = { chord }
+            // Hyper adds left device bits; a remapped right key may retain its own bit too.
+            let leftBits: UInt64 = includesShift ? 0x2B : 0x29
+            let residues: [(HyperKeyPhysicalKey, UInt64)] = [
+                (.capsLock, 0), (.rightControl, 0x2000), (.rightOption, 0x40),
+                (.rightCommand, 0x10), (.rightShift, includesShift ? 0x4 : 0)
+            ]
+            for (physicalKey, residue) in residues {
+                let flags = NSEvent.ModifierFlags(rawValue: chord.rawValue | UInt(leftBits | residue))
+                let keys = ModifierKey.held(in: UInt64(flags.rawValue), globeDown: false)
+                let context = "\(physicalKey), Include Shift \(includesShift)"
+                expect(keys.count >= 3, "\(context): Hyper never looks like a lone physical key")
+                let recorded = KeyShortcut(keyCode: kVK_ANSI_G, modifierFlags: flags)
+                expect(recorded == combo(chord), "\(context): recording discards all device bits")
+                if let recorded {
+                    let binding = HotKeyBinding.combo(recorded)
+                    expect(binding.recorderKeycaps == ["✦", "G"], "\(context): Hyper keeps its glyph")
+                    expect(binding.recorderPrefix == nil, "\(context): Hyper has no L/R prefix")
+                }
+
+                for duration in [0.05, 0.8] {
+                    var sided = ModifierKeyDetector()
+                    var generic = DoubleTapDetector()
+                    let modifiers = Set(keys.compactMap(\.modifier))
+                    for time in [0.0, 1.0] {
+                        expect(
+                            sided.handle(keys, at: time) == .cancelled,
+                            "\(context): Hyper cannot start dictation's lone-key hold")
+                        expect(
+                            sided.handle(keys, at: time + 0.01) == nil,
+                            "\(context): repeated Hyper flags cannot start a hold")
+                        expect(
+                            sided.handle([], at: time + duration) == nil,
+                            "\(context): Hyper release cannot complete a single or double tap")
+                        expect(
+                            generic.handle(
+                                .modifiers(modifiers, hasOtherModifiers: false),
+                                at: time) == nil, "\(context): Hyper is not a generic modifier tap")
+                        expect(
+                            generic.handle(
+                                .modifiers([], hasOtherModifiers: false),
+                                at: time + duration) == nil, "\(context): Hyper release never double-taps")
+                    }
+                }
+
+                for survivor in ModifierKey.allCases {
+                    var detector = ModifierKeyDetector()
+                    _ = detector.handle([survivor], at: 0)
+                    expect(
+                        detector.handle(keys.union([survivor]), at: 0.05) == .cancelled,
+                        "\(context): adding Hyper cancels \(survivor)'s pending hold")
+                    expect(
+                        detector.handle([survivor], at: 0.1) == .cancelled,
+                        "\(context): releasing Hyper cannot restart \(survivor)'s hold")
+                    expect(
+                        detector.handle([], at: 0.15) == nil,
+                        "\(context): unwinding Hyper cannot fire \(survivor)'s tap")
+                    _ = detector.handle([survivor], at: 0.2)
+                    expect(
+                        detector.handle([], at: 0.25)
+                            == .released(survivor, doubleTap: false, held: false),
+                        "\(context): a fresh \(survivor) tap still works after Hyper")
+                    _ = detector.handle(keys, at: 0.3)
+                    _ = detector.handle([], at: 0.35)
+                    _ = detector.handle([survivor], at: 0.4)
+                    expect(
+                        detector.handle([], at: 0.45)
+                            == .released(survivor, doubleTap: false, held: false),
+                        "\(context): Hyper interrupts an awaiting \(survivor) double tap")
+                }
             }
         }
     }

@@ -1,5 +1,10 @@
 import SwiftUI
 
+extension AppCore {
+    /// Reads both observables, so a changed setting or region re-renders every calculator surface.
+    var calcNumberFormat: CalcNumberFormat { regionNumberFormat.format(for: settings.calcNumberStyle) }
+}
+
 /// One-deep memo over `CalcEngine.evaluate`, keyed on the rate snapshot's `fetchedAt`.
 @MainActor
 enum CalcMemo {
@@ -13,20 +18,17 @@ enum CalcMemo {
 
     private static var cache: Cache?
 
-    static func evaluate(
-        _ query: String, rates: CurrencyRates?, format: CalcNumberFormat
-    ) -> CalcResult? {
+    /// The answer stays canonical, so history keeps one spelling whatever the format becomes.
+    static func evaluate(_ query: String, rates: CurrencyRates?, format: CalcNumberFormat) -> CalcResult? {
         let region = RegionCurrency.code
-        if let cache, cache.query == query, cache.stamp == rates?.fetchedAt,
-            cache.region == region, cache.format == format
+        if let cache, cache.query == query, cache.stamp == rates?.fetchedAt, cache.region == region,
+            cache.format == format
         {
             return cache.result
         }
         let result = CalcEngine.evaluate(
             query, now: Date(), calendar: .current, rates: rates, region: region, format: format)
-            .map(format.localized)
-        cache = Cache(
-            query: query, stamp: rates?.fetchedAt, region: region, format: format, result: result)
+        cache = Cache(query: query, stamp: rates?.fetchedAt, region: region, format: format, result: result)
         return result
     }
 }
@@ -34,11 +36,13 @@ enum CalcMemo {
 /// The inline answer card above the app results; selectable like a row, Enter copies.
 struct CalculatorCard: View {
     @Environment(\.metrics) private var metrics
+    @Environment(AppCore.self) private var core
     let result: CalcResult
     let selected: Bool
 
     var body: some View {
-        Group {
+        let result = core.calcNumberFormat.localized(result)
+        return Group {
             switch result.payload {
             case .value(let display, _):
                 HStack(spacing: 0) {
@@ -102,7 +106,7 @@ private enum CalcSyntax {
     private static let connectors: Set<String> = [
         "to", "of", "off", "on", "as", "from", "ago", "at", "tip", "ratio", "average", "avg",
         "mean", "sum", "total", "round", "nearest", "and", "is", "what", "the", "next", "last",
-        "discount", "gratuity", "percentage", "+", "-", "×", "÷", "^", "→", "->", "mod"
+        "+", "-", "×", "÷", "^", "→", "->", "mod"
     ]
 }
 
@@ -110,28 +114,26 @@ private enum CalcSyntax {
 @MainActor
 enum CalcActionsMenu {
     static func content(result: CalcResult, core: AppCore) -> PopoverMenuContent {
-        PopoverMenuContent(
-            header: result.expression,
-            items: [
-                PopoverMenuItem(title: "Copy Answer", systemImage: "doc.on.doc", shortcut: "↵") {
-                    core.calculatorCoordinator.copyCalculatorResult(result)
-                },
+        var items = [
+            PopoverMenuItem(title: "Copy Answer", systemImage: "doc.on.doc", shortcut: "↵") {
+                core.calculatorCoordinator.copyCalculatorResult(result)
+            }
+        ]
+        if result.canChain {
+            items.append(
                 PopoverMenuItem(
-                    title: "Paste Answer", systemImage: "arrow.down.doc", shortcut: "⌘↵ / ⌃↵"
+                    title: "Put Answer in Search Bar", systemImage: "text.cursor", shortcut: "⌘↵"
                 ) {
-                    core.calculatorCoordinator.pasteCalculatorResult(result)
-                },
-                PopoverMenuItem(
-                    title: "Copy Unformatted Answer", systemImage: "textformat", shortcut: "⌥⌘C"
-                ) {
-                    core.calculatorCoordinator.copyCalculatorUnformatted(result)
-                },
-                PopoverMenuItem(
-                    title: "Copy Question and Answer", systemImage: "doc.on.doc.fill", shortcut: "⌥⇧⌘C"
-                ) {
-                    core.calculatorCoordinator.copyCalculationWithExpression(result)
-                }
-            ]
-        )
+                    core.calculatorCoordinator.putAnswerInSearchBar(result)
+                })
+        }
+        items.append(
+            PopoverMenuItem(
+                title: "Copy Calculation", systemImage: "doc.on.doc.fill", shortcut: "⇧⌘↵"
+            ) {
+                core.calculatorCoordinator.copyCalculationWithExpression(result)
+            })
+        return PopoverMenuContent(
+            header: core.calcNumberFormat.localizedExpression(result.expression), items: items)
     }
 }

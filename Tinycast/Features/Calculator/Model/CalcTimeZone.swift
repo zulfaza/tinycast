@@ -504,7 +504,7 @@ enum CalcTimeZone {
     }()
 
     /// Not `localizedName`, which needs a `Locale` — banned in `Model/`.
-    private static func label(for zone: TimeZone) -> String {
+    static func label(for zone: TimeZone) -> String {
         if zone.identifier == "GMT" || zone.identifier == "UTC" { return "UTC" }
         if zone.identifier.hasPrefix("GMT+") || zone.identifier.hasPrefix("GMT-") {
             let seconds = abs(zone.secondsFromGMT())

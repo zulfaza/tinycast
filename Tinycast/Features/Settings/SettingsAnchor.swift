@@ -14,7 +14,11 @@ extension SettingsAnchor {
     static let generalAppearance = Self(tab: .general, title: "Appearance")
     static let generalCalculator = Self(tab: .general, title: "Calculator")
     static let generalGeneral = Self(tab: .general, title: "General")
-    static let customThemesTheme = Self(tab: .customThemes, title: "Custom theme")
+    static let customThemesTheme = Self(tab: .customThemes, title: "Theme")
+    static let customThemesBackground = Self(tab: .customThemes, title: "Background")
+    static let customThemesText = Self(tab: .customThemes, title: "Text")
+    static let customThemesAccents = Self(tab: .customThemes, title: "Accents")
+    static let customThemesFile = Self(tab: .customThemes, title: "Theme File")
 
     static let applicationsSearchScopes = Self(tab: .applications, title: "Search Scopes")
     static let applicationsApplications = Self(tab: .applications, title: "Applications")
@@ -42,8 +46,6 @@ extension SettingsAnchor {
     static let aiChat = Self(tab: .ai, title: "Chat")
     static let aiConversations = Self(tab: .ai, title: "Conversations")
     static let aiSystemPrompt = Self(tab: .ai, title: "System prompt")
-    static let aiInstalledAI = Self(tab: .ai, title: "Installed AI")
-    static let aiAPIConnections = Self(tab: .ai, title: "API Connections")
     static let aiMCPServers = Self(tab: .ai, title: "MCP Servers")
     static let aiCommands = Self(tab: .ai, title: "Commands")
 
@@ -52,12 +54,19 @@ extension SettingsAnchor {
     static let quickActionsModel = Self(tab: .quickActions, title: "Model")
     static let quickActionsTranslate = Self(tab: .quickActions, title: "Translate")
 
+    static let dictationDictation = Self(tab: .dictation, title: "Dictation")
+    static let dictationCommands = Self(tab: .dictation, title: "Commands")
+    static let dictationModel = Self(tab: .dictation, title: "Model")
+    static let dictationMemory = Self(tab: .dictation, title: "Memory")
+    static let dictationOutput = Self(tab: .dictation, title: "Output")
+
     static let fileSearchFileSearch = Self(tab: .fileSearch, title: "File Search")
     static let fileSearchCommands = Self(tab: .fileSearch, title: "Commands")
     static let fileSearchSearchScopes = Self(tab: .fileSearch, title: "Search Scopes")
     static let fileSearchIgnorePatterns = Self(tab: .fileSearch, title: "Ignore Patterns")
 
     static let notesNotes = Self(tab: .notes, title: "Notes")
+    static let notesOptions = Self(tab: .notes, title: "Options")
     static let notesCommands = Self(tab: .notes, title: "Commands")
 
     static let snippetsSnippets = Self(tab: .snippets, title: "Snippets")
@@ -72,8 +81,9 @@ extension SettingsAnchor {
     static let windowManagementWindowManagement = Self(
         tab: .windowManagement, title: "Window Management")
     static let windowManagementLayouts = Self(tab: .windowManagement, title: "Window Layouts")
+    static let windowManagementRooms = Self(tab: .windowManagement, title: "Rooms")
     static let windowManagementLayoutCommands = Self(
-        tab: .windowManagement, title: "Layout Commands")
+        tab: .windowManagement, title: "Layout and Room Commands")
     static let windowManagementOptions = Self(tab: .windowManagement, title: "Options")
     static let windowManagementCustomSizes = Self(tab: .windowManagement, title: "Custom Sizes")
 
@@ -88,7 +98,6 @@ extension SettingsAnchor {
 
     static let calendarCalendar = Self(tab: .calendar, title: "Calendar")
     static let calendarCommands = Self(tab: .calendar, title: "Commands")
-    static let calendarSchedule = Self(tab: .calendar, title: "Schedule")
     static let calendarJoining = Self(tab: .calendar, title: "Joining")
     static let calendarMenuBar = Self(tab: .calendar, title: "Menu Bar")
     static let calendarCalendars = Self(tab: .calendar, title: "Calendars")
@@ -102,10 +111,12 @@ extension SettingsAnchor {
 
     static let permissionsAccessibility = Self(tab: .permissions, title: "Accessibility")
     static let permissionsCalendars = Self(tab: .permissions, title: "Calendars")
+    static let permissionsMicrophone = Self(tab: .permissions, title: "Microphone")
 
     static let backupExport = Self(tab: .backup, title: "Export")
     static let backupImport = Self(tab: .backup, title: "Import")
     static let backupImportFromRaycast = Self(tab: .backup, title: "Import from Raycast")
+    static let backupSettingsFile = Self(tab: .backup, title: "Settings File")
 
     static let aboutAbout = Self(tab: .about, title: "About")
     static let aboutLinks = Self(tab: .about, title: "Links")

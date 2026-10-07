@@ -17,7 +17,7 @@ struct SystemActionTests {
 
     static func main() {
         let actions = SystemActionCatalog.all
-        expect(actions.count == 31, "catalog contains all 31 agreed actions")
+        expect(actions.count == 32, "catalog contains all 32 agreed actions")
         expect(actions.map(\.id) == SystemAction.ID.allCases, "catalog covers every ID once")
         expect(Set(actions.map { $0.name.lowercased() }).count == actions.count, "names are unique")
         expect(actions.allSatisfy { !$0.name.isEmpty }, "names are non-empty")
@@ -39,11 +39,19 @@ struct SystemActionTests {
             Set(actions.filter { $0.confirmation != .none }.map(\.id)) == confirmed,
             "only the agreed disruptive actions require confirmation")
         for action in actions {
-            guard case .required(let title, let message) = action.confirmation else { continue }
-            expect(
-                !title.isEmpty && !message.isEmpty,
-                "\(action.id.rawValue) carries confirmation copy")
+            switch action.confirmation {
+            case .required(let title, let message), .followsFinder(let title, let message):
+                expect(
+                    !title.isEmpty && !message.isEmpty,
+                    "\(action.id.rawValue) carries confirmation copy")
+            case .none, .computed:
+                continue
+            }
         }
+        expect(
+            actions.filter { if case .followsFinder = $0.confirmation { true } else { false } }
+                .map(\.id) == [.emptyTrash],
+            "only Empty Trash defers its confirmation to Finder's own preference")
         expect(
             SystemActionCatalog.action(id: .quitAllApps).confirmation == .computed,
             "Quit All builds its own copy from the target count")
@@ -56,6 +64,14 @@ struct SystemActionTests {
         expect(
             !actions.contains { $0.id.rawValue == "quit-all-apps-except-frontmost" },
             "Quit All Except Frontmost remains out of scope")
+
+        let microphone = SystemActionCatalog.action(id: .toggleMicrophoneMute)
+        expect(microphone.name == "Toggle Microphone Mute", "microphone mute has its own launcher row")
+        expect(microphone.sfSymbol == "mic.slash", "microphone mute uses a microphone glyph")
+        expect(
+            microphone.entryID == "system-action:toggle-microphone-mute",
+            "microphone mute has a stable identity separate from output mute")
+        expect(microphone.confirmation == .none, "microphone mute runs directly from a global hotkey")
 
         print("\(passes) passed, \(failures) failed")
         if failures > 0 { exit(1) }

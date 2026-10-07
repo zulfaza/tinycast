@@ -67,18 +67,64 @@ final class NoteTextView: NSTextView, InjectableTextView {
     private var rendersMarkdown: Bool { editing?.rendersMarkdown == true }
 
     /// One undoable replacement that reaches `textDidChange`, so autosave and restyling see it.
-    func performEdit(_ plan: NoteEditPlan) {
+    @discardableResult
+    func performEdit(_ plan: NoteEditPlan) -> Bool {
         breakUndoCoalescing()
-        guard shouldChangeText(in: plan.range, replacementString: plan.replacement) else { return }
-        textStorage?.replaceCharacters(in: plan.range, with: plan.replacement)
+        guard let textStorage, shouldChangeText(in: plan.range, replacementString: plan.replacement)
+        else { return false }
+        textStorage.replaceCharacters(in: plan.range, with: plan.replacement)
         didChangeText()
         setSelectedRange(plan.selection)
         breakUndoCoalescing()
+        return true
+    }
+
+    func replaceUnchangedSelection(
+        with text: String, source: String, range: NSRange
+    ) -> Bool {
+        guard isEditable, range.length > 0, string == source, selectedRange() == range else {
+            return false
+        }
+        return performEdit(
+            NoteEditPlan(
+                range: range, replacement: text,
+                selection: NSRange(location: range.location + (text as NSString).length, length: 0)))
     }
 
     /// The formatting bar's way in: the same plan, gate and undo step as the matching chord.
     func format(_ action: NoteEditAction) {
         perform(action)
+    }
+
+    func find(_ action: NSTextFinder.Action) {
+        let item = NSMenuItem()
+        item.tag = action.rawValue
+        performTextFinderAction(item)
+    }
+
+    /// The frame never gets shorter than the clip view, so only the layout knows the text's height.
+    func textHeight() -> CGFloat {
+        guard let textLayoutManager else { return frame.height }
+        var bottom: CGFloat = 0
+        textLayoutManager.enumerateTextLayoutFragments(
+            from: textLayoutManager.documentRange.endLocation, options: [.reverse, .ensuresLayout]
+        ) { fragment in
+            bottom = fragment.layoutFragmentFrame.maxY
+            return false
+        }
+        return bottom + textContainerInset.height * 2
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard textStorage?.length == 0 else { return }
+        NSAttributedString(
+            string: "Start writing…",
+            attributes: [
+                .font: NoteMarkdownTypography.body,
+                .foregroundColor: NSColor(Theme.Colors.textTertiary)
+            ]
+        ).draw(at: textContainerOrigin)
     }
 
     // MARK: - Keys
@@ -115,9 +161,24 @@ final class NoteTextView: NSTextView, InjectableTextView {
         super.insertBacktab(sender)
     }
 
-    /// A formatting chord is always ours while rendering, even when it has nothing to do.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard rendersMarkdown, window?.firstResponder === self, let action = Self.chord(for: event) else {
+        guard window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if event.charactersIgnoringModifiers?.lowercased() == "z",
+            modifiers == .command || modifiers == [.command, .shift]
+        {
+            guard !event.isARepeat else { return true }
+            breakUndoCoalescing()
+            if modifiers == .command {
+                editorUndoManager?.undo()
+            } else {
+                editorUndoManager?.redo()
+            }
+            return true
+        }
+        guard rendersMarkdown, let action = Self.chord(for: event) else {
             return super.performKeyEquivalent(with: event)
         }
         if !event.isARepeat { perform(action) }

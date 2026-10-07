@@ -5,6 +5,7 @@ import SwiftUI
 enum Theme {
     enum Spacing {
         static let xxs: CGFloat = 2
+        static let dictationWaveGap: CGFloat = 3
         static let xs: CGFloat = 4
         static let sm: CGFloat = 6
         static let md: CGFloat = 8
@@ -50,6 +51,8 @@ enum Theme {
         /// A pill holding a square thumbnail; a full capsule fights the thumbnail's own corners.
         static let attachmentChip: CGFloat = 8
         static let card: CGFloat = 10
+        /// A window-to-be in the room preview, rounded like a real window rather than a row.
+        static let roomCard: CGFloat = 16
         static let keyCap: CGFloat = 6
         /// Settings shortcut-recorder keycap — smaller than the palette's `keyCap` chip.
         static let recorderKeyCap: CGFloat = 4
@@ -66,6 +69,8 @@ enum Theme {
         static let panelHeight: CGFloat = 475
         /// Opening size on a first run and the floor: below it the title bar's own parts collide.
         static let noteWindow = CGSize(width: 440, height: 180)
+        /// The tallest a note window grows to fit its text; past it the editor scrolls.
+        static let noteWindowMaxHeight: CGFloat = 860
         static let noteEditorInset: CGFloat = 16
         /// Shorter than the horizontal inset, so the first line sits close under the title bar.
         static let noteEditorTopInset: CGFloat = 6
@@ -95,24 +100,26 @@ enum Theme {
         static let headerPadding: CGFloat = 10
         /// Collapsed compact bar: the search row centered in symmetric `headerPadding` slack.
         static let compactHeight: CGFloat = headerHeight + headerPadding * 2
-        /// How near the default placement a drag has to land before it snaps home.
-        static let paletteSnapDistance: CGFloat = 24
+        /// How close a dragged palette must be to the invisible vertical centre line.
+        static let paletteSnapDistance: CGFloat = 8
         /// A restored position needs this much bar on a display to still be grabbable.
         static let paletteMinimumVisible: CGFloat = 44
-        /// Dash and gap of the drop guides, equal so the line reads evenly.
-        static let dropGuideDash: CGFloat = 4
+        static let dropGuideDash: CGFloat = 8
+        static let dropGuideGap: CGFloat = 12
         static let dropGuideWidth: CGFloat = 2
+        static let dropGuideCombinedFlashTolerance: CGFloat = 6
+        static let dropGuideFadeThreshold: CGFloat = 36
+        static let dropGuideFadeDistance: CGFloat = 180
         static let bottomBarHeight: CGFloat = 52
         /// A `BarButton`'s hover capsule, shared by the footer group and the header's filter.
         static let barButtonHeight: CGFloat = 28
         static let rowIcon: CGFloat = 24
+        static let resultRowIcon: CGFloat = 26
         /// Colour-codes a secondary label, as Calendar.app marks an event's calendar.
         static let colorDot: CGFloat = 8
         /// The calendar-colour bar between a meeting row's icon and its title.
         static let calendarBarWidth: CGFloat = 3
         static let calendarBarHeight: CGFloat = 18
-        /// The same bar in the menu bar and its menu, sized to the system's 13pt menu text.
-        static let menuBarCalendarBarHeight: CGFloat = 12
         static let keyCap: CGFloat = 18
         /// Settings shortcut-recorder keycap — smaller than the palette's `keyCap` chip.
         static let recorderKeyCap: CGFloat = 16
@@ -210,19 +217,28 @@ enum Theme {
         static let aiChatDetailMinimum: CGFloat = 440
         /// The transcript and composer column; past this a line of prose stops being readable.
         static let aiChatReadingWidth: CGFloat = 760
-        /// The composer grows with its text up to this, then scrolls inside itself.
-        static let aiChatComposerMaxHeight: CGFloat = 180
+        static let aiChatComposerMaxLines: CGFloat = 15
+        static let aiChatComposerHeightFraction: CGFloat = 0.30
+        /// Every control on the composer's row, Send included, so the row reads as one line.
+        static let aiChatComposerControl: CGFloat = 28
+        /// One slot for every glyph on that row, so a plus and a brand mark weigh the same.
+        static let aiChatComposerGlyph: CGFloat = 16
         static let chatContextGauge: CGFloat = 14
         /// A source chip's title before it middle-truncates, so three chips share a row.
         static let chatSourceTitle: CGFloat = 200
         /// The context card's width: a label column and a value one, with room for a model name.
         static let chatContextCard: CGFloat = 300
-        /// One "Aa" segment of the Interface Size control; three sit in a grouped row's trailing slot.
-        static let interfaceSizeSegment: CGFloat = 40
         /// A grouped `Form` row's control height.
         static let settingsControlHeight: CGFloat = 28
+        static let emojiSkinToneGlyph: CGFloat = 13
         /// One density preview; five fit across the Emoji settings detail pane.
         static let emojiSettingsGridPreview: CGFloat = 72
+        /// The Custom Themes preview: a palette in miniature, wide enough for a row and its badge.
+        static let themePreviewWidth: CGFloat = 340
+        static let themePreviewRowIcon: CGFloat = 16
+        /// The preview's selected row: the accent at the strength the palette paints selection.
+        static let themePreviewSelectionAlpha: Double = 0.18
+        static let themePreviewHairlineAlpha: Double = 0.22
         /// The layout editor. Height is stated so selecting an entry cannot resize the panel.
         static let layoutEditorSheet = CGSize(width: 900, height: 660)
         /// The inspector column; the preview takes the rest, keeping the split two-to-one.
@@ -241,7 +257,15 @@ enum Theme {
         static let layoutPositionStroke: CGFloat = 1.5
         /// A position cell's clickable row; the glyph floats inside it, so the whole cell hits.
         static let layoutPositionCell: CGFloat = 34
-        /// Compact settings editors that use a fixed sheet width.
+        /// AI Providers: Mail's Accounts shape, a provider list beside the selected one's detail.
+        static let aiProvidersPanel = CGSize(width: 840, height: 520)
+        static let aiProvidersList: CGFloat = 262
+        /// What the system leaves either side of a segment's label once the control has settled.
+        static let segmentLabelInset: CGFloat = 13
+        static let aiVariableName: CGFloat = 170
+        /// A Codex usage window's meter, beside its "72% left" readout.
+        static let aiUsageBar: CGFloat = 110
+        /// Settings editor modals (Custom Commands, Snippets): fixed width, intrinsic height.
         static let editorSheetWidth: CGFloat = 480
         /// The multi-line box inside those modals; it scrolls rather than grows the panel.
         static let editorTextHeight: CGFloat = 120
@@ -277,10 +301,22 @@ enum Theme {
         /// Transient volume HUD shown after any volume or mute command.
         static let hudWidth: CGFloat = 200
         static let hudHeight: CGFloat = 100
+        static let dictationPanel = CGSize(width: 144, height: 44)
+        static let dictationWaveBar: CGFloat = 2
         /// Read-only volume bar geometry used by the HUD.
         static let volumeTrackHeight: CGFloat = 6
         /// Fixed slot for the level readout, sized to the widest string it ever holds.
         static let volumeReadout: CGFloat = 38
+        static let roomCardTitleBar: CGFloat = 40
+        static let roomCardStroke: CGFloat = 2
+        static let roomCardShadowRadius: CGFloat = 24
+        static let roomCardShadowOffset: CGFloat = 8
+        static let roomCardDot: CGFloat = 8
+        static let roomCardIcon: CGFloat = 64
+        static let roomCardIconLarge: CGFloat = 96
+        /// Below this a card is a sliver, too short for its icon.
+        static let roomCardIconMinHeight: CGFloat = 160
+        static let roomCardLargeIconMinSide: CGFloat = 320
     }
 
     enum Duration {
@@ -295,6 +331,7 @@ enum Theme {
         static let dialogExit: TimeInterval = 0.10
         /// Fade-in/out for a hover `Tooltip`, after a wait only a deliberate hover outlasts.
         static let tooltip: TimeInterval = 0.15
+        static let dropGuide: TimeInterval = 0.24
         static let tooltipDelay: TimeInterval = 0.4
         /// A control lighting up under the pointer; short enough to feel like a response.
         static let hover: TimeInterval = 0.12
@@ -306,6 +343,16 @@ enum Theme {
         static let settingsReveal: TimeInterval = 0.28
         static let settingsFlash: TimeInterval = 2.0
         static let settingsFlashOut: TimeInterval = 0.6
+        /// A room preview card gliding to its next place; arriving and leaving cards fade.
+        static let roomGlide: TimeInterval = 0.32
+        static let roomCardEnter: TimeInterval = 0.2
+        static let roomCardExit: TimeInterval = 0.18
+        static let roomSettle: TimeInterval = 0.25
+    }
+
+    enum RoomMotion {
+        /// Quick to leave, long to settle, so a card reads as the window it is about to become.
+        static let glide = Animation.timingCurve(0.2, 0, 0, 1, duration: Theme.Duration.roomGlide)
     }
 
     enum DialogMotion {
@@ -367,6 +414,10 @@ enum Theme {
         static let menuSymbolSize: CGFloat = 14
         static let menuSymbolWeight = Font.Weight.medium
         static let noteTitle = Font.headline
+        /// The composer row's glyphs; Send's arrow is bolder, and Stop's square smaller to match it.
+        static let composerSymbol = Font.system(size: 13, weight: .medium)
+        static let composerSend = Font.system(size: 13, weight: .bold)
+        static let composerStop = Font.system(size: 10, weight: .bold)
     }
 
     enum Colors {
@@ -450,15 +501,17 @@ enum Theme {
         /// Emoji grid chrome: a quiet tile at rest, with two legible rings on interaction.
         static let emojiCell = ramp(dark: 0.045, light: 0.04)
         static let emojiHoverBorder = ramp(dark: 0.42, light: 0.34)
-        static let emojiSelectionBorder = adaptive(
-            dark: NSColor(srgbRed: 0.96, green: 0.90, blue: 0.72, alpha: 0.92),
-            light: .srgbInk(0, alpha: 0.72))
+        static let emojiSelectionBorder = ramp(dark: 0.92, light: 0.72)
         static let emojiInnerBorder = adaptive(
             dark: .srgbInk(0, alpha: 0.72), light: .srgbInk(1, alpha: 0.72))
         static let menuHover = ramp(dark: 0.10, light: 0.09)
         static let separator = ramp(dark: 0.10, light: 0.12)
         /// Small control surfaces: kbd chips, glyph tiles.
         static let controlSurface = ramp(dark: 0.10, light: 0.08)
+        /// A pointer over a control should lift it above its resting surface.
+        static let controlHover = ramp(dark: 0.16, light: 0.14)
+        /// A held control is stronger than hover, so mouse-down always reads.
+        static let controlPressed = ramp(dark: 0.24, light: 0.20)
         /// Control borders: outlined kbd chips.
         static let border = ramp(dark: 0.20, light: 0.18)
         /// Alpha 1, so a call site can dim it with `.opacity` and land on the value it replaced.
@@ -483,6 +536,16 @@ enum Theme {
         /// The preview's plate: a display is dark in both appearances, so `adaptive`, not `ramp`.
         static let layoutPreviewGround = adaptive(
             dark: .srgbInk(0, alpha: 0.55), light: .srgbInk(0, alpha: 0.50))
+        /// The blurred desk behind a room preview, darkened so only the new layout reads.
+        static let roomPreviewDim = adaptive(
+            dark: .srgbInk(0, alpha: 0.18), light: .srgbInk(0, alpha: 0.18))
+        /// A room card is a solid window in both appearances, so the desk never shows through.
+        static let roomCardFill = adaptive(
+            dark: .srgbInk(0.16, alpha: 0.94), light: .srgbInk(0.98, alpha: 0.94))
+        static let roomCardStroke = Color.accentColor
+        static let roomCardShadow = adaptive(
+            dark: .srgbInk(0, alpha: 0.25), light: .srgbInk(0, alpha: 0.25))
+        static let roomCardDot = ramp(dark: 0.25, light: 0.25)
         /// The pill behind the header of the section a Settings search jumped to.
         static let searchFlash = Color.accentColor.opacity(0.35)
         /// The two squares of a checkerboard, behind a colour with alpha to show.
@@ -501,6 +564,9 @@ enum Theme {
         static let success = Color.green
         /// Caution tint, short of destructive: a chat context nearly full.
         static let warning = Color.orange
+        /// Send's disc and its arrow: the strongest mark on the composer, inverted against the page.
+        static let composerSend = ramp(dark: 0.92, light: 0.92)
+        static let composerSendInk = adaptive(dark: .srgbInk(0, alpha: 0.85), light: .srgbInk(1, alpha: 1))
         /// The window's own page, for a card that must hide the transcript it floats over.
         static let windowSurface = Color(nsColor: .windowBackgroundColor)
         /// Where a dropped file will land: the chat window's dashed outline.
@@ -514,8 +580,8 @@ enum Theme {
 }
 
 extension View {
-    /// A floating glass control surface: clear, interactive Liquid Glass.
+    /// A floating glass control surface: regular, interactive Liquid Glass.
     func frosted(in shape: some Shape) -> some View {
-        glassEffect(.clear.interactive(), in: shape)
+        glassEffect(.regular.interactive(), in: shape)
     }
 }

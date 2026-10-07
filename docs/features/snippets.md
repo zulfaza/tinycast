@@ -12,8 +12,8 @@ snippets always stay in the channel folder.
 ## Invariants
 
 - **Snippets are channel-isolated and path-identified.** They persist under
-  `~/Library/Application Support/<bundle-id>/Snippets/`; `StoredSnippet.ID` is the standardized source
-  path, and an external rename is a delete plus a create.
+  `~/Library/Application Support/<bundle-id>/Snippets/` unless the user chooses a folder;
+  `StoredSnippet.ID` is the standardized source path, and an external rename is a delete plus a create.
 - **The feature ships off, and its enable switch doubles as keyword-expansion consent.**
   `snippetsEnabled` is excluded from settings backups, and Accessibility — the only permission it needs,
   since the listen-only tap needs nothing more — may be requested **only** from that explicit Settings
@@ -37,6 +37,13 @@ Each app channel owns a separate library:
 ```text
 ~/Library/Application Support/<bundle-id>/Snippets/
 ```
+
+**Snippets Folder** in the Snippets pane, or `snippets.folder` in the [settings file](settings-file.md),
+points the library at another folder, absolute or under `~/`, as it is: nothing moves out of the old one.
+`AppPaths.contentFolder` resolves it once, so a folder that is a symlink lists like any other, and
+`SnippetsStore.relocate` stops, swaps and reloads. The folder is excluded from backups, since it names
+a place on this Mac. Shared libraries ride along: `AppCore.snippetsRepository` hands the relocated
+repository the same read-only directories.
 
 Debug (`com.tinycast.app.dev`), beta, and stable therefore never share snippet files. The storage
 root and bundle identifier are injectable in the standalone harness so tests cannot touch a real
@@ -250,8 +257,9 @@ scorer: this is a library being browsed rather than a query racing apps and comm
 
 The preview shows the **raw template**, never an expansion. Expanding per selection would capture the
 clipboard, read the target's selected text and burn a `{uuid}` on every arrow key, and a snippet
-carrying `{argument}` would raise its prompt just to draw a pane. Beside it sits the name and compact
-Content Type/Times Copied metadata, with Last Copied when available.
+carrying `{argument}` would raise its prompt just to draw a pane. Beside it sits the name, tags,
+content type, times copied, last copied when available, keyword, shortcut, file name and character
+count.
 
 An argument-bearing selection shows its fields beside the search field. Fields include nested
 references in first-appearance order; defaults seed optional fields and `options=` fields use a picker.
@@ -267,6 +275,20 @@ Shared-library records are visibly read-only; Settings disables edit/delete and 
 
 `Create Snippet` is a launcher command as well as a menu row because the palette swallows ⌘K when a
 screen has no rows: an empty library would otherwise open a browser with nothing to do.
+
+## Shortcuts
+
+Each snippet can hold a global shortcut, recorded on its row in **Settings → Snippets**, and shown
+as keycaps on its launcher and browser rows. `SnippetCoordinator.expandSnippetFromHotKey` refuses
+while the feature or the snippet is off, then calls the same `expandSnippet` funnel a launcher row
+does. Its target is `InjectionTarget.current()`, or what the palette covered while the palette is
+open. A window of ours that is not an editor resolves no target — Settings, straight after recording
+the shortcut — so the press shows a HUD asking for a text field rather than doing nothing.
+
+**The shortcut's own modifiers are still held when delivery starts.** A keyboard event built from
+`.combinedSessionState` inherits them, so a Unicode keystroke clears its flags like every other
+synthetic event, or ⌥⇧V would type each character as an ⌥⇧ chord. Persistence and the sweep of
+deleted files are in [hotkeys.md](hotkeys.md#persistence).
 
 ## Confirmation HUD
 
@@ -291,8 +313,9 @@ not report completion and therefore cannot show it.
 
 There are two delivery tiers, and the target picks which one runs.
 
-`InjectionTarget.ownEditor` is one of our own views — today only `NoteTextView`, which opts in by
-adopting `InjectableTextView`. It is written in process with `insertText(_:replacementRange:)`:
+`InjectionTarget.ownEditor` is one of our own views — `NoteTextView` and AI Chat's
+`ComposerTextView`, which opt in by adopting `InjectableTextView`. It is written in process with
+`insertText(_:replacementRange:)`:
 undoable in the editor's own `UndoManager`, and needing no Accessibility grant, no pasteboard lease,
 no app activation and no event posting. Rules 1, 3 and 4 below do not apply — our own storage is
 authoritative, so there is nothing to sniff for and nothing to read back.

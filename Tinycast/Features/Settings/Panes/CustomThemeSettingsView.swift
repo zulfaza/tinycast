@@ -11,61 +11,106 @@ struct CustomThemeSettingsView: View {
     @State private var exportDocument: CustomThemeFileDocument?
     @State private var showingExporter = false
     @State private var importError: String?
+    @Environment(\.colorScheme) private var colorScheme
 
     private var palette: ThemePalette {
         selectedAppearance == .dark ? draft.dark : draft.light
     }
 
     var body: some View {
-        Section {
-            Picker("Edit", selection: $selectedAppearance) {
-                ForEach(ThemeEditorAppearance.allCases) { appearance in
-                    Text(appearance.title).tag(appearance)
+        Form {
+            Section {
+                ThemePreview(palette: palette)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Theme.Spacing.sm)
+                Picker("Appearance", selection: $selectedAppearance) {
+                    ForEach(ThemeEditorAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance)
+                    }
                 }
+                .pickerStyle(.segmented)
+                LabeledContent {
+                    TextField("Name", text: name, prompt: Text("Untitled Theme"))
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                } label: {
+                    SettingsRowTitle(.customThemesTheme, "Name")
+                }
+            } header: {
+                SettingsSectionHeader(.customThemesTheme)
+            } footer: {
+                Text("Light and Dark are separate palettes; Tinycast follows the Mac's appearance.")
             }
-            TextField("Name", text: name)
-            colorPicker("Panel background", keyPath: \ThemePalette.panelBackground)
-            colorPicker("Primary text", keyPath: \ThemePalette.primaryText)
-            colorPicker("Accent", keyPath: \ThemePalette.accent)
-            colorPicker("Secondary text", keyPath: \ThemePalette.support.secondaryText)
-            colorPicker("Success", keyPath: \ThemePalette.support.success)
-            colorPicker("Destructive", keyPath: \ThemePalette.support.destructive)
-            Toggle("Use a two-stop gradient", isOn: gradientEnabled)
-            if palette.gradient != nil {
-                ColorPicker("Gradient first", selection: gradientColorBinding(first: true))
-                ColorPicker("Gradient second", selection: gradientColorBinding(first: false))
-                Slider(value: gradientAngle, in: -180...180, step: 1) {
-                    Text("Gradient angle")
-                } minimumValueLabel: {
-                    Text("-180°")
-                } maximumValueLabel: {
-                    Text("180°")
+
+            Section {
+                colorPicker("Panel", keyPath: \ThemePalette.panelBackground)
+                Toggle("Gradient", isOn: gradientEnabled)
+                if palette.gradient != nil {
+                    ColorPicker("Start", selection: gradientColorBinding(first: true))
+                    ColorPicker("End", selection: gradientColorBinding(first: false))
+                    LabeledContent("Angle") {
+                        HStack(spacing: Theme.Spacing.md) {
+                            Slider(value: gradientAngle, in: -180...180, step: 1)
+                                .labelsHidden()
+                            Text("\(Int(gradientAngle.wrappedValue))°")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .frame(minWidth: Theme.Spacing.xl * 2, alignment: .trailing)
+                        }
+                    }
+                    .accessibilityValue(Text("\(Int(gradientAngle.wrappedValue)) degrees"))
                 }
-                .accessibilityValue(Text("\(Int(gradientAngle.wrappedValue)) degrees"))
+            } header: {
+                SettingsSectionHeader(.customThemesBackground)
             }
-        } header: {
-            SettingsSectionHeader(.customThemesTheme)
-        } footer: {
-            Text("Theme changes apply to Tinycast surfaces immediately.")
-        }
-        Section {
-            HStack {
-                Button("Import…") { showingImporter = true }
-                Button("Export…") { prepareExport() }
-                Spacer()
-                Button("Reset", role: .destructive) {
-                    themes.reset()
-                    draft = .defaults
+
+            Section {
+                colorPicker("Primary", keyPath: \ThemePalette.primaryText)
+                colorPicker("Secondary", keyPath: \ThemePalette.support.secondaryText)
+            } header: {
+                SettingsSectionHeader(.customThemesText)
+            }
+
+            Section {
+                colorPicker("Accent", keyPath: \ThemePalette.accent)
+                colorPicker("Success", keyPath: \ThemePalette.support.success)
+                colorPicker("Destructive", keyPath: \ThemePalette.support.destructive)
+            } header: {
+                SettingsSectionHeader(.customThemesAccents)
+            } footer: {
+                Text("Accent also tints the selected row.")
+            }
+
+            Section {
+                LabeledContent {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Button("Import…") { showingImporter = true }
+                        Button("Export…") { prepareExport() }
+                    }
+                } label: {
+                    Text("Share")
+                    Text("A .tinycast-theme file holds both palettes.")
                 }
+                LabeledContent {
+                    Button("Reset", role: .destructive) {
+                        themes.reset()
+                        draft = .defaults
+                        importError = nil
+                    }
+                } label: {
+                    Text("Restore Defaults")
+                    Text("Removes the custom theme.")
+                }
+            } header: {
+                SettingsSectionHeader(.customThemesFile)
+            } footer: {
                 if let importError {
-                    Text(importError)
-                        .font(.caption)
+                    Label(importError, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(Theme.Colors.destructive)
                 }
             }
-        } header: {
-            Text("Portable theme")
         }
+        .formStyle(.grouped)
         .fileImporter(
             isPresented: $showingImporter,
             allowedContentTypes: [.json],
@@ -77,7 +122,10 @@ struct CustomThemeSettingsView: View {
             contentType: .json,
             defaultFilename: "Tinycast Theme.tinycast-theme",
             onCompletion: exportFinished)
-        .onAppear { draft = themes.editableTheme }
+        .onAppear {
+            draft = themes.editableTheme
+            selectedAppearance = colorScheme == .dark ? .dark : .light
+        }
         .settingsScrollTarget(.customThemes)
     }
 
@@ -221,6 +269,91 @@ struct CustomThemeSettingsView: View {
 
     private static func displayAngle(_ angle: Double) -> Double {
         angle > 180 ? angle - 360 : angle
+    }
+}
+
+/// The palette in miniature, drawn from the draft so every edit shows before it is anywhere else.
+private struct ThemePreview: View {
+    let palette: ThemePalette
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.dialog, style: .continuous)
+        let primary = palette.primaryText.swiftUIColor
+        let secondary = palette.support.secondaryText.swiftUIColor
+        let accent = palette.accent.swiftUIColor
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.md) {
+                Image(systemName: "magnifyingglass")
+                Text("Search for apps and commands…")
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(secondary)
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
+            Rectangle()
+                .fill(secondary.opacity(Theme.Size.themePreviewHairlineAlpha))
+                .frame(height: Theme.Size.hairline)
+            row("curlybraces", "Search Snippets", detail: "Command", selected: true)
+            row("doc.on.clipboard", "Clipboard History", detail: "Command", selected: false)
+            HStack(spacing: Theme.Spacing.md) {
+                Label("Copied", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(palette.support.success.swiftUIColor)
+                Label("Delete", systemImage: "trash")
+                    .foregroundStyle(palette.support.destructive.swiftUIColor)
+                Spacer(minLength: 0)
+                Text("↵")
+                    .foregroundStyle(primary)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .background(
+                        accent.opacity(Theme.Size.themePreviewSelectionAlpha),
+                        in: RoundedRectangle(cornerRadius: Theme.Radius.thumbnail, style: .continuous))
+            }
+            .font(.caption)
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.top, Theme.Spacing.xs)
+        }
+        .padding(Theme.Spacing.md)
+        .frame(width: Theme.Size.themePreviewWidth)
+        .background(background, in: shape)
+        .overlay(shape.strokeBorder(secondary.opacity(Theme.Size.themePreviewHairlineAlpha), lineWidth: Theme.Size.hairline))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Theme preview")
+    }
+
+    private func row(_ symbol: String, _ title: String, detail: String, selected: Bool) -> some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Image(systemName: symbol)
+                .foregroundStyle(
+                    selected
+                        ? palette.accent.swiftUIColor : palette.support.secondaryText.swiftUIColor)
+                .frame(width: Theme.Size.themePreviewRowIcon, height: Theme.Size.themePreviewRowIcon)
+            Text(title).foregroundStyle(palette.primaryText.swiftUIColor)
+            Spacer(minLength: 0)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(palette.support.secondaryText.swiftUIColor)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(
+            selected
+                ? palette.accent.swiftUIColor.opacity(Theme.Size.themePreviewSelectionAlpha) : .clear,
+            in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+    }
+
+    /// The same angle-to-points mapping `Theme.Colors.panelSurface` paints the real panel with.
+    private var background: AnyShapeStyle {
+        guard let gradient = palette.gradient else {
+            return AnyShapeStyle(palette.panelBackground.swiftUIColor)
+        }
+        let radians = gradient.angle * .pi / 180
+        let dx = cos(radians) / 2
+        let dy = sin(radians) / 2
+        return AnyShapeStyle(
+            LinearGradient(
+                colors: [gradient.first.swiftUIColor, gradient.second.swiftUIColor],
+                startPoint: UnitPoint(x: 0.5 - dx, y: 0.5 - dy),
+                endPoint: UnitPoint(x: 0.5 + dx, y: 0.5 + dy)))
     }
 }
 

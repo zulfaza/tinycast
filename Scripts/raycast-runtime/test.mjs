@@ -39,7 +39,6 @@ export function createHarness({ onRender, onFail, verbose = false, stubs = {} } 
   const state = {
     trees: [], failures: [], logs: [], finished: false, hostCalls: [], processCalls: []
   };
-  const state = { trees: [], failures: [], logs: [], finished: false, hostCalls: [] };
 
   const host = {
     log(level, message) {
@@ -250,21 +249,11 @@ function syncHostCall(api, method, args) {
       if (child.pid === undefined) throw Object.assign(new Error(`ENOENT: spawn '${spec.command}'`), { code: "ENOENT" });
       if (spec.detached) return child.pid;
       if (spec.input) child.stdin.end(Buffer.from(spec.input, "base64"));
-      const stdout = [];
-      const stderr = [];
-      child.stdout.on("data", (chunk) => stdout.push(chunk));
-      child.stderr.on("data", (chunk) => stderr.push(chunk));
+      const readers = { 1: child.stdout[Symbol.asyncIterator](), 2: child.stderr[Symbol.asyncIterator]() };
       const exit = new Promise((done) =>
-        child.on("close", (status, signal) =>
-          done({
-            stdout: Buffer.concat(stdout).toString("base64"),
-            stderr: Buffer.concat(stderr).toString("base64"),
-            status: status ?? 1,
-            signal,
-          }),
-        ),
+        child.on("close", (status, signal) => done({ stdout: "", stderr: "", status: status ?? 1, signal })),
       );
-      runningChildren.set(child.pid, exit);
+      runningChildren.set(child.pid, { readers, exit });
       return child.pid;
     }
     case "proc.kill":
@@ -338,9 +327,14 @@ async function stubHostCall(api, method, args) {
       };
     }
     case "proc.wait": {
-      const exit = runningChildren.get(args[0]);
+      const exit = runningChildren.get(args[0])?.exit;
       runningChildren.delete(args[0]);
       return exit;
+    }
+    // Streams like the Swift side: one chunk per call, null at EOF.
+    case "proc.read": {
+      const next = await runningChildren.get(args[0])?.readers[args[1]].next();
+      return next && !next.done ? Buffer.from(next.value).toString("base64") : null;
     }
     // Node's own WebSocket stands in for `URLSessionWebSocketTask`: same one-message-at-a-time read.
     case "websocket.open":
@@ -359,10 +353,15 @@ async function stubHostCall(api, method, args) {
       const entry = openSockets.get(args[0].id);
       entry?.socket.send(args[0].text ?? Buffer.from(args[0].base64, "base64"));
       return null;
+    }
     case "websocket.close": {
+      const entry = openSockets.get(args[0].id);
       openSockets.delete(args[0].id);
       entry?.socket.close(args[0].code, args[0].reason);
+      return null;
+    }
     case "websocket.ping":
+      return null;
     // Positional arguments throughout, matching `src/api/oauth.js`.
     case "oauth.authorize":
       return { authorizationCode: "auth-code-12345", state: args[1] ?? "" };
@@ -394,6 +393,7 @@ async function openSocket(spec) {
   );
   socket.addEventListener("close", (event) =>
     deliver({ type: "close", code: event.code, reason: event.reason, abnormal: !event.wasClean }),
+  );
   await new Promise((resolve, reject) => {
     socket.addEventListener("open", resolve, { once: true });
     socket.addEventListener("error", () => reject(new Error(`connection to ${spec.url} failed`)), { once: true });

@@ -17,24 +17,26 @@ struct EmojiSettingsView: View {
 
             Section {
                 EmojiColumnCountPicker(selection: $settings.emojiGridColumns)
+                SettingsRow(title: "Emoji Skin Tone", anchor: .emojiAppearance) {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        ForEach(EmojiSkinTone.allCases) { tone in
+                            let selected = settings.emojiSkinTone == tone
+                            Button {
+                                settings.emojiSkinTone = tone
+                            } label: {
+                                Text(tone.sample)
+                                    .font(.system(size: Theme.Size.emojiSkinToneGlyph))
+                                    .settingsOptionSegment(isSelected: selected)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(tone.title)
+                            .accessibilityAddTraits(selected ? [.isSelected] : [])
+                            .help(tone.title)
+                        }
+                    }
+                }
             } header: {
                 SettingsSectionHeader(.emojiAppearance)
-            }
-
-            Section {
-                // A hand per tone, quicker to scan than a dropdown of tone names.
-                Picker(selection: $settings.emojiSkinTone) {
-                    ForEach(EmojiSkinTone.allCases) { tone in
-                        Text(tone.sample).tag(tone)
-                    }
-                } label: {
-                    SettingsRowTitle(.emojiAppearance, "Emoji Skin Tone")
-                }
-                .pickerStyle(.segmented)
-            } footer: {
-                Text("Applied when an emoji supports skin tones; pastes use it too.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             if let keywordStore {
@@ -125,8 +127,22 @@ private struct EmojiColumnCountPicker: View {
 private struct EmojiColumnCountPreview: View {
     let columns: Int
     let isSelected: Bool
+
     var body: some View {
-        Text("\(columns)")
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+        EmojiGridDots(columns: columns)
+            .fill(isSelected ? Theme.Colors.textTertiary : Theme.Colors.border)
+            .background(
+                shape.fill(isSelected ? Theme.Colors.controlSurface : Color.clear)
+            )
+            .overlay(
+                shape.strokeBorder(
+                    isSelected ? Theme.Colors.border : Theme.Colors.cardStroke,
+                    lineWidth: Theme.Size.hairline)
+            )
+            .clipShape(shape)
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: Theme.Size.emojiSettingsGridPreview)
     }
 }
 

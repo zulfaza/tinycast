@@ -16,6 +16,22 @@ enum AppLauncher {
     @MainActor
     static func showInFinder(_ url: URL) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
+        bringFileViewerForwardIfRefused()
+    }
+
+    /// While `.regular` and inactive, cooperative activation refuses the viewer's own activation.
+    @MainActor
+    private static func bringFileViewerForwardIfRefused() {
+        guard NSApp.activationPolicy() == .regular, !NSApp.isActive,
+            let viewer = NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: fileViewerBundleID)
+        else { return }
+        NSWorkspace.shared.openApplication(at: viewer, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    /// The global `NSFileViewer` default is how a replacement file viewer takes over reveals.
+    private static var fileViewerBundleID: String {
+        UserDefaults.standard.string(forKey: "NSFileViewer") ?? "com.apple.finder"
     }
 
     /// No AppKit route for Get Info, so this drives Finder over Apple events — seconds when cold.
@@ -63,12 +79,14 @@ enum AppLauncher {
         }
     }
 
-    /// Asks every instance to quit, gracefully, so unsaved work still gets its sheet.
+    /// Quits every instance; only an unforced quit lets unsaved work put up its sheet.
     @MainActor
     @discardableResult
-    static func quit(bundleID: String) -> Bool {
+    static func quit(bundleID: String, force: Bool = false) -> Bool {
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-        for app in running { app.terminate() }
+        for app in running {
+            if force { app.forceTerminate() } else { app.terminate() }
+        }
         return !running.isEmpty
     }
 

@@ -17,12 +17,6 @@ enum CalcDateTime {
         if let summary = calendarSummary(query, echo: echo, now: now, calendar: calendar) {
             return summary
         }
-        if query == "time" {
-            let text = timeString(now, calendar: calendar)
-            return CalcResult(
-                expression: echo, sourceBadge: dateString(now, now: now, calendar: calendar),
-                targetBadge: "Time", payload: .value(display: text, copyText: text))
-        }
         if let range = clockRange(query, echo: echo, now: now, calendar: calendar) { return range }
 
         // One pass over the words, since an app search pays this on every keystroke.
@@ -38,7 +32,7 @@ enum CalcDateTime {
         let isBareMoment =
             signals.contains(.at) || signals.contains(.nextOrLast)
             || (hasDigit && signals.contains(.dayName) && namesADay(lowered))
-            || CalcTimestamp.looksLikeISO(lowered) || bareMomentWords.contains(query)
+            || CalcTimestamp.looksLikeISO(lowered)
         guard hasUntil || hasSince || hasArith || hasFromAgo || hasIn || isBareMoment || hasTimestamp else {
             return nil
         }
@@ -125,8 +119,6 @@ enum CalcDateTime {
             payload: .number(hours, suffix: " hr"))
     }
 
-    private static let bareMomentWords: Set<String> = ["now", "today", "tomorrow", "yesterday"]
-
     private static func clockRange(
         _ query: String, echo: String, now: Date, calendar: Calendar
     ) -> CalcResult? {
@@ -149,6 +141,25 @@ enum CalcDateTime {
             expression: echo, sourceBadge: timeString(start.date, calendar: calendar),
             targetBadge: timeString(end, calendar: calendar),
             payload: .value(display: text, copyText: text))
+    }
+
+    /// The only lone words that answer: each names one moment, where `monday` or `july` recurs.
+    static func namedMoment(_ word: String, now: Date, calendar: Calendar) -> CalcResult? {
+        let lowered = word.lowercased()
+        switch lowered {
+        case "now", "today", "tomorrow", "yesterday":
+            return bareMoment(lowered, echo: word, now: now, calendar: calendar)
+        case "time":
+            let clock = CalcDateFormatters.string(
+                from: now, calendar: calendar, zone: calendar.timeZone, template: "jmm")
+            return CalcResult(
+                expression: word,
+                sourceBadge: dateString(now, now: now, calendar: calendar),
+                targetBadge: CalcTimeZone.label(for: calendar.timeZone),
+                payload: .value(display: clock, copyText: clock))
+        default:
+            return nil
+        }
     }
 
     private struct Signals: OptionSet {
@@ -424,7 +435,7 @@ enum CalcDateTime {
         let seconds = base.date.timeIntervalSince(other.date)
         let payload: CalcResult.Payload
         if let unit = targetUnit {
-            payload = .number(seconds / unit.factor, suffix: " \(unit.symbol)")
+            payload = .measurement(seconds / unit.factor, unit: unit)
         } else if hasTime {
             let text = CalcFormatter.timespan(seconds)
             payload = .value(display: text, copyText: text)

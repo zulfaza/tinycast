@@ -29,7 +29,7 @@ final class AIChatCoordinator {
         window = AppWindowController(
             title: "AI Chat", contentSize: Theme.Size.aiChatWindow,
             minimumSize: Theme.Size.aiChatWindowMinimum, resizable: true,
-            autosaveName: "AIChatWindow", activation: core.activationPolicy)
+            autosaveName: "AIChatWindow", activation: core.activationPolicy, closesOnEscape: true)
         chats.onReplyFinished = { [weak self] chat in self?.nameIfNeeded(chat) }
     }
 
@@ -78,9 +78,15 @@ final class AIChatCoordinator {
         }
     }
 
+    func toggleWindow() {
+        guard !closeWindowIfKey() else { return }
+        showWindow()
+    }
+
     /// The window's views read these through the coordinator, never through `AppCore`.
     var history: ChatHistoryStore { core.chatHistory }
     var aiSettings: AISettingsStore { core.aiSettings }
+    var dictation: DictationCoordinator { core.dictationCoordinator }
 
     func focusExisting() -> Bool {
         window.focus()
@@ -171,6 +177,7 @@ final class AIChatCoordinator {
                 title: "Delete chat?", message: "“\(title)” will be removed. This can't be undone.",
                 symbol: "trash", confirmTitle: "Delete")
         else { return }
+        core.chatGPTSubscription.turns.discardConversation(id: id)
         chats.delete(id: id)
     }
 
@@ -182,6 +189,9 @@ final class AIChatCoordinator {
                     + "This can't be undone.",
                 symbol: "trash", confirmTitle: "Delete All")
         else { return }
+        for conversation in core.chatHistory.conversations where !conversation.isPinned {
+            core.chatGPTSubscription.turns.discardConversation(id: conversation.id)
+        }
         chats.deleteAll()
     }
 
@@ -350,6 +360,10 @@ final class AIChatCoordinator {
 
     func showMCPSettings() {
         settingsCoordinator.showSettings(tab: .ai)
+    }
+
+    func showDictationSettings() {
+        settingsCoordinator.showSettings(tab: .dictation)
     }
 
     /// The server a draft is addressed to, so the composer can show it as a chip while typing.
@@ -598,7 +612,7 @@ final class AIChatCoordinator {
         case .appleIntelligence?: return AIModelOption.appleIntelligenceIcon
         case .codex?: return .asset(AIBrand.openAI.assetName)
         case .claude?: return .asset(AIBrand.claude.assetName)
-        case .grok?: return .asset(AIBrand.x.assetName)
+        case .grok?: return .asset(AIBrand.grok.assetName)
         case .cursor?: return AIModelOption.cursorIcon
         case .openCode(let model, _)?: return AIModelOption.icon(AIBrand.resolve(model: model))
         case .api(let connection, let model, _)?:

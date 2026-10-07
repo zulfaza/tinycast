@@ -16,9 +16,10 @@ struct CalcResult: Equatable, Sendable {
         /// CSS lengths copy unspaced ("24px") so the answer pastes straight into a stylesheet.
         static func measurement(_ value: Double, unit: UnitDef) -> Self {
             let text = CalcFormatter.copyText(value)
+            let copySeparator = unit.category == .pixels ? "" : " "
             return .value(
                 display: "\(CalcFormatter.grouped(text)) \(unit.symbol)",
-                copyText: text + (unit.category == .pixels ? "" : " ") + unit.symbol)
+                copyText: text + copySeparator + unit.symbol)
         }
     }
 
@@ -28,12 +29,18 @@ struct CalcResult: Equatable, Sendable {
     let sourceBadge: String?
     let targetBadge: String?
     let payload: Payload
+    /// False when the copy text, typed back as a query, is not this answer: dates, times, booleans.
+    let canChain: Bool
 
-    init(expression: String, sourceBadge: String? = nil, targetBadge: String? = nil, payload: Payload) {
+    init(
+        expression: String, sourceBadge: String? = nil, targetBadge: String? = nil, payload: Payload,
+        canChain: Bool = true
+    ) {
         self.expression = expression
         self.sourceBadge = sourceBadge
         self.targetBadge = targetBadge
         self.payload = payload
+        self.canChain = canChain
     }
 
     /// True only for a copyable value; an error card has no primary action and no actions menu.
@@ -45,7 +52,7 @@ struct CalcResult: Equatable, Sendable {
 
 /// Raw query to answer, or nil when it isn't calculator input. See docs/features/calculator.md.
 enum CalcEngine {
-    /// `now`/`calendar`/`region` are injected so every path is deterministic under the harness.
+    /// Every environment fact is injected; the answer is canonical, for `format` to localize.
     static func evaluate(
         _ raw: String, now: Date, calendar: Calendar, rates: CurrencyRates? = nil,
         region: String? = nil, format: CalcNumberFormat = .english
@@ -54,17 +61,18 @@ enum CalcEngine {
         guard !trimmed.isEmpty, trimmed.count <= 256, let query = format.canonical(trimmed) else {
             return nil
         }
-        let bareMoment = ["now", "time", "today", "tomorrow", "yesterday"].contains(query.lowercased())
-        guard bareMoment
-            || !query.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0) })
-        else {
-            return nil
+        if query.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0) }) {
+            return CalcDateTime.namedMoment(query, now: now, calendar: calendar).map(unchained)
         }
 
-        if let dateTime = CalcDateTime.evaluate(query, now: now, calendar: calendar) { return dateTime }
+        if let dateTime = CalcDateTime.evaluate(query, now: now, calendar: calendar) {
+            return unchained(dateTime)
+        }
 
         // Before tokenizing: `5pm ldn in sf` is words, which the tokenizer would reject.
-        if let zone = CalcTimeZone.evaluate(query, now: now, calendar: calendar) { return zone }
+        if let zone = CalcTimeZone.evaluate(query, now: now, calendar: calendar) {
+            return unchained(zone)
+        }
         if CalcTimeZone.hasMalformedFixedOffset(query) { return nil }
 
         if let pixels = pixelAtDensity(
@@ -303,7 +311,17 @@ enum CalcEngine {
             expression: expression,
             sourceBadge: result.sourceBadge,
             targetBadge: result.targetBadge,
-            payload: result.payload)
+            payload: result.payload,
+            canChain: result.canChain)
+    }
+
+    private static func unchained(_ result: CalcResult) -> CalcResult {
+        CalcResult(
+            expression: result.expression,
+            sourceBadge: result.sourceBadge,
+            targetBadge: result.targetBadge,
+            payload: result.payload,
+            canChain: false)
     }
 
     // MARK: - Number bases
