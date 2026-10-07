@@ -5,23 +5,34 @@ import SwiftUI
 
 /// The Settings sidebar tile, shared with the matching feature switches.
 struct SettingsTabIcon: View {
-    let systemImage: String
-    let tint: Color
+    let tab: SettingsTab
+    var size = Theme.Size.settingsSidebarGlyph + Theme.Spacing.xs * 2
+
+    var body: some View {
+        SettingsSymbolTile(symbol: tab.systemImage, tint: tab.tileTint, size: size)
+    }
+}
+
+/// A white glyph on a System Settings–style colour tile.
+struct SettingsSymbolTile: View {
+    let symbol: String
+    let tint: TileTint
     var size = Theme.Size.settingsSidebarGlyph + Theme.Spacing.xs * 2
 
     var body: some View {
         let scale = size / (Theme.Size.settingsSidebarGlyph + Theme.Spacing.xs * 2)
-        Image(systemName: systemImage)
+        Image(systemName: symbol)
             .resizable()
             .scaledToFit()
+            .fontWeight(.semibold)
             .frame(
-                width: Theme.Size.settingsSidebarGlyph * scale,
-                height: Theme.Size.settingsSidebarGlyph * scale
+                width: Theme.Size.settingsSidebarGlyph * scale * 0.85,
+                height: Theme.Size.settingsSidebarGlyph * scale * 0.85
             )
-            .foregroundStyle(tint)
-            .padding(Theme.Spacing.xs * scale)
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
             .background(
-                tint.opacity(0.1),
+                Color(nsColor: tint.color).gradient,
                 in: RoundedRectangle(
                     cornerRadius: Theme.Radius.thumbnail * scale, style: .continuous))
     }
@@ -34,9 +45,7 @@ struct SettingsFeatureToggleLabel: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.lg) {
-            SettingsTabIcon(
-                systemImage: anchor.tab.systemImage, tint: .accentColor,
-                size: Theme.Size.settingsRowIcon * 1.5)
+            SettingsTabIcon(tab: anchor.tab, size: Theme.Size.settingsRowIcon * 1.5)
             VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                 SettingsRowTitle(anchor, title)
                     .fontWeight(.semibold)

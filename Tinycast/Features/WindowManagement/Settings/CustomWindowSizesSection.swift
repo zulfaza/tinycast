@@ -40,7 +40,8 @@ private struct CustomWindowSizeRow: View {
 
     var body: some View {
         SettingsRow(title: size.name, subtitle: size.summary) {
-            Image(systemName: CustomWindowSize.sfSymbol)
+            AppIconView(app: AppEntry(size))
+                .frame(width: SettingsListMetrics.iconSize, height: SettingsListMetrics.iconSize)
         } trailing: {
             ShortcutRecorder(action: .customWindowSize(id: size.id))
 

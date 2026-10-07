@@ -42,6 +42,10 @@ struct SymbolTint: Hashable, Sendable {
     let color: NSColor
 }
 
+extension TileTint {
+    var symbolTint: SymbolTint { SymbolTint(key: "tile-" + rawValue, color: color) }
+}
+
 enum SystemSymbolName {
     // This pair renders opposite to its name on the target SF Symbols runtime, in both appearances.
     static func resolve(_ name: String) -> String {

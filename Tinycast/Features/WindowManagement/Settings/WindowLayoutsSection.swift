@@ -74,7 +74,8 @@ private struct WindowLayoutSettingsRow: View {
 
     var body: some View {
         SettingsRow(title: layout.name, subtitle: layout.summary) {
-            SymbolImage(name: layout.symbol, size: 13)
+            AppIconView(app: AppEntry(layout))
+                .frame(width: SettingsListMetrics.iconSize, height: SettingsListMetrics.iconSize)
         } trailing: {
             ShortcutRecorder(action: .windowLayout(id: layout.id))
 

@@ -46,7 +46,8 @@ private struct RoomSettingsRow: View {
 
     var body: some View {
         SettingsRow(title: room.name, subtitle: subtitle) {
-            SymbolImage(name: Room.sfSymbol, size: 13)
+            AppIconView(app: AppEntry(room))
+                .frame(width: SettingsListMetrics.iconSize, height: SettingsListMetrics.iconSize)
         } trailing: {
             ShortcutRecorder(action: .windowRoom(id: room.id))
 

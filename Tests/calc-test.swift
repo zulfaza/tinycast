@@ -1116,6 +1116,10 @@ struct CalcTests {
         expectDisplayAt("time in sf", "17:18 (yesterday)", calendar: britain)
         expectBadgesAt("hrs till 9am", source: "00:18", target: "09:00", calendar: britain)
         expectDisplayAt("time in sf", "5:18 pm (yesterday)", calendar: britain12)
+        var indonesia = clock.calendar
+        indonesia.locale = Locale(identifier: "en_ID")
+        expectDisplayAt("5pm in tokyo", "02:00 (tomorrow)", calendar: indonesia)
+        expectDisplayAt("unix -1", "31 December, 1969 at 23:59:59", calendar: indonesia)
 
         let zoneNow = clock.calendar.date(
             from: DateComponents(year: 2026, month: 9, day: 15, hour: 12))!

@@ -136,7 +136,8 @@ private struct WindowCommandSettingsRow: View {
 
     var body: some View {
         SettingsRow(title: command.name) {
-            Image(systemName: command.sfSymbol)
+            AppIconView(app: entry)
+                .frame(width: SettingsListMetrics.iconSize, height: SettingsListMetrics.iconSize)
         } trailing: {
             ShortcutRecorder(action: .windowCommand(id: command.id))
 
@@ -149,12 +150,7 @@ private struct WindowCommandSettingsRow: View {
     }
 
     /// `VisibilityStore` keys on the entry, so this builds the same entry `AppIndex` publishes.
-    private var entry: AppEntry {
-        AppEntry(
-            id: command.entryID, name: command.name,
-            url: URL(string: "tinycast://window-command/" + command.id.rawValue)!, bundleID: nil,
-            kind: .windowCommand)
-    }
+    private var entry: AppEntry { AppEntry(command) }
 
     private var visibilityBinding: Binding<Bool> {
         Binding(
