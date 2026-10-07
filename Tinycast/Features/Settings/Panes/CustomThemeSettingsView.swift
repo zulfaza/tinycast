@@ -22,7 +22,7 @@ struct CustomThemeSettingsView: View {
             Section {
                 ThemePreview(palette: palette)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.Spacing.sm)
+                    .padding(.vertical, Theme.Spacing.md)
                 Picker("Appearance", selection: $selectedAppearance) {
                     ForEach(ThemeEditorAppearance.allCases) { appearance in
                         Text(appearance.title).tag(appearance)
@@ -78,7 +78,7 @@ struct CustomThemeSettingsView: View {
             } header: {
                 SettingsSectionHeader(.customThemesAccents)
             } footer: {
-                Text("Accent also tints the selected row.")
+                Text("Accent marks the caret and focused controls.")
             }
 
             Section {
@@ -272,73 +272,206 @@ struct CustomThemeSettingsView: View {
     }
 }
 
-/// The palette in miniature, drawn from the draft so every edit shows before it is anywhere else.
+/// The palette at its real size, drawn from the draft, so every edit shows before it is anywhere else.
 private struct ThemePreview: View {
     let palette: ThemePalette
+    private let metrics = InterfaceMetrics.standard
+
+    private var primary: Color { palette.primaryText.swiftUIColor }
+    private var secondary: Color { palette.support.secondaryText.swiftUIColor }
+    private var hairline: Color { primary.opacity(Theme.Size.themePreviewHairlineAlpha) }
+    private var highlight: Color { primary.opacity(Theme.Size.themePreviewSelectionAlpha) }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.Radius.dialog, style: .continuous)
-        let primary = palette.primaryText.swiftUIColor
-        let secondary = palette.support.secondaryText.swiftUIColor
-        let accent = palette.accent.swiftUIColor
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack(spacing: Theme.Spacing.md) {
-                Image(systemName: "magnifyingglass")
-                Text("Search for apps and commands…")
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(secondary)
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.vertical, Theme.Spacing.sm)
-            Rectangle()
-                .fill(secondary.opacity(Theme.Size.themePreviewHairlineAlpha))
-                .frame(height: Theme.Size.hairline)
-            row("curlybraces", "Search Snippets", detail: "Command", selected: true)
-            row("doc.on.clipboard", "Clipboard History", detail: "Command", selected: false)
-            HStack(spacing: Theme.Spacing.md) {
-                Label("Copied", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(palette.support.success.swiftUIColor)
-                Label("Delete", systemImage: "trash")
-                    .foregroundStyle(palette.support.destructive.swiftUIColor)
-                Spacer(minLength: 0)
-                Text("↵")
-                    .foregroundStyle(primary)
-                    .padding(.horizontal, Theme.Spacing.sm)
-                    .background(
-                        accent.opacity(Theme.Size.themePreviewSelectionAlpha),
-                        in: RoundedRectangle(cornerRadius: Theme.Radius.thumbnail, style: .continuous))
-            }
-            .font(.caption)
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.top, Theme.Spacing.xs)
-        }
-        .padding(Theme.Spacing.md)
-        .frame(width: Theme.Size.themePreviewWidth)
-        .background(background, in: shape)
-        .overlay(shape.strokeBorder(secondary.opacity(Theme.Size.themePreviewHairlineAlpha), lineWidth: Theme.Size.hairline))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Theme preview")
+        let scale = Theme.Size.themePreviewScale
+        let width = metrics.size.panelWidth
+        let height = Theme.Size.themePreviewPanelHeight + metrics.spacing.xxl + metrics.size.barButtonHeight
+        scene
+            .frame(width: width, height: height)
+            .scaleEffect(scale, anchor: .topLeading)
+            .frame(width: width * scale, height: height * scale, alignment: .topLeading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Theme preview")
     }
 
-    private func row(_ symbol: String, _ title: String, detail: String, selected: Bool) -> some View {
-        HStack(spacing: Theme.Spacing.md) {
-            Image(systemName: symbol)
-                .foregroundStyle(
-                    selected
-                        ? palette.accent.swiftUIColor : palette.support.secondaryText.swiftUIColor)
-                .frame(width: Theme.Size.themePreviewRowIcon, height: Theme.Size.themePreviewRowIcon)
-            Text(title).foregroundStyle(palette.primaryText.swiftUIColor)
-            Spacer(minLength: 0)
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(palette.support.secondaryText.swiftUIColor)
+    private var scene: some View {
+        VStack(spacing: metrics.spacing.xxl) {
+            panel
+                .overlay(alignment: .bottomTrailing) {
+                    actionsMenu
+                        .padding(.trailing, metrics.spacing.md)
+                        .padding(.bottom, metrics.size.bottomBarHeight - metrics.spacing.xs)
+                }
+            hud
         }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.sm)
+    }
+
+    private var panel: some View {
+        let shape = RoundedRectangle(cornerRadius: metrics.radius.panel, style: .continuous)
+        return VStack(alignment: .leading, spacing: 0) {
+            header
+            VStack(alignment: .leading, spacing: 0) {
+                sectionHeader("Favorites")
+                row(path: "/System/Library/CoreServices/Finder.app", "Finder", selected: true)
+                row(path: "/Applications/Safari.app", "Safari")
+                sectionHeader("Applications")
+                row(path: "/System/Applications/Calendar.app", "Calendar")
+                row(path: "/System/Applications/Notes.app", "Notes")
+                row(path: "/System/Applications/System Settings.app", "System Settings")
+            }
+            .padding(.horizontal, metrics.spacing.md)
+            Spacer(minLength: 0)
+            footer
+        }
+        .frame(width: metrics.size.panelWidth, height: Theme.Size.themePreviewPanelHeight)
+        .background(background, in: shape)
+        .overlay(shape.strokeBorder(hairline, lineWidth: Theme.Size.hairline))
+        .clipShape(shape)
+    }
+
+    private var header: some View {
+        HStack(spacing: metrics.spacing.md) {
+            Image(systemName: "magnifyingglass")
+                .font(metrics.typography.headerIcon)
+                .foregroundStyle(secondary)
+                .frame(width: metrics.size.headerIconSlot)
+            HStack(spacing: Theme.Size.hairline) {
+                Rectangle()
+                    .fill(palette.accent.swiftUIColor)
+                    .frame(width: Theme.Size.hairline * 2, height: metrics.typography.searchFieldSize)
+                Text("Search for apps and commands…")
+                    .font(metrics.typography.searchField)
+                    .foregroundStyle(secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(height: metrics.size.headerHeight)
+        .padding(.horizontal, metrics.spacing.lg)
+        .padding(.vertical, metrics.size.headerPadding)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(metrics.typography.sectionHeader)
+            .foregroundStyle(secondary)
+            .padding(.horizontal, metrics.spacing.md)
+            .padding(.top, metrics.spacing.sm)
+            .padding(.bottom, metrics.spacing.sectionHeaderBottom)
+    }
+
+    private func row(path: String, _ title: String, selected: Bool = false) -> some View {
+        HStack(spacing: metrics.spacing.lg) {
+            Image(nsImage: IconCache.icon(forFile: path))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: metrics.size.resultRowIcon, height: metrics.size.resultRowIcon)
+            Text(title)
+                .font(metrics.typography.rowTitle)
+                .foregroundStyle(primary)
+            Spacer(minLength: metrics.spacing.lg)
+            Text("Application")
+                .font(metrics.typography.rowTrailing)
+                .foregroundStyle(secondary)
+        }
+        .padding(.horizontal, metrics.spacing.md)
+        .padding(.vertical, metrics.spacing.sm)
         .background(
-            selected
-                ? palette.accent.swiftUIColor.opacity(Theme.Size.themePreviewSelectionAlpha) : .clear,
-            in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+            selected ? highlight : .clear,
+            in: RoundedRectangle(cornerRadius: metrics.radius.row, style: .continuous))
+    }
+
+    private var footer: some View {
+        HStack(spacing: metrics.spacing.md) {
+            Image(systemName: "ellipsis")
+                .font(metrics.typography.bar)
+                .foregroundStyle(primary)
+                .frame(width: metrics.size.barButtonHeight, height: metrics.size.barButtonHeight)
+                .background(highlight, in: Circle())
+            Spacer(minLength: 0)
+            HStack(spacing: metrics.spacing.lg) {
+                HStack(spacing: metrics.spacing.sm) {
+                    Text("Open Application").foregroundStyle(primary)
+                    keyCap("↵")
+                }
+                HStack(spacing: metrics.spacing.sm) {
+                    Text("Actions").foregroundStyle(secondary)
+                    keyCap("⌘")
+                    keyCap("K")
+                }
+            }
+            .font(metrics.typography.bar)
+            .padding(.horizontal, metrics.spacing.lg)
+            .frame(height: metrics.size.barButtonHeight + metrics.spacing.sm)
+            .background(highlight, in: Capsule())
+            .overlay(Capsule().strokeBorder(hairline, lineWidth: Theme.Size.hairline))
+        }
+        .padding(.horizontal, metrics.spacing.md)
+        .frame(height: metrics.size.bottomBarHeight)
+    }
+
+    private func keyCap(_ glyph: String) -> some View {
+        Text(glyph)
+            .font(metrics.typography.keyCap)
+            .foregroundStyle(secondary)
+            .frame(minWidth: metrics.size.keyCap, minHeight: metrics.size.keyCap)
+            .background(
+                highlight, in: RoundedRectangle(cornerRadius: metrics.radius.keyCap, style: .continuous))
+    }
+
+    private var actionsMenu: some View {
+        let shape = RoundedRectangle(cornerRadius: metrics.radius.menuPanel, style: .continuous)
+        return VStack(alignment: .leading, spacing: 0) {
+            menuRow("arrow.up.forward.app", "Open Application", "↵", selected: true)
+            menuRow("folder", "Show in Finder", "⌘↵")
+            menuRow("doc.on.doc", "Copy Path", "⇧⌘C")
+            Rectangle().fill(hairline).frame(height: Theme.Size.hairline)
+                .padding(.vertical, metrics.spacing.xs)
+            menuRow("trash", "Move to Trash", "⌃X", tint: palette.support.destructive.swiftUIColor)
+        }
+        .padding(metrics.spacing.sm)
+        .frame(width: metrics.size.actionMenuWidth)
+        .background(highlight, in: shape)
+        .background(background, in: shape)
+        // The panel colour is translucent by default; a menu over rows must not let them through.
+        .background(palette.panelBackground.withAlpha(1).swiftUIColor, in: shape)
+        .overlay(shape.strokeBorder(hairline, lineWidth: Theme.Size.hairline))
+        .shadow(color: .black.opacity(Theme.Size.themePreviewShadowAlpha), radius: metrics.spacing.lg)
+    }
+
+    private func menuRow(
+        _ symbol: String, _ title: String, _ shortcut: String, selected: Bool = false, tint: Color? = nil
+    ) -> some View {
+        HStack(spacing: metrics.spacing.md) {
+            Image(systemName: symbol)
+                .font(metrics.typography.menuIcon)
+                .foregroundStyle(tint ?? secondary)
+                .frame(width: metrics.size.menuIcon, height: metrics.size.menuIcon)
+            Text(title)
+                .font(metrics.typography.menuRow)
+                .foregroundStyle(tint ?? primary)
+            Spacer(minLength: metrics.spacing.md)
+            Text(shortcut)
+                .font(metrics.typography.menuShortcut)
+                .foregroundStyle(secondary)
+        }
+        .padding(.horizontal, metrics.spacing.md)
+        .frame(height: metrics.size.menuRowHeight)
+        .background(
+            selected ? highlight : .clear,
+            in: RoundedRectangle(cornerRadius: metrics.radius.menuRow, style: .continuous))
+    }
+
+    private var hud: some View {
+        HStack(spacing: metrics.spacing.md) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(palette.support.success.swiftUIColor)
+            Text("Copied to Clipboard").foregroundStyle(primary)
+        }
+        .font(metrics.typography.bar)
+        .padding(.horizontal, metrics.spacing.xl)
+        .frame(height: metrics.size.barButtonHeight)
+        .background(background, in: Capsule())
+        .overlay(Capsule().strokeBorder(hairline, lineWidth: Theme.Size.hairline))
     }
 
     /// The same angle-to-points mapping `Theme.Colors.panelSurface` paints the real panel with.
