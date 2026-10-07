@@ -161,5 +161,6 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             guard let window, self?.window === window else { return }
             window.makeKeyAndOrderFront(nil)
         }
+        activation.activateIfRefused(raising: window)
     }
 }
