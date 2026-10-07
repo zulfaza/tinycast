@@ -31,6 +31,7 @@ final class ActivationPolicy {
                 at: Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration())
             guard window.isVisible else { return }
             window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
         }
     }
 

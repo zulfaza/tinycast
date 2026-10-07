@@ -45,7 +45,8 @@ no appcast: the release feed the website already reads is the feed the app reads
   in, straight into the palette the user opened the app to use, where a launch-at-login copy would
   have found the desktop idle. The window itself still appears at most once per version per launch:
   `announcedVersion` is set the moment an offer lands, so re-offering can never turn into nagging.
-  Readiness is asked again at the click.
+  Readiness is asked again at the click. The window floats (`.floating` level) because an automatic
+  check can open it while another app is frontmost and refuses activation.
 - **Automatic checking is optional; manual checking stays available.** Settings → General →
   Automatically check for updates defaults on. Turning it off stops the background task and any
   in-flight automatic request, so neither a response nor a cached release can raise a new prompt.

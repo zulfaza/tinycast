@@ -19,6 +19,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     private let autosaveName: String?
     private let activation: ActivationPolicy
     private let closesOnEscape: Bool
+    private let level: NSWindow.Level
     private var window: NSWindow?
     /// Rebuilt with the window, so a chrome's state never outlives the window it decorated.
     private var chrome: WindowChrome?
@@ -28,7 +29,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     /// The opening size is also the resize floor unless a smaller `minimumSize` is named.
     init(
         title: String, contentSize: CGSize, minimumSize: CGSize? = nil, resizable: Bool = false,
-        autosaveName: String? = nil, activation: ActivationPolicy, closesOnEscape: Bool = false
+        autosaveName: String? = nil, activation: ActivationPolicy, closesOnEscape: Bool = false,
+        level: NSWindow.Level = .normal
     ) {
         self.title = title
         self.contentSize = contentSize
@@ -37,6 +39,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         self.autosaveName = autosaveName
         self.activation = activation
         self.closesOnEscape = closesOnEscape
+        self.level = level
     }
 
     /// Returns `true` when a window was built, `false` when an already-open one was re-raised.
@@ -128,6 +131,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         // Edge-to-edge under a transparent titlebar, so it reads as one surface.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        window.level = level
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         // AppKit would otherwise resurrect the window at launch, before anything is wired up.
