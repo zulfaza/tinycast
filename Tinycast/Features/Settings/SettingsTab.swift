@@ -1,3 +1,5 @@
+import SwiftUI
+
 enum SettingsTab: CaseIterable, Identifiable {
     case general, customThemes, applications, systemSettings, systemActions, commands, quicklinks,
         appleShortcuts, fallbacks, clipboard, snippets, fileSearch, windowManagement, navigation, notes,
@@ -37,29 +39,48 @@ enum SettingsTab: CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: return "switch.2"
-        case .customThemes: return "paintpalette"
-        case .applications: return "square.grid.2x2"
-        case .systemSettings: return "gearshape"
-        case .systemActions: return "bolt"
-        case .commands: return "terminal"
+        case .customThemes: return "paintpalette.fill"
+        case .applications: return "square.grid.2x2.fill"
+        case .systemSettings: return "gearshape.fill"
+        case .systemActions: return "bolt.fill"
+        case .commands: return "terminal.fill"
         case .quicklinks: return "link"
-        case .appleShortcuts: return "square.2.layers.3d"
+        case .appleShortcuts: return "square.2.layers.3d.fill"
         case .fallbacks: return "arrow.turn.down.right"
         case .ai: return "sparkles"
         case .quickActions: return "wand.and.sparkles"
         case .dictation: return "waveform"
         case .fileSearch: return "doc.text.magnifyingglass"
-        case .notes: return "text.page"
+        case .notes: return "text.page.fill"
         case .snippets: return "curlybraces"
         case .navigation: return "arrow.left.arrow.right"
         case .windowManagement: return "macwindow"
-        case .clipboard: return "doc.on.clipboard"
-        case .emoji: return "face.smiling"
+        case .clipboard: return "doc.on.clipboard.fill"
+        case .emoji: return "face.smiling.inverse"
         case .calendar: return "calendar"
-        case .extensions: return "puzzlepiece.extension"
-        case .permissions: return "lock.shield"
-        case .backup: return "arrow.up.arrow.down.circle"
-        case .about: return "info.circle"
+        case .extensions: return "puzzlepiece.extension.fill"
+        case .permissions: return "hand.raised.fill"
+        case .backup: return "clock.arrow.circlepath"
+        case .about: return "info"
+        }
+    }
+
+    /// The tile behind the glyph, as System Settings colours each pane.
+    var tileColor: Color {
+        switch self {
+        case .general, .systemSettings, .fallbacks, .about: return .gray
+        case .customThemes, .dictation: return .pink
+        case .permissions, .quicklinks, .fileSearch: return .blue
+        case .applications, .windowManagement: return .indigo
+        case .systemActions, .emoji: return .yellow
+        case .commands, .navigation: return .teal
+        case .appleShortcuts, .ai: return .purple
+        case .clipboard: return .brown
+        case .snippets, .quickActions: return .cyan
+        case .notes: return .orange
+        case .calendar: return .red
+        case .extensions: return .mint
+        case .backup: return .green
         }
     }
 }
