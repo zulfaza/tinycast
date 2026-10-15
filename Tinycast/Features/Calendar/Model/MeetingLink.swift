@@ -1,6 +1,5 @@
 import Foundation
 
-/// A meeting's join link and the service behind it, read out of the event's own text.
 struct MeetingLink: Hashable, Sendable {
     let provider: Provider
     let url: URL
@@ -55,7 +54,7 @@ struct MeetingLink: Hashable, Sendable {
     }
 
     private static let terminators: Set<Character> = [
-        " ", "\t", "\n", "\r", "\"", "'", "<", ">", "«", "»", "\u{00A0}"
+        " ", "\t", "\n", "\r", "\r\n", "\"", "'", "<", ">", "«", "»", "\u{00A0}"
     ]
     private static let trailingNoise: Set<Character> = [".", ",", ";", ":", ")", "]", "}", "!", "?"]
 

@@ -62,7 +62,6 @@ enum CalendarMenuBarDisplay: Int, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// How long a started event holds the menu bar. Zero, the default, means it goes as it starts.
 enum CalendarLauncherLimit: Int, CaseIterable, Identifiable, Sendable {
     case one = 1
     case three = 3
@@ -173,12 +172,11 @@ final class AppSettings {
         }
     }
 
-    /// The physical key remapped to the Hyper chord; `HyperKeyTap` reacts via its observer.
+    /// The physical key remapped to the Hyper chord; `HyperKeyManager` reacts via its observer.
     var hyperKey: HyperKeyPhysicalKey {
         didSet { defaults.set(hyperKey.rawValue, forKey: Key.hyperKey.rawValue) }
     }
 
-    /// Whether Hyper is ⌃⌥⇧⌘ (on) or ⌃⌥⌘ (off).
     var hyperKeyIncludesShift: Bool {
         didSet { defaults.set(hyperKeyIncludesShift, forKey: Key.hyperKeyIncludesShift.rawValue) }
     }
@@ -186,6 +184,14 @@ final class AppSettings {
     var hyperKeyQuickPress: HyperKeyQuickPress {
         didSet {
             defaults.set(hyperKeyQuickPress.rawValue, forKey: Key.hyperKeyQuickPress.rawValue)
+        }
+    }
+
+    var hyperKeySecureInputCompatibility: Bool {
+        didSet {
+            defaults.set(
+                hyperKeySecureInputCompatibility,
+                forKey: Key.hyperKeySecureInputCompatibility.rawValue)
         }
     }
 
@@ -204,7 +210,6 @@ final class AppSettings {
         didSet { defaults.set(popToRootTimeout.rawValue, forKey: Key.popToRootTimeout.rawValue) }
     }
 
-    /// Whether Escape walks back through the screens the palette opened, or just closes it.
     var escapeKeyBehavior: EscapeKeyBehavior {
         didSet { defaults.set(escapeKeyBehavior.rawValue, forKey: Key.escapeKeyBehavior.rawValue) }
     }
@@ -344,6 +349,11 @@ final class AppSettings {
         }
     }
 
+    /// Off by default: chunked transcription costs extra inference while recording.
+    var dictationLiveInsertion: Bool {
+        didSet { defaults.set(dictationLiveInsertion, forKey: Key.dictationLiveInsertion.rawValue) }
+    }
+
     var dictationIdleRelease: DictationIdleRelease {
         didSet { defaults.set(dictationIdleRelease.rawValue, forKey: Key.dictationIdleRelease.rawValue) }
     }
@@ -440,7 +450,6 @@ final class AppSettings {
         didSet { defaults.set(navigationEnabled, forKey: Key.navigationEnabled.rawValue) }
     }
 
-    /// Bundle IDs whose menu bar Search Menu Bar Items refuses to read at all.
     var menuSearchDisabledApps: [String] {
         didSet { defaults.set(menuSearchDisabledApps, forKey: Key.menuSearchDisabledApps.rawValue) }
     }
@@ -633,12 +642,10 @@ final class AppSettings {
         }
     }
 
-    /// What `{selection}` does when there is no readable selection to pass.
-    var quicklinkSelectionFallback: QuicklinkSelectionFallback {
+    var quicklinkPassesSelectedText: Bool {
         didSet {
             defaults.set(
-                quicklinkSelectionFallback.rawValue,
-                forKey: Key.quicklinkSelectionFallback.rawValue)
+                quicklinkPassesSelectedText, forKey: Key.quicklinkPassesSelectedText.rawValue)
         }
     }
 
@@ -694,6 +701,8 @@ final class AppSettings {
             defaults.string(forKey: Key.hyperKeyQuickPress.rawValue)
             .flatMap(HyperKeyQuickPress.init)
             ?? .none
+        hyperKeySecureInputCompatibility = defaults.bool(
+            forKey: Key.hyperKeySecureInputCompatibility.rawValue)
         emojiSkinTone =
             defaults.string(forKey: Key.emojiSkinTone.rawValue).flatMap(EmojiSkinTone.init) ?? .none
         emojiGridColumns =
@@ -759,6 +768,7 @@ final class AppSettings {
         dictationAdaptsCapitalization =
             defaults.object(forKey: Key.dictationAdaptsCapitalization.rawValue) == nil
             || defaults.bool(forKey: Key.dictationAdaptsCapitalization.rawValue)
+        dictationLiveInsertion = defaults.bool(forKey: Key.dictationLiveInsertion.rawValue)
         dictationIdleRelease =
             defaults.object(forKey: Key.dictationIdleRelease.rawValue)
             .flatMap { $0 as? Int }
@@ -875,9 +885,8 @@ final class AppSettings {
             || defaults.bool(forKey: Key.quicklinksShowInLauncher.rawValue)
         appleShortcutsEnabled = defaults.bool(forKey: Key.appleShortcutsEnabled.rawValue)
         quicklinkOpensNewWindow = defaults.bool(forKey: Key.quicklinkOpensNewWindow.rawValue)
-        quicklinkSelectionFallback =
-            defaults.string(forKey: Key.quicklinkSelectionFallback.rawValue)
-            .flatMap(QuicklinkSelectionFallback.init) ?? .ask
+        quicklinkPassesSelectedText = defaults.bool(
+            forKey: Key.quicklinkPassesSelectedText.rawValue)
         quicklinkConfirmsBeforeDelete =
             defaults.object(forKey: Key.quicklinkConfirmsBeforeDelete.rawValue) == nil
             || defaults.bool(forKey: Key.quicklinkConfirmsBeforeDelete.rawValue)

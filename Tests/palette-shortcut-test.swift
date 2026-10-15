@@ -1,6 +1,5 @@
 import Foundation
 
-/// Every row chord resolves to exactly the shortcut the old per-chord handlers answered.
 @main
 @MainActor
 struct PaletteShortcutTests {
@@ -74,7 +73,7 @@ struct PaletteShortcutTests {
         expect(
             resolve("f", command: true, shift: true, control: true), .toggleFavorite,
             "an extra Control still reads ⇧⌘F")
-        expect(resolve("f", command: true), nil, "⌘F is not the favorite chord")
+        expect(resolve("f", command: true), .showInFinder, "⌘F shows the row in Finder")
         expect(resolve("h", command: true, shift: true), .hideFromSearch, "⇧⌘H hides the row")
         expect(resolve("h", command: true), nil, "⌘H is not the hide chord")
         expect(resolve("q", shift: true, control: true), .quit, "⌃⇧Q quits the app")
@@ -88,8 +87,13 @@ struct PaletteShortcutTests {
         expect(resolve("j", command: true), .continueInChat, "⌘J continues Quick AI in AI Chat")
         expect(resolve("n", command: true), .newItem, "⌘N starts a new one")
         expect(resolve("n", command: true, shift: true), nil, "⇧⌘N is not the new-item chord")
-        expect(resolve("e", command: true), .edit, "⌘E edits the selected row")
+        expect(resolve("e", command: true), .edit, "⌘E edits the row")
+        expect(resolve("e"), nil, "typing E stays with the field")
         expect(resolve("e", command: true, shift: true), nil, "⇧⌘E is not the edit chord")
+        expect(resolve("e", command: true, option: true), nil, "⌥⌘E is not the edit chord")
+        expect(resolve("e", command: true, control: true), nil, "⌃⌘E is not the edit chord")
+        expect(resolve("d", command: true), .duplicate, "⌘D duplicates the row")
+        expect(resolve("d", command: true, shift: true), nil, "⇧⌘D is not the duplicate chord")
         expect(resolve(",", command: true, option: true), .settings, "⌥⌘, opens the screen's settings")
         expect(resolve(",", command: true), nil, "⌘, stays the app's own Settings")
 
@@ -99,7 +103,8 @@ struct PaletteShortcutTests {
 
         let expanded: [PaletteShortcut] = [
             .copyFile, .copyName, .copyPath, .copyText, .pasteFile, .quickLook, .openInApp,
-            .showDetails, .toggleFavorite, .hideFromSearch, .quit, .forceQuit, .restart, .edit
+            .showDetails, .toggleFavorite, .hideFromSearch, .quit, .forceQuit, .restart, .edit,
+            .duplicate, .showInFinder
         ]
         let anywhere: [PaletteShortcut] = [
             .commandDelete, .delete, .deleteAll, .pin, .favoriteSlot(0), .continueInChat, .newItem,
@@ -115,7 +120,7 @@ struct PaletteShortcutTests {
         let closing: [PaletteShortcut] = [
             .delete, .deleteAll, .copyFile, .copyName, .copyPath, .copyText, .copyCalculation,
             .quickLook, .openInApp, .showDetails, .toggleFavorite, .hideFromSearch, .newItem, .settings,
-            .edit
+            .edit, .duplicate, .showInFinder
         ]
         let leaving: [PaletteShortcut] = [
             .commandDelete, .pasteFile, .quit, .forceQuit, .restart, .pin, .favoriteSlot(0),

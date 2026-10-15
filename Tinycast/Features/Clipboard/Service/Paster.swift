@@ -55,12 +55,12 @@ enum Paster {
     }
 
     /// Put a string on the pasteboard unmarked, so it enters history like any other copy.
-    @MainActor
-    static func copyPlainText(_ text: String) {
+    @MainActor @discardableResult
+    static func copyPlainText(_ text: String) -> Bool {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.declareTypes([.string], owner: nil)
-        pb.setString(text, forType: .string)
+        return pb.setString(text, forType: .string)
     }
 
     /// String counterpart of `paste`, marker-stamped so the text doesn't re-enter history.
@@ -71,7 +71,6 @@ enum Paster {
         scheduleCommandV(after: .milliseconds(80))
     }
 
-    /// A file, pasted into `previousApp`; the receiver takes the file or its path, as it reads.
     @MainActor
     static func pasteFile(_ url: URL, previousApp: NSRunningApplication?) {
         PasteboardFiles.write(url, to: .general)
@@ -79,7 +78,6 @@ enum Paster {
         scheduleCommandV(after: .milliseconds(80))
     }
 
-    /// String counterpart of `copy(_:store:)`.
     @MainActor
     static func copyString(_ text: String) {
         writeString(text)

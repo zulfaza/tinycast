@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// `Form.DatePicker`: presets plus an expression, typed into the control itself.
 struct ExtensionDateField: View {
     private var form: ExtensionFormMetrics { ExtensionFormMetrics(scale: metrics.scale) }
     @Environment(\.metrics) private var metrics
@@ -15,13 +14,11 @@ struct ExtensionDateField: View {
     /// When the query last changed, which is where the caret's blink restarts from.
     @State private var typedAt = Date()
     @State private var highlighted = 0
-    @State private var hovered = false
     /// Reported by the panel once it has placed itself, for the chevron that points its way.
     @State private var flipped = false
     /// Told while the list is up, so the palette leaves every navigation key to it.
     @Environment(PaletteState.self) private var palette
 
-    /// A `date` picker holds a day; anything else holds a time as well.
     private var includesTime: Bool { node.string("type") != "date" }
     private var value: Date? { node.date("value") }
     private var isFocused: Bool { focus == index }
@@ -37,7 +34,6 @@ struct ExtensionDateField: View {
             query: query, now: Date(), calendar: .current, includesTime: includesTime)
     }
 
-    /// What the control does, then whatever the extension explains about the field.
     private var hint: String {
         let state = open ? "Showing dates" : "Opens a list of dates"
         let parts = [node.string("error"), node.string("info")]
@@ -110,7 +106,6 @@ struct ExtensionDateField: View {
             Image(systemName: "calendar")
                 .font(metrics.typography.rowTrailing)
                 .foregroundStyle(Theme.Colors.textSecondary)
-            // While the list is open the control is the expression field, caret and all.
             if open {
                 ExtensionQueryText(query: query, prompt: "tomorrow at 10am", phase: typedAt)
             } else {
@@ -124,7 +119,7 @@ struct ExtensionDateField: View {
             Spacer(minLength: metrics.spacing.sm)
             ExtensionDisclosureChevron(open: open, flipped: flipped)
         }
-        .extensionFieldChrome(focused: isFocused, open: open, hovered: hovered)
+        .extensionFieldChrome(focused: isFocused, open: open)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(node.string("title") ?? "Date"))
@@ -132,7 +127,6 @@ struct ExtensionDateField: View {
         .accessibilityValue(Text(open && !query.isEmpty ? query : label))
         .accessibilityHint(Text(hint))
         .accessibilityAddTraits(.isButton)
-        .onHover { hovered = $0 }
         .onTapGesture {
             focus = index
             if open { close() } else { _ = openList() }

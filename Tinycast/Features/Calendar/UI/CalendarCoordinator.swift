@@ -4,6 +4,7 @@ import AppKit
 @MainActor
 @Observable
 final class CalendarCoordinator {
+    private(set) var editor: EventEditorSession?
     private let store: CalendarStore
     private let clock: MeetingClock
     private let appIndex: AppIndex
@@ -12,7 +13,6 @@ final class CalendarCoordinator {
     /// Dialogs and the HUD, so both stay owned by `AppCore`.
     private unowned let core: AppCore
 
-    /// Its own surface, the way `NotesCoordinator` owns the notes window.
     @ObservationIgnored private lazy var cameraPreview = CameraPreviewController()
 
     @ObservationIgnored private var paletteVisible = false
@@ -21,7 +21,7 @@ final class CalendarCoordinator {
     /// Auto joined this launch, so a meeting opens itself at most once.
     @ObservationIgnored private var autoJoined: Set<MeetingEvent.ID> = []
 
-    /// Stored and written only on a flip: the menu-bar scene reads it, and must not re-run per tick.
+    /// Written only on a flip: the menu-bar scene reads it, and must not re-run per tick.
     private(set) var hasMenuBarEvent = false
     /// Dismissed from the menu bar this launch, the way `autoJoined` remembers what it opened.
     private var dismissedFromMenuBar: Set<MeetingEvent.ID> = []
@@ -54,8 +54,7 @@ final class CalendarCoordinator {
     /// Live rather than clock-driven: a chord reads this with nothing ticking.
     var agenda: [MeetingEvent] { UpcomingWindow.agenda(from: store.events, now: Date()) }
 
-    /// The calendar label keeps its plain icon until today's events are exhausted, with a small
-    /// grace across midnight for a meeting that starts imminently.
+    /// The label keeps its plain icon until today's events run out, plus a grace past midnight.
     var hasUpcomingMenuBarEvent: Bool {
         MenuBarSummary.hasUpcomingEvent(from: store.events, now: clock.now)
     }
@@ -119,12 +118,12 @@ final class CalendarCoordinator {
         }
     }
 
-    /// Publishes or withdraws everything the feature contributes to the launcher.
     func applyEnabled() {
         let enabled = settings.calendarEnabled
         appIndex.setCommandsVisible(
             [.joinNextMeeting, .copyMeetingLink, .mySchedule, .openInCalendar, .createEvent], enabled)
         guard enabled else {
+            cancelEventEditing()
             store.stop()
             clock.stop()
             publishEntries()
@@ -268,23 +267,49 @@ final class CalendarCoordinator {
     }
 
     func createEvent() {
-        paletteCoordinator.hidePalette(restoreFocus: false)
+        store.refreshAccess()
         guard settings.calendarEnabled, store.access == .granted else {
             report("Turn Calendar on in Settings first")
             return
         }
-        NSApp.activate(ignoringOtherApps: true)
-        Task {
-            guard let draft = await core.createEvent() else { return }
-            guard store.createEvent(draft, now: Date()) else {
+        guard !paletteCoordinator.isShowing(.eventEditor) else { return }
+        // A hidden palette keeps the editor mounted, so its draft is the one to bring back.
+        if editor == nil { editor = EventEditorSession() }
+        paletteCoordinator.showPalette(mode: .eventEditor)
+    }
+
+    func saveEvent() {
+        guard let editor, editor.draft.isValid, !core.isShowingDialog else { return }
+        store.refreshAccess()
+        guard settings.calendarEnabled, store.access == .granted else {
+            cancelEventEditing()
+            report("Turn Calendar on in Settings first")
+            return
+        }
+        guard store.createEvent(editor.draft, now: Date()) else {
+            Task {
                 _ = await core.reportFailure(
                     title: "Couldn't create the event",
                     message: "No calendar on this Mac accepts new events.",
                     symbol: "calendar.badge.exclamationmark", recovery: nil)
-                return
             }
-            core.showMessage("Event created")
+            return
         }
+        cancelEventEditing()
+        core.showMessage("Event created")
+    }
+
+    func cancelEventEditing() {
+        guard core.palette.mode == .eventEditor else { return }
+        if !core.palette.pop(preservingSelection: true) {
+            paletteCoordinator.hidePalette()
+            core.palette.prepare(mode: .launcher)
+        }
+        editor = nil
+    }
+
+    func editorDidClose(_ editor: EventEditorSession) {
+        if self.editor === editor { self.editor = nil }
     }
 
     func openNextMeetingInCalendar() {
@@ -303,7 +328,6 @@ final class CalendarCoordinator {
 
     // MARK: - Row actions
 
-    /// ↵ on a meeting row: join it, or hand a linkless one to Calendar.
     func activateMeeting(id: String) {
         guard let meeting = store.event(id: id) else { return }
         join(meeting)

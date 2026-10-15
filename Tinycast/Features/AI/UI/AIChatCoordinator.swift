@@ -65,10 +65,14 @@ final class AIChatCoordinator {
     // MARK: - The window
 
     /// Reopens on whatever it last showed: the conversation is `AppCore`'s, not the window's.
-    func showWindow() {
+    func showWindow(applyingOpenPolicy: Bool = false) {
         guard settings.aiEnabled else { return }
         prepareForChat()
         guard !window.focus() else { return }
+        if applyingOpenPolicy {
+            chats.applyWindowOpenPolicy(
+                opensTo: core.aiSettings.opensTo, newAfter: core.aiSettings.newChatAfter)
+        }
         // One find per window: the chrome's search field writes it, the transcript reads it.
         let find = ChatFindState()
         window.show(chrome: AIChatWindowChrome(coordinator: self, chats: chats, find: find)) {
@@ -80,7 +84,7 @@ final class AIChatCoordinator {
 
     func toggleWindow() {
         guard !closeWindowIfKey() else { return }
-        showWindow()
+        showWindow(applyingOpenPolicy: true)
     }
 
     /// The window's views read these through the coordinator, never through `AppCore`.
@@ -112,6 +116,15 @@ final class AIChatCoordinator {
         }
     }
 
+    /// The sidebar's filter is the view's own state, so ⌃Tab walks every saved chat.
+    func openAdjacentChat(step: Int) {
+        guard
+            let target = history.conversations.pinnedFirst.adjacent(
+                to: chats.window.session.id, step: step)
+        else { return }
+        openChat(id: target.id)
+    }
+
     /// Quick AI's ⌘J: the conversation, its staged files and the half-typed line all move over.
     func continueInWindow(draft: String) {
         chats.continueQuickAIInWindow(draft: draft)
@@ -136,7 +149,6 @@ final class AIChatCoordinator {
         core.chatHistory.rename(id: id, to: title)
     }
 
-    /// The title the window and the sidebar show, a rename included.
     func title(of chat: AIChatState) -> String {
         core.chatHistory.conversation(id: chat.session.id)?.displayTitle ?? chat.session.title
     }
@@ -147,7 +159,6 @@ final class AIChatCoordinator {
         core.showMessage("Chat copied")
     }
 
-    /// The same Markdown Copy Chat makes, written where the reader chooses.
     func exportChat(id: UUID) {
         guard let markdown = markdownTranscript(of: id) else { return }
         let panel = NSSavePanel()
@@ -347,7 +358,6 @@ final class AIChatCoordinator {
         }
     }
 
-    /// The servers a chat's tools menu offers; empty when MCP is off or nothing is set up.
     var mcpServers: [MCPServer] { core.mcpCoordinator.servers }
 
     func setToolsEnabled(_ enabled: Bool, in chat: AIChatState) {
@@ -387,9 +397,13 @@ final class AIChatCoordinator {
         case .appleIntelligence?: return .appleIntelligence
         case .codex?: return .codex
         case .claude?: return .claudeCommand
-        case .grok?, .openCode?, .cursor?:
+        case .openCode(let model, _)?:
+            let images = core.installedAI.status(for: .openCode).models
+                .contains { $0.id == model && $0.acceptsImages }
             return AIModelCapabilities(
-                images: false, documents: false, webSearch: false, tools: false)
+                images: images, documents: false, webSearch: false, tools: false)
+        case .grok?, .cursor?:
+            return .none
         case .api(let connection, let model, _)?:
             return core.aiSettings.connection(id: connection)?.capabilities(for: model)
                 ?? AIModelCapabilities.none
@@ -624,7 +638,6 @@ final class AIChatCoordinator {
         }
     }
 
-    /// What entering chat costs once: the model list resolved, and the servers connected.
     func prepareForChat() {
         warmUpModelList()
         core.mcpCoordinator.warmUp()

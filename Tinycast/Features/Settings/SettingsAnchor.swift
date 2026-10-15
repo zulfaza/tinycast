@@ -61,6 +61,8 @@ extension SettingsAnchor {
     static let dictationOutput = Self(tab: .dictation, title: "Output")
 
     static let fileSearchFileSearch = Self(tab: .fileSearch, title: "File Search")
+    static let fileSearchFullDiskAccess = Self(tab: .fileSearch, title: "Full Disk Access")
+    static let fileSearchIndex = Self(tab: .fileSearch, title: "Index")
     static let fileSearchCommands = Self(tab: .fileSearch, title: "Commands")
     static let fileSearchSearchScopes = Self(tab: .fileSearch, title: "Search Scopes")
     static let fileSearchIgnorePatterns = Self(tab: .fileSearch, title: "Ignore Patterns")
@@ -122,7 +124,6 @@ extension SettingsAnchor {
     static let aboutLinks = Self(tab: .about, title: "Links")
 }
 
-/// Where a search result lands: a whole section, or one row inside it.
 enum SettingsTarget: Hashable, Sendable {
     case section(SettingsAnchor)
     /// The row's visible title, which is also the catalog entry's — they are the same string.
