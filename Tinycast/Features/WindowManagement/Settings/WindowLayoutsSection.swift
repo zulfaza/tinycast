@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// The layout library, inside the Window Management pane: layouts belong to window management.
 struct WindowLayoutsSection: View {
     let onEdit: (WindowLayout?) -> Void
     let onDelete: (WindowLayout) -> Void
@@ -31,6 +30,7 @@ struct WindowLayoutsSection: View {
                 ForEach(results) { layout in
                     WindowLayoutSettingsRow(
                         layout: layout,
+                        showsInLauncher: settings.windowLayoutsShowInLauncher,
                         onEdit: { onEdit(layout) },
                         onDelete: { onDelete(layout) })
                 }
@@ -63,9 +63,9 @@ struct WindowLayoutsSection: View {
     }
 }
 
-/// One layout's shortcut, launcher checkbox and actions, shaped like the window-command row.
 private struct WindowLayoutSettingsRow: View {
     let layout: WindowLayout
+    let showsInLauncher: Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
 
@@ -73,10 +73,15 @@ private struct WindowLayoutSettingsRow: View {
     @Environment(VisibilityStore.self) private var visibility
 
     var body: some View {
+        let entry = AppEntry(layout)
+        let isVisible = visibility.isItemVisible(entry)
         SettingsRow(title: layout.name, subtitle: layout.summary) {
             AppIconView(app: AppEntry(layout))
                 .frame(width: SettingsListMetrics.iconSize, height: SettingsListMetrics.iconSize)
         } trailing: {
+            AliasField(entry: entry)
+                .settingsEnabled(showsInLauncher && isVisible)
+
             ShortcutRecorder(action: .windowLayout(id: layout.id))
 
             Button {
@@ -112,17 +117,13 @@ private struct WindowLayoutSettingsRow: View {
             .help("Delete")
             .accessibilityLabel("Delete \(layout.name)")
 
-            Toggle("", isOn: visibilityBinding)
-                .labelsHidden()
-                .toggleStyle(.checkbox)
-                .launcherVisibilityHelp()
-                .accessibilityLabel("Show \(layout.name) in launcher")
+            Toggle(
+                "", isOn: Binding(get: { isVisible }, set: { visibility.setItemVisible($0, for: entry) })
+            )
+            .labelsHidden()
+            .toggleStyle(.checkbox)
+            .launcherVisibilityHelp()
+            .accessibilityLabel("Show \(layout.name) in launcher")
         }
-    }
-
-    private var visibilityBinding: Binding<Bool> {
-        Binding(
-            get: { visibility.isItemVisible(AppEntry(layout)) },
-            set: { visibility.setItemVisible($0, for: AppEntry(layout)) })
     }
 }

@@ -1,6 +1,5 @@
 import Foundation
 
-/// What a row hands to the app it is dropped on.
 enum ClipDragPayload: Equatable, Sendable {
     case file(URL)
     case files([URL])

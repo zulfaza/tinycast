@@ -39,6 +39,10 @@ struct ExtensionCommandScreen: PaletteScreen {
     /// A form owns the whole keyboard: its fields are the text, so the search field steps aside.
     var hidesSearchField: Bool { isForm }
 
+    var landingSelection: Int {
+        extensions.landingSelection(for: vm.query, rowCount: rows.count)
+    }
+
     /// A form or rowless Detail's primary action stands even with no row to land on.
     var actsWithoutRows: Bool { isForm || screen.kind == .detail }
 
@@ -67,7 +71,6 @@ struct ExtensionCommandScreen: PaletteScreen {
         }
     }
 
-    /// The primary action is the panel's first `Action`.
     private func primaryAction(at selection: Int) -> ExtensionAction? {
         ExtensionScreen.actions(in: screen.actionPanel(forItemAt: selection)).first
     }
@@ -124,7 +127,10 @@ struct ExtensionCommandScreen: PaletteScreen {
                 AnyView(
                     ExtensionActionsPanel(
                         header: ExtensionActionsMenu.header(screen: screen, selection: selection),
-                        items: items, selection: menuSelection, onActivate: onActivate))
+                        items: items, selection: menuSelection, onActivate: onActivate,
+                        shortcutRow: { key, modifiers in
+                            filteredActions.firstIndex { $0.matches(key: key, modifiers: modifiers) }
+                        }))
             },
             activate: { index in
                 guard let handler = filteredActions[index].handler else { return }
@@ -232,6 +238,7 @@ struct ExtensionCommandScreen: PaletteScreen {
                 }
             )
             .id(screen.root?.id)
+            .onChange(of: vm.query) { _, query in extensions.searchQueryChanged(to: query) }
         )
     }
 

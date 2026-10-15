@@ -1,6 +1,5 @@
 import Foundation
 
-/// Built-in launcher actions, surfaced alongside the user-authored ones.
 enum CommandID: String, CaseIterable, Sendable {
     /// The palette's chat keeps the id it shipped with, so its hotkeys and fallback still reach it.
     case quickAI = "command:ai-chat"
@@ -19,6 +18,8 @@ enum CommandID: String, CaseIterable, Sendable {
     case openCamera = "command:open-camera"
     case openInBrowser = "command:open-in-browser"
     case runShellCommand = "command:run-shell-command"
+    case createCustomCommand = "command:create-custom-command"
+    case searchCustomCommands = "command:search-custom-commands"
     case define = "command:define"
     case joinNextMeeting = "command:join-next-meeting"
     case mySchedule = "command:my-schedule"
@@ -65,6 +66,8 @@ enum CommandID: String, CaseIterable, Sendable {
         case .openCamera: return "Open Camera"
         case .openInBrowser: return "Open in Browser"
         case .runShellCommand: return "Run Shell Command"
+        case .createCustomCommand: return "Create Custom Command"
+        case .searchCustomCommands: return "Search Custom Commands"
         case .define: return "Define Word"
         case .joinNextMeeting: return "Join Next Meeting"
         case .mySchedule: return "My Schedule"
@@ -113,6 +116,8 @@ enum CommandID: String, CaseIterable, Sendable {
         case .openCamera: return "camera.fill"
         case .openInBrowser: return "globe"
         case .runShellCommand: return "terminal.fill"
+        case .createCustomCommand: return "terminal.fill"
+        case .searchCustomCommands: return "terminal.fill"
         case .define: return "book.closed.fill"
         case .joinNextMeeting: return "video.fill"
         case .mySchedule: return "calendar"

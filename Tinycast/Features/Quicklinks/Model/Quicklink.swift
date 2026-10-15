@@ -1,6 +1,5 @@
 import Foundation
 
-/// A user-authored URL, search, file, folder or deeplink, surfaced as a launcher command.
 struct Quicklink: Codable, Hashable, Identifiable, Sendable {
     static let entryIDPrefix = "quicklink:"
     /// Fallback glyph when there is no icon and the destination can't be detected.
@@ -39,7 +38,6 @@ struct Quicklink: Codable, Hashable, Identifiable, Sendable {
 
     var isPinned: Bool { pinnedAt != nil }
 
-    /// The one glyph rule: the override, else what the detected destination suggests.
     var symbol: String {
         iconSymbol ?? QuicklinkDestination.detect(link)?.defaultSymbol ?? Self.sfSymbol
     }
@@ -84,21 +82,6 @@ struct Quicklink: Codable, Hashable, Identifiable, Sendable {
             try container.decodeIfPresent(Bool.self, forKey: .showsInRootSearch) ?? true
         pinnedAt = try container.decodeIfPresent(Date.self, forKey: .pinnedAt)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
-    }
-}
-
-/// What `{selection}` falls back to when the target app exposes no readable selection.
-enum QuicklinkSelectionFallback: String, CaseIterable, Identifiable, Sendable {
-    case ask
-    case clipboard
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .ask: return "Ask for it"
-        case .clipboard: return "Use the clipboard"
-        }
     }
 }
 

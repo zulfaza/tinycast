@@ -162,8 +162,18 @@ private struct SnippetInfoSection: View {
 
     private struct InfoRow: Identifiable {
         let label: String
-        let value: String
+        let value: Text
         var id: String { label }
+
+        init(label: String, value: String) {
+            self.label = label
+            self.value = Text(value)
+        }
+
+        init(label: String, keycaps: [String]) {
+            self.label = label
+            value = KeyCapChip.inlineText(keycaps)
+        }
     }
 
     private var rows: [InfoRow] {
@@ -184,7 +194,7 @@ private struct SnippetInfoSection: View {
             rows.append(InfoRow(label: "Keyword", value: keyword))
         }
         if let keycaps = hotKeys.binding(for: .snippet(id: record.id))?.keycaps {
-            rows.append(InfoRow(label: "Shortcut", value: keycaps.joined()))
+            rows.append(InfoRow(label: "Shortcut", keycaps: keycaps))
         }
         rows.append(InfoRow(label: "File", value: record.fileURL.lastPathComponent))
         rows.append(
@@ -211,7 +221,7 @@ private struct SnippetInfoSection: View {
                     HStack(spacing: metrics.spacing.sm) {
                         Text(row.label).foregroundStyle(.secondary)
                         Spacer(minLength: metrics.spacing.lg)
-                        Text(row.value).lineLimit(1).truncationMode(.middle)
+                        row.value.lineLimit(1).truncationMode(.middle)
                     }
                     .font(metrics.typography.keyCap)
                     .padding(.horizontal, metrics.spacing.md)

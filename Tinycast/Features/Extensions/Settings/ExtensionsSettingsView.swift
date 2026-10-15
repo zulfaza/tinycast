@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Settings › Extensions: the master switch, then a row per extension that expands in place.
 struct ExtensionsSettingsView: View {
     @Environment(AppCore.self) private var core
     @Environment(SettingsNavigationState.self) private var navigation
@@ -8,6 +7,7 @@ struct ExtensionsSettingsView: View {
     @State private var filter = ""
     @State private var importCandidates: ImportCandidates?
     @State private var browsingStore = false
+    @State private var storeInstall: ExtensionDeepLink.StoreInstall?
     @State private var installingFromGitHub = false
     @State private var error: String?
     @State private var updateError: String?
@@ -47,7 +47,6 @@ struct ExtensionsSettingsView: View {
         .formStyle(.grouped)
         .settingsScrollTarget(.extensions)
         .releasesFocusOnOutsideClick()
-        // Escape and Return are the keyboard way out of the same field.
         .onExitCommand { NSApp.keyWindow?.makeFirstResponder(nil) }
         .onSubmit { NSApp.keyWindow?.makeFirstResponder(nil) }
         // By item: `isPresented` builds the panel from a snapshot taken before the write.
@@ -63,6 +62,9 @@ struct ExtensionsSettingsView: View {
         .settingsEditorPanel(isPresented: $browsingStore) {
             ExtensionStorePanel(onClose: { browsingStore = false })
         }
+        .settingsEditorPanel(item: $storeInstall) { install in
+            ExtensionStorePanel(storeInstall: install, onClose: { storeInstall = nil })
+        }
         .settingsEditorPanel(isPresented: $installingFromGitHub) {
             ExtensionGitHubPanel(onClose: { installingFromGitHub = false })
         }
@@ -70,6 +72,11 @@ struct ExtensionsSettingsView: View {
             if case .row(.extensionsInstalled, let name)? = navigation.scrollRequest?.target {
                 (expanded, filter) = (name, "")
             }
+        }
+        .onChange(of: core.pendingExtensionStoreInstall, initial: true) { _, request in
+            guard let request else { return }
+            storeInstall = request
+            core.pendingExtensionStoreInstall = nil
         }
         .onChange(of: core.extensions.installed.count) { Task { await measureReclaimable() } }
         .task {
@@ -87,7 +94,7 @@ struct ExtensionsSettingsView: View {
             SettingsRow(
                 title: "What works",
                 subtitle:
-                    "List, detail, form, grid, no-view and menu-bar commands, plus preferences, storage and OAuth.",
+                    "List, detail, form, grid, no-view and menu-bar commands, preferences, storage and OAuth.",
                 subtitleLineLimit: 2
             ) {
                 ExtensionSettingsIcon(systemName: "checkmark.circle")
@@ -96,7 +103,7 @@ struct ExtensionsSettingsView: View {
             }
             SettingsRow(
                 title: "What doesn't, yet",
-                subtitle: "Raycast's OAuth proxy, and its AI, browser and window services.",
+                subtitle: "Raycast's AI, browser and window services.",
                 subtitleLineLimit: 2
             ) {
                 ExtensionSettingsIcon(systemName: "xmark.circle")
@@ -240,7 +247,6 @@ struct ExtensionsSettingsView: View {
             SettingsSectionHeader(.extensionsInstall)
         } footer: {
             if let error {
-                // Under the buttons that caused it.
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -488,7 +494,6 @@ private struct ExtensionDisclosure: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// A step below the pane's section headers; nothing here sets a heading in caps.
     private func heading(_ title: String) -> some View {
         GridRow {
             Text(title)
@@ -500,7 +505,6 @@ private struct ExtensionDisclosure: View {
         }
     }
 
-    /// The hairline every other multi-row group in the app puts between its rows.
     private var rule: some View {
         GridRow {
             Divider()
@@ -516,7 +520,6 @@ private struct ExtensionDisclosure: View {
     }
 }
 
-/// One card row: the label left, the control right, columns aligned by the enclosing `Grid`.
 private struct SettingsCardRow<Control: View>: View {
     /// Wide enough for a path field, and the trailing edge every control in the column shares.
     static var controlWidth: CGFloat { 200 }
@@ -564,7 +567,6 @@ private struct SettingsCardRow<Control: View>: View {
     }
 }
 
-/// One command: alias, shortcut and launcher checkbox on the title row, then its own preferences.
 private struct CommandRows: View {
     let installed: InstalledExtension
     let command: ExtensionCommand
@@ -700,7 +702,6 @@ private struct ExtensionLauncherRow: View {
     }
 }
 
-/// The launcher icon, and the picker that replaces it.
 private struct ExtensionIconRow: View {
     let installed: InstalledExtension
     @Environment(AppCore.self) private var core
@@ -835,7 +836,6 @@ private struct ExtensionPreferenceRow: View {
     }
 }
 
-/// One candidate from a local Raycast install, and whether we already have it.
 struct RaycastImportCandidate: Identifiable {
     let installed: InstalledExtension
     let isInstalled: Bool
@@ -843,7 +843,6 @@ struct RaycastImportCandidate: Identifiable {
     var id: String { installed.id }
 }
 
-/// One scan of the local Raycast install, carried as the import panel's presentation item.
 private struct ImportCandidates: Identifiable {
     let id = UUID()
     let entries: [RaycastImportCandidate]
@@ -860,7 +859,6 @@ private struct ExtensionImportPanel: View {
 
     private var fresh: [RaycastImportCandidate] { candidates.filter { !$0.isInstalled } }
 
-    /// Thirty-odd rows is past the point where scanning beats filtering.
     private var matching: [RaycastImportCandidate] {
         guard !filter.isEmpty else { return candidates }
         return candidates.filter {

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Clock time in another city. See docs/features/calculator.md.
 enum CalcTimeZone {
     static func hasMalformedFixedOffset(_ raw: String) -> Bool {
         raw.split(whereSeparator: \.isWhitespace).contains { word in
@@ -493,7 +492,6 @@ enum CalcTimeZone {
         "America/Edmonton": ["calgary"]
     ]
 
-    /// Flattened once from the grouping above, which is the form that gets edited.
     private static let aliases: [String: String] = {
         var table: [String: String] = [:]
         table.reserveCapacity(aliasGroups.values.reduce(0) { $0 + $1.count })

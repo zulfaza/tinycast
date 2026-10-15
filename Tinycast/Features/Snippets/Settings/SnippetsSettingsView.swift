@@ -3,10 +3,9 @@ import SwiftUI
 
 struct SnippetsSettingsView: View {
     @Environment(AppCore.self) private var core
+    @Environment(SnippetCoordinator.self) private var coordinator
     @Environment(SnippetsStore.self) private var snippetsStore
     @Environment(AppSettings.self) private var settings
-
-    @State private var pendingDeletion: StoredSnippet?
 
     var body: some View {
         @Bindable var settings = settings
@@ -19,7 +18,7 @@ struct SnippetsSettingsView: View {
                 // Enabling is also keyword-expansion consent, so it uses the confirming setter.
                 isEnabled: Binding(
                     get: { settings.snippetsEnabled },
-                    set: { core.snippetCoordinator.setSnippetsEnabled($0) }),
+                    set: { coordinator.setSnippetsEnabled($0) }),
                 showsInLauncher: $settings.snippetsShowInLauncher,
                 showsIcon: true,
                 showsHeader: false)
@@ -55,16 +54,6 @@ struct SnippetsSettingsView: View {
         }
         .formStyle(.grouped)
         .settingsScrollTarget(.snippets)
-        .alert(item: $pendingDeletion) { record in
-            Alert(
-                title: Text("Delete “\(record.snippet.name)”?"),
-                message: Text(
-                    "This removes \(record.fileURL.lastPathComponent) from your snippets folder."),
-                primaryButton: .destructive(Text("Delete")) {
-                    delete(record)
-                },
-                secondaryButton: .cancel())
-        }
     }
 
     private var expansion: some View {
@@ -148,13 +137,13 @@ struct SnippetsSettingsView: View {
                     SnippetSettingsRow(
                         record: record,
                         canEdit: snippetsStore.isWritable(record),
-                        onEdit: { core.snippetCoordinator.editSnippet(record) },
-                        onDelete: { pendingDeletion = record })
+                        onEdit: { coordinator.editSnippet(record) },
+                        onDelete: { Task { await coordinator.deleteSnippet(id: record.id) } })
                 }
             }
 
             LabeledContent {
-                Button("Add…") { core.snippetCoordinator.editSnippet(nil) }
+                Button("Add…") { coordinator.editSnippet(nil) }
             } label: {
                 SettingsRowTitle(.snippetsLibrary, "New Snippet")
                 Text("Give the snippet a searchable name and an optional expansion keyword.")
@@ -162,10 +151,10 @@ struct SnippetsSettingsView: View {
 
             LabeledContent {
                 if settings.snippetsFolder != nil {
-                    Button("Use Default", action: core.snippetCoordinator.resetSnippetsFolder)
+                    Button("Use Default", action: coordinator.resetSnippetsFolder)
                 }
-                Button("Choose…", action: core.snippetCoordinator.chooseSnippetsFolder)
-                Button("Open Folder", action: core.snippetCoordinator.revealSnippetsInFinder)
+                Button("Choose…", action: coordinator.chooseSnippetsFolder)
+                Button("Open Folder", action: coordinator.revealSnippetsInFinder)
                     .accessibilityHint("Reveals the snippets folder in Finder.")
             } label: {
                 SettingsRowTitle(.snippetsLibrary, "Snippets Folder")
@@ -190,7 +179,6 @@ struct SnippetsSettingsView: View {
                 retryHint: "Reloads snippet files after you fix them on disk.")
         }
 
-        // The editor reports its own failures, so this covers the ones with no sheet behind.
         if let operationError = snippetsStore.operationError {
             noticeSection(
                 "The snippet operation failed", operationError, tint: .red, retryHint: nil)
@@ -235,10 +223,6 @@ struct SnippetsSettingsView: View {
         return
             "\(first.fileURL.lastPathComponent): \(first.message) Plus \(snippetsStore.issues.count - 1) more."
     }
-
-    private func delete(_ record: StoredSnippet) {
-        Task { try? await snippetsStore.delete(id: record.id) }
-    }
 }
 
 private struct SnippetSettingsRow: View {
@@ -279,18 +263,7 @@ private struct SnippetSettingsRow: View {
         let filename = record.fileURL.lastPathComponent
         guard let keyword = record.snippet.keyword?.trimmingCharacters(in: .whitespacesAndNewlines),
             !keyword.isEmpty
-        else {
-            return metadataWithTags(filename: filename)
-        }
-        return metadataWithTags(filename: "\(keyword) · \(filename)")
-    }
-
-    private func metadataWithTags(filename: String) -> String {
-        var parts = [filename]
-        if !record.snippet.tags.isEmpty {
-            parts.append(record.snippet.tags.map { "#\($0)" }.joined(separator: " "))
-        }
-        if !canEdit { parts.append("Read-only shared library") }
-        return parts.joined(separator: " · ")
+        else { return filename }
+        return "\(keyword) · \(filename)"
     }
 }

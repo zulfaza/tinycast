@@ -19,6 +19,7 @@ enum SettingsFileKey: String, CaseIterable, Sendable {
     case hyperKey = "hyperKey.key"
     case hyperKeyIncludesShift = "hyperKey.includesShift"
     case hyperKeyQuickPress = "hyperKey.quickPress"
+    case hyperKeySecureInputCompatibility = "hyperKey.secureInputCompatibility"
     case calcNumberStyle = "calculator.numberStyle"
     case launcherShowsSuggestions = "search.showsSuggestions"
     case rootSearchSensitivity = "search.sensitivity"
@@ -36,7 +37,7 @@ enum SettingsFileKey: String, CaseIterable, Sendable {
     case quicklinksEnabled = "quicklinks.enabled"
     case quicklinksShowInLauncher = "quicklinks.showInLauncher"
     case quicklinkOpensNewWindow = "quicklinks.opensNewWindow"
-    case quicklinkSelectionFallback = "quicklinks.selectionFallback"
+    case quicklinkPassesSelectedText = "quicklinks.passesSelectedText"
     case quicklinkConfirmsBeforeDelete = "quicklinks.confirmsBeforeDelete"
     case quicklinkCommands = "quicklinks.commands"
     case appleShortcutsEnabled = "appleShortcuts.enabled"
@@ -57,6 +58,7 @@ enum SettingsFileKey: String, CaseIterable, Sendable {
     case dictationMicrophone = "dictation.microphone"
     case dictationDestination = "dictation.destination"
     case dictationAdaptsCapitalization = "dictation.adaptsCapitalization"
+    case dictationLiveInsertion = "dictation.liveInsertion"
     case dictationIdleRelease = "dictation.releaseAfterMinutes"
     case dictationLanguage = "dictation.language"
     case fileSearchEnabled = "fileSearch.enabled"
@@ -110,10 +112,8 @@ enum SettingsFileKey: String, CaseIterable, Sendable {
     case calendarCommands = "calendar.commands"
     case extensionsShowInLauncher = "extensions.showInLauncher"
 
-    /// The top-level object the key sits in.
     var section: String { String(rawValue.prefix { $0 != "." }) }
 
-    /// The key's name inside its section.
     var name: String { String(rawValue.drop { $0 != "." }.dropFirst()) }
 
     /// Every section, in file order.

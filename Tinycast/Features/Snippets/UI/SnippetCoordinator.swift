@@ -1,9 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// Owns the snippet flow: listener, browser, editor handoff, delivery, presence.
 @MainActor
+@Observable
 final class SnippetCoordinator {
+    private(set) var editor: SnippetEditorSession?
+    var isEditingSnippet: Bool { editor != nil }
     private let store: SnippetsStore
     private let listener: SnippetKeywordListener
     private let injector: TextInjector
@@ -12,10 +14,10 @@ final class SnippetCoordinator {
     private let settings: AppSettings
     private let windowController: PaletteWindowController
     private let paletteCoordinator: PaletteCoordinator
-    private let editorPanel: SnippetEditorPanelController
+    private let palette: PaletteState
     /// Routed out so `MessageHUDController` stays owned by `AppCore`.
     private let showMessage: @MainActor (String, DialogTone) -> Void
-    /// The consent dialog and standalone editor panel are owned by this coordinator.
+    /// The consent dialog stays owned by the composition root.
     private unowned let core: AppCore
 
     var interfaceMetrics: InterfaceMetrics { settings.interfaceSize.metrics }
@@ -29,6 +31,7 @@ final class SnippetCoordinator {
         settings: AppSettings,
         windowController: PaletteWindowController,
         paletteCoordinator: PaletteCoordinator,
+        palette: PaletteState,
         showMessage: @escaping @MainActor (String, DialogTone) -> Void,
         core: AppCore
     ) {
@@ -40,7 +43,7 @@ final class SnippetCoordinator {
         self.settings = settings
         self.windowController = windowController
         self.paletteCoordinator = paletteCoordinator
-        self.editorPanel = SnippetEditorPanelController(store: store, settings: settings)
+        self.palette = palette
         self.showMessage = showMessage
         self.core = core
     }
@@ -112,6 +115,7 @@ final class SnippetCoordinator {
         }
         listener.stop()
         injector.cancelAutomaticExpansion()
+        if palette.mode == .snippetEditor { cancelSnippetEditing() }
         store.stop()
         applySnippetsLauncherPresence()
     }
@@ -135,50 +139,69 @@ final class SnippetCoordinator {
         paletteCoordinator.togglePalette(mode: .snippets)
     }
 
-    /// Opens the standalone editor with `record`; nil is a new snippet.
     func editSnippet(_ record: StoredSnippet?) {
-        guard record.map(store.isWritable) ?? true else { return }
-        let state: SnippetEditorState = record.map(SnippetEditorState.edit)
-            ?? .create(Snippet(name: "", text: ""))
-        openEditor(state: state)
+        guard settings.snippetsEnabled else { return }
+        editor = SnippetEditorSession(record: record)
+        paletteCoordinator.showPalette(mode: .snippetEditor)
     }
 
-    /// Opens the standalone editor for a text clipboard item; non-text values do nothing.
-    func saveClipboardAsSnippet(text: String?, name: String?) {
-        guard let text else { return }
-        openEditor(
-            state: .create(
-                Snippet(name: name ?? "Clipboard Snippet", text: text)))
+    func requestSnippetSave() {
+        guard settings.snippetsEnabled, let editor, editor.canSave else { return }
+        editor.isSaving = true
     }
 
-    private func openEditor(state: SnippetEditorState) {
-        let size = CGSize(
-            width: interfaceMetrics.size.panelWidth, height: interfaceMetrics.size.panelHeight)
-        let frame = windowController.frameForAuxiliaryPanel(size: size)
-        if paletteCoordinator.isVisible { paletteCoordinator.hidePalette(restoreFocus: false) }
-        editorPanel.open(state: state, frame: frame) { [weak core] in
-            core?.snippetCoordinator.editorDidClose()
+    func saveSnippet(_ editor: SnippetEditorSession) async {
+        guard settings.snippetsEnabled, !Task.isCancelled, self.editor === editor else { return }
+        let snippet = editor.snippet
+        defer { editor.isSaving = false }
+        do {
+            if var record = editor.record {
+                record.snippet = snippet
+                try await store.save(record)
+            } else {
+                try await store.create(snippet)
+            }
+            guard !Task.isCancelled, self.editor === editor else { return }
+            cancelSnippetEditing()
+        } catch {
+            guard !Task.isCancelled, self.editor === editor else { return }
+            editor.errorMessage = error.localizedDescription
         }
     }
 
-    var isEditingSnippet: Bool { editorPanel.isOpen }
-
-    func toggleEditor() {
-        guard editorPanel.hasEditor else { return }
-        if editorPanel.isVisible {
-            editorPanel.hide()
-        } else {
-            editorPanel.show()
+    func cancelSnippetEditing() {
+        guard palette.mode == .snippetEditor else { return }
+        if !palette.pop(preservingSelection: true) {
+            paletteCoordinator.hidePalette()
+            palette.prepare(mode: .launcher)
         }
+        editor = nil
     }
 
-    private func editorDidClose() {
-        editorPanel.clearEditor()
+    func editorDidClose(_ editor: SnippetEditorSession) {
+        if self.editor === editor { self.editor = nil }
     }
 
     func showSnippetInFinder(_ record: StoredSnippet) {
         paletteCoordinator.hidePalette(restoreFocus: false)
         AppLauncher.showInFinder(record.fileURL)
+    }
+
+    func deleteSnippet(id: StoredSnippet.ID) async {
+        guard settings.snippetsEnabled, let record = store.record(id: id) else { return }
+        guard
+            await core.confirm(
+                title: "Delete “\(record.snippet.name)”?",
+                message: "This removes \(record.fileURL.lastPathComponent) from your snippets folder.",
+                symbol: "doc.text", confirmTitle: "Delete")
+        else { return }
+        do {
+            try await store.delete(id: id)
+        } catch {
+            await core.showNotice(
+                title: "Couldn’t Delete “\(record.snippet.name)”", message: error.localizedDescription,
+                symbol: "doc.text", tone: .danger)
+        }
     }
 
     // MARK: - Expansion
@@ -274,11 +297,6 @@ final class SnippetCoordinator {
         if automaticGeneration == nil {
             guard injector.prepareInteractiveExpansion(target: target) else { return }
         }
-        let expansionOutput = output ?? settings.snippetsOutput
-        let expansionDelay = injectionDelay ?? settings.snippetsInjectionDelay.duration
-        let shouldShowFeedback =
-            showsCompletionFeedback ?? (record.snippet.showsConfirmation || settings.snippetsCompletionFeedback)
-        let confirmation = shouldShowFeedback ? "Inserted \(record.snippet.name)" : nil
         let context = injector.captureExpansionContext(
             target: target,
             clipboardHistory: clipboardHistoryForExpansion())
@@ -287,7 +305,68 @@ final class SnippetCoordinator {
             snippets: records,
             context: context,
             userArguments: userArguments,
-            output: expansionOutput)
+            output: output ?? settings.snippetsOutput)
+        // A typed keyword leaves nothing selected, so only an insertion asked for borrows a ⌘C.
+        guard automaticGeneration == nil, result.readsSelection, context.selection.isEmpty,
+            let app = target?.externalApp
+        else {
+            finishExpansion(
+                record,
+                records: records,
+                context: context,
+                result: result,
+                target: target,
+                expectedKeyword: expectedKeyword,
+                keywordLength: keywordLength,
+                automaticGeneration: automaticGeneration,
+                userArguments: userArguments,
+                output: output,
+                injectionDelay: injectionDelay,
+                showsCompletionFeedback: showsCompletionFeedback)
+            return
+        }
+        Task {
+            var context = context
+            context.selection = await injector.copySelection(from: app) ?? ""
+            let records = store.snippets
+            guard let record = records.first(where: { $0.id == id }) else { return }
+            finishExpansion(
+                record,
+                records: records,
+                context: context,
+                result: SnippetTemplateEngine.expand(
+                    record, snippets: records, context: context,
+                    userArguments: userArguments, output: output ?? settings.snippetsOutput),
+                target: target,
+                expectedKeyword: nil,
+                keywordLength: 0,
+                automaticGeneration: nil,
+                userArguments: userArguments,
+                output: output,
+                injectionDelay: injectionDelay,
+                showsCompletionFeedback: showsCompletionFeedback)
+        }
+    }
+
+    private func finishExpansion(
+        _ record: StoredSnippet,
+        records: [StoredSnippet],
+        context: SnippetTemplateEngine.ExpansionContext,
+        result: SnippetTemplateEngine.ExpansionResult,
+        target: InjectionTarget?,
+        expectedKeyword: String?,
+        keywordLength: Int,
+        automaticGeneration: UInt?,
+        userArguments: [String: String],
+        output: SnippetExpansionOutput?,
+        injectionDelay: Duration?,
+        showsCompletionFeedback: Bool?
+    ) {
+        let expansionOutput = output ?? settings.snippetsOutput
+        let expansionDelay = injectionDelay ?? settings.snippetsInjectionDelay.duration
+        let shouldShowFeedback =
+            showsCompletionFeedback ?? (record.snippet.showsConfirmation || settings.snippetsCompletionFeedback)
+        let confirmation = shouldShowFeedback ? "Inserted \(record.snippet.name)" : nil
         if !result.missingArguments.isEmpty {
             promptSnippetArguments(
                 record: record,
@@ -402,87 +481,5 @@ final class SnippetCoordinator {
                 self.store.recordUse(id: recordID)
                 if let confirmation { self.showMessage(confirmation, .success) }
             })
-    }
-}
-
-@MainActor
-private final class SnippetEditorPanelController: NSObject, NSWindowDelegate {
-    private final class Panel: NSPanel {
-        override var canBecomeKey: Bool { true }
-        override var canBecomeMain: Bool { false }
-    }
-
-    private let store: SnippetsStore
-    private let settings: AppSettings
-    private var panel: NSPanel?
-    private var hostingController: NSHostingController<AnyView>?
-    private var onDismiss: (() -> Void)?
-
-    init(store: SnippetsStore, settings: AppSettings) {
-        self.store = store
-        self.settings = settings
-    }
-
-    var hasEditor: Bool { panel != nil }
-    var isOpen: Bool { panel != nil }
-    var isVisible: Bool { panel?.isVisible == true }
-
-    func open(state: SnippetEditorState, frame: NSRect, onDismiss: @escaping () -> Void) {
-        panel?.close()
-        self.onDismiss = onDismiss
-
-        let view = SnippetEditorView(state: state, metrics: settings.interfaceSize.metrics) {
-            [weak self] in self?.panel?.close()
-        }
-        hostingController = NSHostingController(rootView: AnyView(view.environment(store)))
-
-        let panel = Panel(
-            contentRect: frame,
-            styleMask: [.borderless, .fullSizeContentView],
-            backing: .buffered,
-            defer: false)
-        panel.title = state.isEditing ? "Edit Snippet" : "Add Snippet"
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.hidesOnDeactivate = false
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.animationBehavior = .utilityWindow
-        panel.isMovableByWindowBackground = true
-        panel.isReleasedWhenClosed = false
-        panel.isRestorable = false
-        panel.delegate = self
-        panel.contentViewController = hostingController
-        panel.contentView?.wantsLayer = true
-        panel.contentView?.layer?.cornerCurve = .continuous
-        panel.contentView?.layer?.cornerRadius = settings.interfaceSize.metrics.radius.panel
-        panel.contentView?.layer?.masksToBounds = true
-        panel.setFrame(frame, display: false)
-        self.panel = panel
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-        panel.selectNextKeyView(nil)
-    }
-
-    func show() {
-        guard let panel else { return }
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-    }
-
-    func hide() {
-        panel?.orderOut(nil)
-    }
-
-    func clearEditor() {
-        panel = nil
-        hostingController = nil
-        onDismiss = nil
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        onDismiss?()
     }
 }

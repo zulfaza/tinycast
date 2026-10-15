@@ -3,7 +3,6 @@ import SwiftUI
 
 // The few pieces more than one Settings pane or editor needs; everything else stays feature-owned.
 
-/// The Settings sidebar tile, shared with the matching feature switches.
 struct SettingsTabIcon: View {
     let tab: SettingsTab
     var size = Theme.Size.settingsSidebarGlyph + Theme.Spacing.xs * 2
@@ -295,7 +294,6 @@ private struct SettingsEditorPanelSurface: ViewModifier {
     }
 }
 
-/// A feature pane's opening section: the master switch, then its launcher-visibility companion.
 struct FeatureSwitchSection: View {
     let anchor: SettingsAnchor
     let enableTitle: String

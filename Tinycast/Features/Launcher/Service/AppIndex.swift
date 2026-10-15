@@ -106,7 +106,7 @@ struct AppEntry: Identifiable, Hashable, Sendable {
         /// Only an application: a pane or a shortcut dropped on another app opens nothing there.
         let canDragOut: Bool
         let isSymbolIcon: Bool
-        /// Breaks a full tie, apps first: Calculator over Calculator History.
+        /// Breaks a full tie, apps first.
         let rankPriority: Int
     }
 
@@ -141,7 +141,6 @@ struct AppEntry: Identifiable, Hashable, Sendable {
     /// Stable identity for learned ranking, favorites, and other per-entry preferences.
     var preferenceKey: String { bundleID ?? id }
 
-    /// What this entry is called, in the shape `EntryNaming` reads.
     var naming: EntryNaming.Sources {
         var sources = EntryNaming.Sources(name: name)
         sources.alternateTitles = alternateTitles
@@ -167,7 +166,6 @@ struct AppEntry: Identifiable, Hashable, Sendable {
 
     var kindLabel: String { ownerName ?? kind.descriptor.label }
 
-    /// The hotkey action for this entry, or nil when the entry has no addressable action.
     var hotKeyAction: HotKeyAction? {
         switch kind {
         case .command:
@@ -249,7 +247,6 @@ struct AppEntry: Identifiable, Hashable, Sendable {
 }
 
 extension AppEntry {
-    /// The one row a layout draws, wherever it is offered from.
     init(_ layout: WindowLayout) {
         self.init(
             id: layout.entryID, name: layout.name,
@@ -279,7 +276,6 @@ extension AppEntry {
             bundleID: nil, kind: .windowCommand)
     }
 
-    /// The one row a custom Quick Action draws, wherever it is offered from.
     init(_ action: CustomQuickAction) {
         self.init(
             id: action.entryID, name: action.name,
@@ -287,7 +283,6 @@ extension AppEntry {
             bundleID: nil, kind: .quickAction, symbolName: action.iconSymbol)
     }
 
-    /// The one row a custom command draws, wherever it is offered from.
     init(_ command: CustomCommand) {
         self.init(
             id: command.entryID, name: command.name,
@@ -295,7 +290,6 @@ extension AppEntry {
             bundleID: nil, kind: .customCommand, symbolName: command.iconSymbol)
     }
 
-    /// The one row a quicklink draws, wherever it is offered from.
     init(_ quicklink: Quicklink) {
         self.init(
             id: quicklink.entryID, name: quicklink.name,
@@ -321,15 +315,25 @@ extension AppEntry {
 }
 
 extension AppEntry.Kind {
-    /// The descriptors' own words, lowercased once, so a keystroke costs a lookup and not a scan.
     private static let byCategoryName: [String: AppEntry.Kind] = allCases.reduce(into: [:]) {
-        $0[$1.descriptor.sectionTitle.lowercased()] = $1
-        $0[$1.descriptor.label.lowercased()] = $1
+        $0[FuzzyMatch.normalized($1.descriptor.sectionTitle)] = $1
+        $0[FuzzyMatch.normalized($1.descriptor.label)] = $1
     }
 
-    /// The category a query names outright. Exact only — a prefix would take a word from an entry.
-    static func named(by query: String) -> AppEntry.Kind? {
-        byCategoryName[query.trimmingCharacters(in: .whitespaces).lowercased()]
+    private static let categoryNames = allCases.map { kind in
+        (kind, [kind.descriptor.sectionTitle, kind.descriptor.label].map(FuzzyMatch.Candidate.init))
+    }
+
+    static func named(by query: LauncherOrder.CategoryQuery) -> AppEntry.Kind? {
+        byCategoryName[query.name]
+    }
+
+    static func matching(by query: LauncherOrder.CategoryQuery) -> Set<AppEntry.Kind> {
+        if let kind = named(by: query) { return [kind] }
+        return Set(
+            categoryNames.compactMap { kind, names in
+                names.contains(where: query.matches) ? kind : nil
+            })
     }
 }
 
@@ -340,16 +344,18 @@ final class AppIndex {
 
     private var snippetEntries: [AppEntry] = []
 
-    /// The launcher's rows in order, with the size of each pinned section at their head.
+    /// The launcher's rows in order, with the size of each leading section at their head.
     struct Results: Equatable {
         var entries: [AppEntry] = []
         var favoriteCount = 0
         var meetingCount = 0
         var suggestionCount = 0
+        var matchCount = 0
     }
 
     private struct MatchKey: Equatable {
         let query: String
+        let limit: Int
         let entriesRevision: Int
         let rankingRevision: Int
         let aliasRevision: Int
@@ -367,7 +373,7 @@ final class AppIndex {
     }
 
     /// Repeated renders for the same query reuse the ranking instead of re-matching every frame.
-    @ObservationIgnored private var matchMemo = Memo<MatchKey, [AppEntry]>()
+    @ObservationIgnored private var matchMemo = Memo<MatchKey, Results>()
     @ObservationIgnored private var resultsMemo = Memo<ResultsKey, Results>()
     /// Bumped whenever `apps` changes, so both memos above name the entry set they were built from.
     private var entriesRevision = 0
@@ -408,7 +414,7 @@ final class AppIndex {
     private let ranking: LauncherRankingStore
     private let aliases: AliasStore
     private var settings: AppSettings?
-    /// Fired after every scan, even an unchanged one: LaunchServices can trail a deletion by seconds.
+    /// Fires after every scan, even unchanged: LaunchServices can trail a deletion by seconds.
     @ObservationIgnored var onScan: (() -> Void)?
 
     init(ranking: LauncherRankingStore, aliases: AliasStore) {
@@ -416,7 +422,6 @@ final class AppIndex {
         self.aliases = aliases
     }
 
-    /// The always-relevant built-ins, plus whatever a disabled feature has not hidden.
     private var commandEntries: [AppEntry] {
         visibleCatalogEntries.filter { $0.kind == .command }
     }
@@ -432,12 +437,10 @@ final class AppIndex {
         }
     }
 
-    /// Whether the feature behind a command is on, which is what its shortcut has to obey too.
     func isCommandEnabled(_ command: CommandID) -> Bool {
         !hiddenCommands.contains(command)
     }
 
-    /// A feature's commands leave the Commands slice when it is off; `visible` restores them.
     func setCommandsVisible(_ commands: Set<CommandID>, _ visible: Bool) {
         let updated = visible ? hiddenCommands.subtracting(commands) : hiddenCommands.union(commands)
         guard updated != hiddenCommands else { return }
@@ -455,7 +458,7 @@ final class AppIndex {
 
     /// Replaces the command slice without rescanning, so Settings edits land at once.
     func setCustomCommands(_ commands: [CustomCommand]) {
-        let entries = commands.filter(\.isEnabled).map(AppEntry.init)
+        let entries = commands.filter { $0.isEnabled && $0.showsInRootSearch }.map(AppEntry.init)
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         guard entries != customCommandEntries else { return }
         customCommandEntries = entries
@@ -496,14 +499,12 @@ final class AppIndex {
         publishEntries()
     }
 
-    /// Called by `ExtensionManager` when the installed set or a chosen appearance changes.
     func setExtensionCommands(_ entries: [AppEntry]) {
         guard entries != extensionEntries else { return }
         extensionEntries = entries
         publishEntries()
     }
 
-    /// Shows or hides the window-command slice; the catalog itself is static.
     func setWindowCommandsVisible(_ visible: Bool) {
         let entries = visible ? Self.allWindowCommandEntries : []
         guard entries != windowCommandEntries else { return }
@@ -619,9 +620,9 @@ final class AppIndex {
                 // Finder's rule: LaunchServices ignores a display name the file name contradicts.
                 let names = cache.names(
                     for: url, base: fileName, developmentRegion: bundle?.developmentLocalization)
-                // Raw: Calendar's strings file swaps its `iCal` array for a name.
+                // Raw: a localized strings file can swap this array for a plain name.
                 let alternates = bundle?.infoDictionary?["CFBundleAlternateNames"] as? [String] ?? []
-                // Still searchable, never the label: `code` must keep finding Visual Studio Code.
+                // Still searchable, never the label.
                 let declared = [bundle?.installedAppName].compactMap { $0 }
                 var entry = AppEntry(
                     id: url.path, name: names.first ?? fileName, url: url, bundleID: bundleID,
@@ -644,7 +645,6 @@ final class AppIndex {
         }
     }
 
-    /// The searchable form of every name an entry carries. `scan` names the app slice itself.
     nonisolated private static func named(_ entries: [AppEntry]) -> [AppEntry] {
         entries.map { entry in
             var entry = entry
@@ -668,39 +668,60 @@ final class AppIndex {
         entriesRevision &+= 1
     }
 
-    /// Ranked matches, or a whole category when the query names one. Empty returns the full list.
     func matches(_ query: String, limit: Int = 200) -> [AppEntry] {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return apps }
-        return matchMemo.value(for: matchKey(q)) {
-            guard let kind = AppEntry.Kind.named(by: q) else { return rank(q, limit: limit) }
-            return categoryListing(kind, query: q)
+        searchResults(query, limit: limit).entries
+    }
+
+    /// Ranked matches lead so Return still opens the best one; a started category only appends.
+    private func searchResults(_ query: String, limit: Int = 200) -> Results {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return Results(entries: apps) }
+        return matchMemo.value(for: matchKey(q, limit: limit)) {
+            let category = LauncherOrder.CategoryQuery(q)
+            if let kind = AppEntry.Kind.named(by: category) {
+                return Results(entries: categoryListing(kind, query: category.name))
+            }
+            let ranked = rank(q, limit: limit)
+            let listed = categoryRemainder(AppEntry.Kind.matching(by: category), excluding: ranked)
+            return Results(entries: ranked + listed, matchCount: ranked.count)
         }
     }
 
     /// Slice order is section order, so filtering keeps sections and selection aligned.
     private func categoryListing(_ kind: AppEntry.Kind, query: String) -> [AppEntry] {
         let listed = apps.filter {
-            $0.kind == kind || FuzzyMatch.normalized($0.name) == FuzzyMatch.normalized(query)
+            $0.kind == kind || FuzzyMatch.normalized($0.name) == query
         }
         return byUsage(listed, usage: ranking.snapshot())
     }
 
-    /// The launcher's rows: ranked matches, or favorites, suggestions and each kind by usage.
+    private func categoryRemainder(
+        _ kinds: Set<AppEntry.Kind>, excluding ranked: [AppEntry]
+    ) -> [AppEntry] {
+        guard !kinds.isEmpty else { return [] }
+        let matched = Set(ranked.map(\.id))
+        let listed = apps.filter { kinds.contains($0.kind) && !matched.contains($0.id) }
+        return byUsage(listed, usage: ranking.snapshot())
+    }
+
     func orderedResults(
         query: String, visibility: VisibilityStore, favorites: FavoritesStore, hotKeys: HotKeyManager
     ) -> Results {
-        let q = query.trimmingCharacters(in: .whitespaces)
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let showsSuggestions = settings?.launcherShowsSuggestions ?? true
         let usage = ranking.snapshot()
         let key = ResultsKey(
-            match: matchKey(q), visibilityRevision: visibility.revision,
+            match: matchKey(q, limit: 200), visibilityRevision: visibility.revision,
             favoritesRevision: favorites.revision, hotKeysRevision: hotKeys.revision,
             showsSuggestions: showsSuggestions, minute: Int(usage.now.timeIntervalSince1970 / 60))
         return resultsMemo.value(for: key) {
             // Filtering stays downstream of `matches` so that memo is never keyed on hidden state.
-            let visible = matches(q).filter(visibility.isVisible)
-            guard q.isEmpty else { return Results(entries: visible) }
+            let matched = searchResults(q)
+            let visible = matched.entries.filter(visibility.isVisible)
+            guard q.isEmpty else {
+                let matchCount = matched.entries.prefix(matched.matchCount).count(where: visibility.isVisible)
+                return Results(entries: visible, matchCount: matchCount)
+            }
             let split = favorites.ordered(visible)
             let suggested =
                 showsSuggestions ? suggestions(from: split.rest, usage: usage, hotKeys: hotKeys) : []
@@ -717,9 +738,9 @@ final class AppIndex {
 
     private var sensitivity: SearchSensitivity { settings?.rootSearchSensitivity ?? .default }
 
-    private func matchKey(_ query: String) -> MatchKey {
+    private func matchKey(_ query: String, limit: Int) -> MatchKey {
         MatchKey(
-            query: query, entriesRevision: entriesRevision, rankingRevision: ranking.revision,
+            query: query, limit: limit, entriesRevision: entriesRevision, rankingRevision: ranking.revision,
             aliasRevision: aliases.revision, sensitivity: sensitivity)
     }
 
@@ -750,7 +771,7 @@ final class AppIndex {
         return ordered
     }
 
-    /// Meetings keep their own card, AI is never pushed, and Tinycast opening Tinycast goes nowhere.
+    /// Meetings keep their own card, AI is never pushed, and Tinycast opening itself goes nowhere.
     private func suggestions(
         from entries: [AppEntry], usage: LauncherRankingStore.Snapshot, hotKeys: HotKeyManager
     ) -> [AppEntry] {
