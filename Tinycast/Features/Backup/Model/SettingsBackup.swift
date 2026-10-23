@@ -36,6 +36,7 @@ struct SettingsBackup: Codable {
         var popToRootSeconds: Int?
         var escapeKeyBehavior: String?
         var appearance: String?
+        var language: String?
         var calcNumberStyle: String?
         var interfaceSize: String?
         var compactMode: Bool?
@@ -46,9 +47,12 @@ struct SettingsBackup: Codable {
         var openOnCursorScreen: Bool?
         // Safe to carry: it grants no permission class, just repositions the window.
         var paletteDraggable: Bool?
+        var animationsEnabled: Bool?
         var fileSearchEnabled: Bool?
         var fileSearchScopes: [String]?
         var fileSearchIgnorePatterns: [String]?
+        var fileSearchRemovedDefaultPatterns: [String]?
+        var fileSearchShowInLauncher: Bool?
         var notesEnabled: Bool?
         var notesRendersMarkdown: Bool?
         var notesShowsFormattingBar: Bool?
@@ -147,6 +151,7 @@ extension SettingsBackup {
             popToRootSeconds: s.popToRootTimeout.rawValue,
             escapeKeyBehavior: s.escapeKeyBehavior.rawValue,
             appearance: s.appearance.rawValue,
+            language: s.language.rawValue,
             calcNumberStyle: s.calcNumberStyle.rawValue,
             interfaceSize: s.interfaceSize.rawValue,
             compactMode: s.compactMode,
@@ -156,9 +161,12 @@ extension SettingsBackup {
             rootSearchSensitivity: s.rootSearchSensitivity.rawValue,
             openOnCursorScreen: s.openOnCursorScreen,
             paletteDraggable: s.paletteDraggable,
+            animationsEnabled: s.animationsEnabled,
             fileSearchEnabled: s.fileSearchEnabled,
             fileSearchScopes: s.fileSearchScopes,
             fileSearchIgnorePatterns: s.fileSearchIgnorePatterns,
+            fileSearchRemovedDefaultPatterns: s.fileSearchRemovedDefaultPatterns,
+            fileSearchShowInLauncher: s.fileSearchShowInLauncher,
             notesEnabled: s.notesEnabled,
             notesRendersMarkdown: s.notesRendersMarkdown,
             notesShowsFormattingBar: s.notesShowsFormattingBar,
@@ -369,6 +377,10 @@ extension SettingsBackup {
             settings.appearance = appearance
             count += 1
         }
+        if let raw = s.language, let language = AppLanguage(rawValue: raw) {
+            settings.language = language
+            count += 1
+        }
         if let raw = s.calcNumberStyle, let style = CalcNumberStyle(rawValue: raw) {
             settings.calcNumberStyle = style
             count += 1
@@ -401,6 +413,10 @@ extension SettingsBackup {
             settings.paletteDraggable = flag
             count += 1
         }
+        if let flag = s.animationsEnabled {
+            settings.animationsEnabled = flag
+            count += 1
+        }
         // Writing through AppSettings is enough; AppCore's sinks re-project the rest.
         if let flag = s.fileSearchEnabled {
             settings.fileSearchEnabled = flag
@@ -412,6 +428,14 @@ extension SettingsBackup {
         }
         if let patterns = s.fileSearchIgnorePatterns {
             settings.fileSearchIgnorePatterns = patterns
+            count += 1
+        }
+        if let patterns = s.fileSearchRemovedDefaultPatterns {
+            settings.fileSearchRemovedDefaultPatterns = patterns
+            count += 1
+        }
+        if let flag = s.fileSearchShowInLauncher {
+            settings.fileSearchShowInLauncher = flag
             count += 1
         }
         if let flag = s.notesEnabled {

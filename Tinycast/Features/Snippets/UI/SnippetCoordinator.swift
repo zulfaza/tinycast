@@ -58,7 +58,7 @@ final class SnippetCoordinator {
     func chooseSnippetsFolder() {
         guard
             let url = FolderPicker.choose(
-                message: "Choose the folder your snippets are kept in.",
+                message: String(localized: "Choose the folder your snippets are kept in."),
                 startingAt: store.snippetsDirectory)
         else { return }
         settings.snippetsFolder = AppPaths.contentFolderSetting(for: url, named: "Snippets")
@@ -80,10 +80,13 @@ final class SnippetCoordinator {
         Task {
             guard
                 await core.confirm(
-                    title: "Enable snippets?",
-                    message:
-                        "Keyword expansion requires the Accessibility permission. Keystrokes stay on this Mac.",
-                    symbol: "curlybraces", confirmTitle: "Continue", tone: .neutral,
+                    title: String(localized: "Enable snippets?"),
+                    message: String(
+                        localized: """
+                            Keyword expansion requires the Accessibility permission. Keystrokes stay on \
+                            this Mac.
+                            """),
+                    symbol: "curlybraces", confirmTitle: String(localized: "Continue"), tone: .neutral,
                     confirmRole: .standard)
             else { return }
 
@@ -191,16 +194,17 @@ final class SnippetCoordinator {
         guard settings.snippetsEnabled, let record = store.record(id: id) else { return }
         guard
             await core.confirm(
-                title: "Delete “\(record.snippet.name)”?",
-                message: "This removes \(record.fileURL.lastPathComponent) from your snippets folder.",
-                symbol: "doc.text", confirmTitle: "Delete")
+                title: String(localized: "Delete “\(record.snippet.name)”?"),
+                message: String(
+                    localized: "This removes \(record.fileURL.lastPathComponent) from your snippets folder."),
+                symbol: "doc.text", confirmTitle: String(localized: "Delete"))
         else { return }
         do {
             try await store.delete(id: id)
         } catch {
             await core.showNotice(
-                title: "Couldn’t Delete “\(record.snippet.name)”", message: error.localizedDescription,
-                symbol: "doc.text", tone: .danger)
+                title: String(localized: "Couldn’t Delete “\(record.snippet.name)”"),
+                message: error.localizedDescription, symbol: "doc.text", tone: .danger)
         }
     }
 
@@ -269,7 +273,7 @@ final class SnippetCoordinator {
         }
         // A window of ours that isn't an editor, such as Settings, has no caret to type at.
         guard let target = InjectionTarget.current() else {
-            showMessage("Click into a text field first", .neutral)
+            showMessage(String(localized: "Click into a text field first"), .neutral)
             return
         }
         expandSnippet(id: id, target: target)
@@ -366,7 +370,7 @@ final class SnippetCoordinator {
         let expansionDelay = injectionDelay ?? settings.snippetsInjectionDelay.duration
         let shouldShowFeedback =
             showsCompletionFeedback ?? (record.snippet.showsConfirmation || settings.snippetsCompletionFeedback)
-        let confirmation = shouldShowFeedback ? "Inserted \(record.snippet.name)" : nil
+        let confirmation = shouldShowFeedback ? String(localized: "Inserted \(record.snippet.name)") : nil
         if !result.missingArguments.isEmpty {
             promptSnippetArguments(
                 record: record,

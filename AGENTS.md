@@ -121,7 +121,8 @@ feature's doc, under its own `## Invariants`.
   lists a command is a separate fact, and `SettingsTab.ownedCommands` is the only place that states it.
 - **Generated files are never hand-edited.** `EmojiData.generated.swift` and
   `Resources/EmojiKeywords/` come from `node Scripts/gen-emoji.js`, `CurrencyData.generated.swift` from `node Scripts/gen-currencies.js`,
-  `CountryZoneData.generated.swift` from `node Scripts/gen-countries.js`, and
+  `CountryZoneData.generated.swift` from `node Scripts/gen-countries.js`, `Resources/DictationStart.wav`
+  and `DictationStop.wav` from `node Scripts/gen-dictation-sounds.js`, and
   `Resources/RaycastRuntime.generated.js` from `Scripts/raycast-runtime/build.mjs` — the runtime is
   committed so building the app never needs Node.
 - **`DesignSystem/Scrolling/EdgeDissolve.swift` and `ThinScrollbar.swift` are off-limits.** Both are
@@ -130,6 +131,10 @@ feature's doc, under its own `## Invariants`.
 
 ## Conventions worth knowing up front
 
+- **User-facing text is localized through `Localizable.xcstrings`**: SwiftUI literals as they are,
+  `String(localized:)` wherever text travels as a `String`, one literal per sentence. Run
+  `./Scripts/sync-strings.sh` after changing any, and translate all eight languages in the same change.
+  See [standards.md](docs/standards.md#localization).
 - **A new preference also gets a `SettingsFileKey`** and its binding in `SettingsFileSchema`, so the
   opt-in `settings.json` mirror carries it; the exhaustive switch fails the build until it is bound.
   See [settings-file.md](docs/features/settings-file.md).

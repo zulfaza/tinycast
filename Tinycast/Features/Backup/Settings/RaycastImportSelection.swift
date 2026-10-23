@@ -12,29 +12,29 @@ struct RaycastImportSelection: View {
     }
 
     private static let categories: [Category] = [
-        .init(option: .shortcuts, symbol: "command", label: "Shortcuts", tint: .gray),
-        .init(option: .favorites, symbol: "star.fill", label: "Favorites", tint: .yellow),
+        .init(option: .shortcuts, symbol: "command", label: String(localized: "Shortcuts"), tint: .gray),
+        .init(option: .favorites, symbol: "star.fill", label: String(localized: "Favorites"), tint: .yellow),
         .init(
-            option: .aliases, symbol: "character.cursor.ibeam", label: "Aliases", tint: .teal),
+            option: .aliases, symbol: "character.cursor.ibeam", label: String(localized: "Aliases"), tint: .teal),
         .init(
-            option: .emojiSkinTone, symbol: "face.smiling.inverse", label: "Emoji skin tone",
+            option: .emojiSkinTone, symbol: "face.smiling.inverse", label: String(localized: "Emoji skin tone"),
             tint: .yellow),
-        .init(option: .launchAtLogin, symbol: "power", label: "Launch at login", tint: .gray),
+        .init(option: .launchAtLogin, symbol: "power", label: String(localized: "Launch at login"), tint: .gray),
         .init(
-            option: .menuBarVisibility, symbol: "menubar.rectangle", label: "Menu-bar icon",
+            option: .menuBarVisibility, symbol: "menubar.rectangle", label: String(localized: "Menu-bar icon"),
             tint: .gray),
         .init(
-            option: .clipboardHistory, symbol: "doc.on.clipboard.fill", label: "Clipboard history",
+            option: .clipboardHistory, symbol: "doc.on.clipboard.fill", label: String(localized: "Clipboard history"),
             tint: .brown),
-        .init(option: .snippets, symbol: "curlybraces", label: "Snippets", tint: .cyan),
-        .init(option: .quicklinks, symbol: Quicklink.sfSymbol, label: "Quicklinks", tint: .blue),
+        .init(option: .snippets, symbol: "curlybraces", label: String(localized: "Snippets"), tint: .cyan),
+        .init(option: .quicklinks, symbol: Quicklink.sfSymbol, label: String(localized: "Quicklinks"), tint: .blue),
         .init(
-            option: .popToRoot, symbol: "arrow.uturn.backward", label: "Pop to root", tint: .gray),
-        .init(option: .compactMode, symbol: "macwindow", label: "Compact mode", tint: .pink)
+            option: .popToRoot, symbol: "arrow.uturn.backward", label: String(localized: "Pop to root"), tint: .gray),
+        .init(option: .compactMode, symbol: "macwindow", label: String(localized: "Compact mode"), tint: .pink)
     ]
 
     private static let columns = Array(
-        repeating: GridItem(.flexible(), spacing: Theme.Spacing.md, alignment: .leading), count: 3)
+        repeating: GridItem(.flexible(), spacing: Theme.Spacing.md, alignment: .leading), count: 2)
 
     private func included(_ option: RaycastImportOptions) -> Binding<Bool> {
         Binding(

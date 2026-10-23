@@ -65,11 +65,19 @@ struct DictationSettingsView: View {
                     if settings.dictationMode == .pushToTalk {
                         let issue = coordinator.holdShortcutIssue
                         Text(
-                            issue ?? "Hold a key combination or a single modifier; release it to transcribe. "
-                                + "Double taps work in toggle mode."
+                            issue
+                                ?? String(
+                                    localized: """
+                                        Hold a key combination or a single modifier; release it to \
+                                        transcribe. Double taps work in toggle mode.
+                                        """)
                         )
                         .font(.caption)
                         .foregroundStyle(issue == nil ? Color.secondary : Color.orange)
+                    }
+                    Toggle(isOn: $settings.dictationPlaysSounds) {
+                        SettingsRowTitle(.dictationCommands, "Play sounds")
+                        Text("Play a sound when recording starts and stops.")
                     }
                 } header: {
                     SettingsSectionHeader(.dictationCommands)
@@ -113,16 +121,21 @@ struct DictationSettingsView: View {
                                             || coordinator.models.removing == settings.dictationModel)
                             }
                         } label: {
-                            Text(installed ? "Installed" : "Not installed")
+                            Text(
+                                installed
+                                    ? LocalizedStringResource(
+                                        "dictation-model-installed", defaultValue: "Installed")
+                                    : "Not installed")
                             Text(modelDescription)
                         }
                     }
                     if settings.dictationModel.isQwen, installed {
                         Picker(selection: languageBinding) {
-                            Text("Auto").tag("")
+                            Text(LocalizedStringResource("dictation-language-auto", defaultValue: "Auto"))
+                                .tag("")
                             Divider()
                             ForEach(DictationLanguage.allCases) { language in
-                                Text(language.rawValue).tag(language.rawValue)
+                                Text(language.displayName(locale: .current)).tag(language.rawValue)
                             }
                         } label: {
                             SettingsRowTitle(.dictationModel, "Language")
@@ -135,7 +148,7 @@ struct DictationSettingsView: View {
                 Section {
                     Picker(selection: $settings.dictationIdleRelease) {
                         ForEach(DictationIdleRelease.allCases) { option in
-                            Text(option.title).tag(option)
+                            Text(option.title(locale: .current)).tag(option)
                         }
                     } label: {
                         SettingsRowTitle(.dictationMemory, "Release model from memory")
@@ -236,8 +249,10 @@ struct DictationSettingsView: View {
     }
 
     private var modelDescription: String {
-        modelSize.map { "\(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)) on disk" }
-            ?? "About \(settings.dictationModel.approximateInstalledMegabytes) MB on disk"
+        let approximate = Int64(settings.dictationModel.approximateInstalledMegabytes) * 1_000_000
+        return modelSize.map {
+            String(localized: "\(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)) on disk")
+        } ?? String(localized: "About \(approximate.formatted(.byteCount(style: .file))) on disk")
     }
 
     private struct DownloadProgressView: View {
@@ -276,9 +291,11 @@ struct DictationSettingsView: View {
         }
 
         private var title: String {
-            guard let progress = models.downloadProgress else { return "Preparing download…" }
+            guard let progress = models.downloadProgress else {
+                return String(localized: "Preparing download…")
+            }
             return progress.total > 0 && progress.received >= progress.total
-                ? "Finishing download…" : "Downloading model…"
+                ? String(localized: "Finishing download…") : String(localized: "Downloading model…")
         }
     }
 

@@ -178,27 +178,30 @@ private struct SnippetInfoSection: View {
 
     private var rows: [InfoRow] {
         var rows = [
-            InfoRow(label: "Name", value: record.snippet.name),
-            InfoRow(label: "Content Type", value: "Markdown"),
-            InfoRow(label: "Times Copied", value: usage.records[record.id]?.count.formatted() ?? "0")
+            InfoRow(label: String(localized: "Name"), value: record.snippet.name),
+            InfoRow(label: String(localized: "Content Type"), value: String(localized: "Markdown")),
+            InfoRow(label: String(localized: "Times Copied"), value: usage.records[record.id]?.count.formatted() ?? "0")
         ]
         if !record.snippet.tags.isEmpty {
             rows.insert(
-                InfoRow(label: "Tags", value: record.snippet.tags.map { "#\($0)" }.joined(separator: " ")),
+                InfoRow(label: String(localized: "Tags"), value: record.snippet.tags.map { "#\($0)" }.joined(separator: " ")),
                 at: 1)
         }
         if let lastUsed = usage.lastUsed(for: record.id) {
-            rows.append(InfoRow(label: "Last Copied", value: Self.dateFormatter.string(from: lastUsed)))
+            rows.append(InfoRow(label: String(localized: "Last Copied"), value: Self.dateFormatter.string(from: lastUsed)))
         }
         if let keyword = record.snippet.keyword, !keyword.isEmpty {
-            rows.append(InfoRow(label: "Keyword", value: keyword))
+            rows.append(InfoRow(label: String(localized: "Keyword"), value: keyword))
         }
         if let keycaps = hotKeys.binding(for: .snippet(id: record.id))?.keycaps {
-            rows.append(InfoRow(label: "Shortcut", keycaps: keycaps))
+            rows.append(InfoRow(label: String(localized: "Shortcut"), keycaps: keycaps))
         }
-        rows.append(InfoRow(label: "File", value: record.fileURL.lastPathComponent))
         rows.append(
-            InfoRow(label: "Characters", value: record.snippet.text.count.formatted()))
+            InfoRow(label: String(localized: "File"), value: record.fileURL.lastPathComponent))
+        rows.append(
+            InfoRow(
+                label: String(localized: "Characters"),
+                value: record.snippet.text.count.formatted()))
         return rows
     }
 

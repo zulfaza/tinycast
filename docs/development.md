@@ -140,6 +140,23 @@ already-running server does not re-read `.compile`.
 the repo root excludes the generated files and the two off-limits files in `DesignSystem/Scrolling/`.
 The comment policy in [standards.md](standards.md#comments) is deliberately not among its rules.
 
+`lint.sh` also runs `check-localizations.js`, which fails on a string missing from any language, a
+missing plural form, a stale entry, or a translation whose format specifiers differ from the source.
+
+## Localization
+
+```sh
+./Scripts/sync-strings.sh   # build, merge new UI strings into Localizable.xcstrings, then check it
+```
+
+`xcodebuild` extracts strings but never writes them back to the catalog — only a build in Xcode's IDE
+does — so run this after changing UI text, then translate what it added (Xcode's catalog editor, or
+the JSON directly). A string whose source changed leaves its old entry stale; delete it. The rules for
+writing localizable code are in [standards.md](standards.md#localization).
+
+To see a language without changing the setting, launch the Debug build with
+`-AppleLanguages '(de)'`; add `-NSDoubleLocalizedStrings YES` to find labels that truncate.
+
 ## Formatting
 
 ```sh
@@ -184,6 +201,10 @@ node Scripts/gen-emoji.js            # -> Tinycast/Features/Emoji/Model/EmojiDat
 node Scripts/gen-currencies.js       # -> Tinycast/Features/Calculator/Model/CurrencyData.generated.swift
 node Scripts/gen-countries.js        # -> Tinycast/Features/Calculator/Model/CountryZoneData.generated.swift
 ```
+
+`node Scripts/gen-dictation-sounds.js` synthesizes Dictation's start and stop chimes into
+`Tinycast/Resources/DictationStart.wav` and `DictationStop.wav`. It needs no network and writes the same
+bytes every run; change the notes or levels in the script, never the WAV files.
 
 `gen-emoji.js` also writes one CLDR keyword pack per language in its `KEYWORD_LOCALES`; adding a
 language is one line there. Pass a directory to keep the downloads between runs:

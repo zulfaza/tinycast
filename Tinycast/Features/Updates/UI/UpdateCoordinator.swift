@@ -25,7 +25,7 @@ final class UpdateCoordinator {
     private unowned let core: AppCore
     /// A background check can open it while another app refuses us activation, so it floats.
     @ObservationIgnored private lazy var window = AppWindowController(
-        title: "Software Update", contentSize: UpdateWindowView.initialSize,
+        title: String(localized: "Software Update"), contentSize: UpdateWindowView.initialSize,
         activation: core.activationPolicy, level: .floating)
     @ObservationIgnored private var installTask: Task<Void, Never>?
 
@@ -35,7 +35,7 @@ final class UpdateCoordinator {
     }
 
     var channel: ReleaseChannel { store.channel }
-    var runningVersion: String { store.runningVersion?.description ?? "unknown" }
+    var runningVersion: String { store.runningVersion?.description ?? String(localized: "unknown") }
 
     /// A local build has no release stream, so it does not advertise the command either.
     func applyEnabled() {
@@ -83,7 +83,7 @@ final class UpdateCoordinator {
             } else if answered {
                 stage = .upToDate
             } else {
-                stage = .failed(.downloadFailed("Tinycast could not reach GitHub."))
+                stage = .failed(.downloadFailed(String(localized: "Tinycast could not reach GitHub.")))
             }
         }
     }
@@ -121,6 +121,7 @@ final class UpdateCoordinator {
         installTask = Task { [weak self] in
             do {
                 try await installer.install(release, onProgress: onProgress)
+                self?.store.recordInstall(of: release.version)
                 self?.stage = .readyToRelaunch
             } catch is CancellationError {
                 self?.stage = .available(release)
@@ -152,10 +153,8 @@ final class UpdateCoordinator {
         window.close()
     }
 
-    /// `NSApp.terminate`, never `exit`: it flushes a note draft and returns the HID remap.
     func relaunch() {
-        RelaunchRunner.relaunchAfterExit(Bundle.main.bundleURL)
-        NSApp.terminate(nil)
+        core.relaunch()
     }
 
     // MARK: - Private

@@ -15,12 +15,13 @@ struct HTTPAIProvider: AIProvider {
             let task = Task.detached {
                 let session = Self.makeSession()
                 defer { session.invalidateAndCancel() }
+                let secrets = [apiKey] + configuration.headers.values
                 do {
                     let urlRequest = try makeURLRequest(request)
                     let (bytes, response) = try await session.bytes(for: urlRequest)
                     guard let response = response as? HTTPURLResponse else {
                         throw AIProviderError.responseFailed(
-                            "The provider returned an invalid HTTP response.")
+                            String(localized: "The provider returned an invalid HTTP response."))
                     }
                     guard response.statusCode == 200 else {
                         let body = await Self.body(of: bytes)
@@ -29,9 +30,9 @@ struct HTTPAIProvider: AIProvider {
                             AIProviderFailure.description(
                                 status: response.statusCode, body: body,
                                 retryAfter: response.value(forHTTPHeaderField: "Retry-After"),
-                                secrets: [apiKey]))
+                                secrets: secrets))
                     }
-                    var decoder = AIStreamDecoder(shape: configuration.shape, secrets: [apiKey])
+                    var decoder = AIStreamDecoder(shape: configuration.shape, secrets: secrets)
                     var chunk = Data()
                     chunk.reserveCapacity(2_048)
                     // Per line, not per 2 KB: a short reply must show before the stream closes.
@@ -52,7 +53,7 @@ struct HTTPAIProvider: AIProvider {
                     }
                     guard decoder.isTerminal else {
                         throw AIProviderError.responseFailed(
-                            "The connection closed before the response completed.")
+                            String(localized: "The connection closed before the response completed."))
                     }
                     continuation.finish()
                 } catch is CancellationError {
@@ -75,6 +76,7 @@ struct HTTPAIProvider: AIProvider {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         applyAuthentication(to: &request)
+        for (name, value) in configuration.headers { request.setValue(value, forHTTPHeaderField: name) }
         request.httpBody = try JSONSerialization.data(
             withJSONObject: AIRequestBody.make(input, configuration: configuration))
         return request
@@ -84,14 +86,14 @@ struct HTTPAIProvider: AIProvider {
     private func applyAuthentication(to request: inout URLRequest) {
         switch configuration.shape {
         case .openAICompatible:
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            if !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
             if configuration.provider == .gemini {
                 request.setValue(Self.googleClientHeader, forHTTPHeaderField: "x-goog-api-client")
             } else if configuration.provider == .openRouter {
                 request.setValue(Bundle.main.appDisplayName, forHTTPHeaderField: "X-OpenRouter-Title")
             }
         case .anthropic:
-            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            if !apiKey.isEmpty { request.setValue(apiKey, forHTTPHeaderField: "x-api-key") }
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         }
     }
@@ -138,12 +140,12 @@ struct HTTPAIProvider: AIProvider {
 
     private static func networkMessage(_ code: URLError.Code) -> String {
         switch code {
-        case .networkConnectionLost: return "The network connection was lost."
-        case .notConnectedToInternet: return "No internet connection."
-        case .timedOut: return "The provider took too long to respond."
+        case .networkConnectionLost: return String(localized: "The network connection was lost.")
+        case .notConnectedToInternet: return String(localized: "No internet connection.")
+        case .timedOut: return String(localized: "The provider took too long to respond.")
         case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
-            return "The provider could not be reached."
-        default: return "The network request failed."
+            return String(localized: "The provider could not be reached.")
+        default: return String(localized: "The network request failed.")
         }
     }
 }

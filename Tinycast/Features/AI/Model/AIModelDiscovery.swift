@@ -40,19 +40,29 @@ enum AIModelDiscovery {
         var errorDescription: String? {
             switch self {
             case .malformedResponse:
-                return "The provider returned an unreadable model list. Enter a model ID manually."
+                return String(
+                    localized: """
+                        The provider returned an unreadable model list. Enter a model ID manually.
+                        """)
             case .rejectedKey:
-                return "The API key was rejected. Check it and try again."
+                return String(localized: "The API key was rejected. Check it and try again.")
             case .unavailable:
-                return "The provider could not load models right now. Try again or enter one manually."
+                return String(
+                    localized: """
+                        The provider could not load models right now. Try again or enter one manually.
+                        """)
             case .unsupported:
-                return "This endpoint does not expose a model list. Enter a model ID manually."
+                return String(
+                    localized: """
+                        This endpoint does not expose a model list. Enter a model ID manually.
+                        """)
             }
         }
     }
 
     static func query(
-        provider: AIProviderKind, baseURL: URL, apiKey: String, appTitle: String
+        provider: AIProviderKind, baseURL: URL, apiKey: String, appTitle: String,
+        headers: [String: String] = [:]
     ) throws -> Query {
         let usesNativeGemini =
             provider == .gemini
@@ -66,16 +76,17 @@ enum AIModelDiscovery {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         if provider == .anthropic {
-            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            if !apiKey.isEmpty { request.setValue(apiKey, forHTTPHeaderField: "x-api-key") }
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         } else if usesNativeGemini {
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            if !apiKey.isEmpty { request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key") }
         } else if !apiKey.isEmpty {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         if provider == .openRouter {
             request.setValue(appTitle, forHTTPHeaderField: "X-OpenRouter-Title")
         }
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         return Query(request: request, responseShape: usesNativeGemini ? .gemini : .openAI)
     }
 
