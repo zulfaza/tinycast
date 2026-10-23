@@ -21,6 +21,12 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
     private(set) var menuBars: ExtensionMenuBarManager?
     private(set) var state: ExtensionSessionState = .idle
     private(set) var running: ExtensionCommandRef?
+    private var launchingNoViewCommands: Set<ExtensionCommandRef> = []
+
+    private var runningCommandMode: ExtensionCommandMode? {
+        guard let running else { return nil }
+        return extensionNamed(running.extensionName)?.command(named: running.commandName)?.mode
+    }
     /// The command waits on a browser sign-in; resetting the palette now would end it.
     var isSigningIn: Bool { bridge.isSigningIn }
     /// Toasts the running command asked for, newest last.
@@ -397,6 +403,18 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
                 owner, command: command, arguments: arguments, type: launchType, context: launchContext)
             return
         }
+        let reference = ExtensionCommandRef(
+            extensionName: owner.manifest.name, commandName: command.name)
+        if command.mode == .noView {
+            if running == reference {
+                switch state {
+                case .launching, .rendered: return
+                case .idle, .failed, .finished: break
+                }
+            }
+            guard launchingNoViewCommands.insert(reference).inserted else { return }
+        }
+        defer { launchingNoViewCommands.remove(reference) }
         await stop()
         guard isEnabled else { return }
         let schemas = owner.manifest.preferences + command.preferences
@@ -482,6 +500,11 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
             launchType: launchType,
             isDarkAppearance: NSApp.effectiveAppearance.isDark,
             launchContext: launchContext)
+    }
+
+    func stopViewCommand() async {
+        guard runningCommandMode == .view else { return }
+        await stop()
     }
 
     func stop() async {

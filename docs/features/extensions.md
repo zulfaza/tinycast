@@ -803,6 +803,8 @@ both generated wrappers and extensions that call a helper directly with `execFil
 the rest of a Swift wrapper. Color Picker is the reference case.
 
 **Command modes** — `view` renders into the palette; `no-view` runs headless with the palette closed.
+Palette resets stop only view commands. A no-view command stays active until it finishes or another
+command replaces it. Repeated foreground launches of the same active no-view command are ignored.
 Both receive `props.arguments` and `props.launchType`. A `no-view` command declaring `interval`
 (`"1m"`, `"12h"`, `"1d"`) also refreshes in the background — see [Background refresh](#background-refresh).
 `menu-bar` commands render native menu extras with the lifecycle described above.
