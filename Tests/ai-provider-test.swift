@@ -16,21 +16,36 @@ struct AIProviderTests {
     }
 
     static func instructionsFollowTheSetting() {
+        let cloud = AIModelSelection.codex(model: "gpt-5", effort: nil)
         for prompt in [nil, "", "   \n\t "] as [String?] {
             expect(
-                AIInstructions.compose(userPrompt: prompt, isEnabled: true) == AIPreamble.text,
-                "an absent or blank user prompt sends the preamble alone")
+                AIInstructions.compose(
+                    userPrompt: prompt, isEnabled: true, offersChoices: false, model: cloud)
+                    == AIPreamble.text,
+                "an absent or blank user prompt with choices off sends the preamble alone")
         }
         expect(
-            AIInstructions.compose(userPrompt: "  Answer only in haiku.  ", isEnabled: true)
-                == AIPreamble.text + "\n\nAnswer only in haiku.",
-            "instructions put the preamble before the trimmed user prompt with a blank line")
+            AIInstructions.compose(
+                userPrompt: "  Answer only in haiku.  ", isEnabled: true, offersChoices: true,
+                model: cloud)
+                == AIPreamble.text + "\n\n" + AIPreamble.choices + "\n\nAnswer only in haiku.",
+            "instructions put the preamble and its choices before the trimmed user prompt")
         for prompt in [nil, "Answer only in haiku."] as [String?] {
             expect(
-                AIInstructions.compose(userPrompt: prompt, isEnabled: false) == nil,
-                "disabled instructions withhold both the preamble and the user prompt")
+                AIInstructions.compose(
+                    userPrompt: prompt, isEnabled: false, offersChoices: true, model: cloud)
+                    == nil,
+                "disabled instructions withhold the preamble, its choices and the user prompt")
+            expect(
+                AIInstructions.compose(
+                    userPrompt: prompt, isEnabled: true, offersChoices: true,
+                    model: .appleIntelligence)
+                    == nil,
+                "the on-device model gets no preamble, choices or user prompt")
         }
-        expect(AIPreamble.text.count < 1_800, "the preamble stays within its per-turn budget")
+        expect(
+            (AIPreamble.text + AIPreamble.choices).count < 1_800,
+            "the preamble stays within its per-turn budget")
     }
 
     /// A wrong document shape must fail here rather than mid-conversation.
@@ -98,6 +113,7 @@ struct AIProviderTests {
         instructionsFollowTheSetting()
         providerPresetsResolveEndpoints()
         modelCatalogBuildsProviderRequests()
+        requestHeadersAreValidated()
         modelCatalogDecodesProviderResponses()
         modelCatalogSearchesWithoutRenderingEverything()
         exactMatchNamesOnlyAWholeModel()
@@ -135,6 +151,7 @@ struct AIProviderTests {
         codexElicitationsAreOnlyToolCalls()
         claudeControlFramesAnswerOneTool()
         aGatewayOffersNoneAsItsReasoningEffort()
+        declaredLevelsNeverReachAVendorOrOutliveTheirDeclaration()
 
         print("\(passes) passed, \(failures) failed")
         if failures > 0 { exit(1) }
@@ -369,7 +386,7 @@ struct AIProviderTests {
     /// A body that named the default would 400 on every endpoint without a thinking mode.
     static func aGatewayOffersNoneAsItsReasoningEffort() {
         let gateway = AIConnection(
-            provider: .openAI, baseURL: "https://api.fusioncode.app/v1", models: ["m"])
+            provider: .openAI, baseURL: "https://gateway.example/v1", models: ["m"])
         expect(
             gateway.reasoningOptions(for: "m")?.efforts == ["default", "none"],
             "a preset pointed away from its own API offers the one effort a gateway can honour")
@@ -392,7 +409,7 @@ struct AIProviderTests {
             "a published catalog always wins over the synthesized switch")
 
         let turn = AIRequest(messages: [AIMessage(role: .user, text: "hi")])
-        let url = URL(string: "https://api.fusioncode.app/v1")!
+        let url = URL(string: "https://gateway.example/v1")!
         let on = AIRequestBody.make(
             turn,
             configuration: AIHTTPConfiguration(provider: .openAI, baseURL: url, model: "m"))
@@ -406,6 +423,87 @@ struct AIProviderTests {
         expect(
             (off["thinking"] as? [String: String])?["type"] == "disabled",
             "None asks the endpoint to answer directly")
+        expect(off["reasoning_effort"] == nil, "None sends no effort field beside it")
+
+        var declared = AIConnection(
+            provider: .openAI, baseURL: "https://gateway.example/v1", models: ["m"])
+        declared.declareLevels(["high", "low", "bogus"], for: "m")
+        expect(
+            declared.reasoningOptions(for: "m")?.efforts == ["default", "low", "high", "none"],
+            "declared levels sit in ladder order between Default and None, and strangers drop")
+        expect(
+            declared.reasoningOptions(for: "m")?.resolvedEffort(nil) == "default",
+            "a declaration leaves reasoning alone until the reader picks a level")
+        expect(declared.declaredLevels(for: "m") == ["low", "high"], "the declaration reads back")
+        declared.declareLevels([], for: "m")
+        expect(
+            declared.reasoningOptions(for: "m")?.efforts == ["default", "none"],
+            "clearing it returns to the Default/None pair")
+
+        let level = AIRequestBody.make(
+            turn,
+            configuration: AIHTTPConfiguration(
+                provider: .openAI, baseURL: url, model: "m", effort: "low"))
+        expect(
+            level["reasoning_effort"] as? String == "low",
+            "a declared level goes out as OpenAI's own reasoning_effort")
+        expect(level["reasoning"] == nil, "and not as OpenRouter's reasoning object")
+        let unset = AIRequestBody.make(
+            turn,
+            configuration: AIHTTPConfiguration(
+                provider: .openAI, baseURL: url, model: "m", effort: "default"))
+        expect(unset["reasoning_effort"] == nil, "Default still sends no field")
+    }
+
+    static func declaredLevelsNeverReachAVendorOrOutliveTheirDeclaration() {
+        var gateway = AIConnection(
+            provider: .openAI, baseURL: "https://gateway.example/v1", models: ["m"])
+        gateway.declareLevels(["low", "high"], for: "m")
+        expect(gateway.offeredEffort("high", for: "m") == "high", "a declared level is sent")
+        expect(gateway.offeredEffort(nil, for: "m") == nil, "no saved effort sends none")
+
+        gateway.declareLevels(["low"], for: "m")
+        expect(
+            gateway.offeredEffort("high", for: "m") == nil,
+            "a chat still holding an unticked level stops sending it")
+
+        var vendor = gateway
+        vendor.baseURL = AIProviderKind.openAI.defaultBaseURL
+        expect(
+            vendor.reasoningOptions(for: "m") == nil,
+            "levels declared for a gateway are not offered once the URL is the vendor's own")
+        expect(vendor.offeredEffort("low", for: "m") == nil, "nor sent to the vendor")
+
+        let openRouter = AIConnection(
+            id: UUID(), provider: .openRouter, models: ["m"],
+            reasoningOptions: ["m": .init(efforts: ["high", "low"], defaultEffort: "high")])
+        expect(
+            openRouter.offeredEffort("high", for: "m") == "high",
+            "OpenRouter's own catalog still reaches its default URL")
+        expect(
+            openRouter.offeredEffort("xhigh", for: "m") == nil,
+            "a level its catalog dropped is not sent")
+        expect(
+            AIConnection(provider: .openAI, models: ["m"]).offeredEffort("high", for: "m") == nil,
+            "an old OpenRouter effort left on a vendor connection is not sent")
+
+        var retargeted = gateway
+        retargeted.dropDeclaredLevels()
+        expect(
+            retargeted.reasoningOptions == nil,
+            "levels declared for one gateway are dropped when the URL moves")
+        var movedOpenRouter = openRouter
+        movedOpenRouter.dropDeclaredLevels()
+        expect(
+            movedOpenRouter.reasoningOptions == openRouter.reasoningOptions,
+            "OpenRouter's catalog is no declaration, so a moved URL keeps it")
+
+        expect(gateway.takesDeclaredLevels, "a gateway takes declared levels")
+        expect(!vendor.takesDeclaredLevels, "a vendor URL does not")
+        expect(
+            !AIConnection(provider: .openRouter, baseURL: "https://proxy.example/v1")
+                .takesDeclaredLevels,
+            "OpenRouter at any URL does not, because its catalog names the levels")
     }
 
     static func providerPresetsResolveEndpoints() {
@@ -479,6 +577,37 @@ struct AIProviderTests {
         expect(
             local?.url?.absoluteString == "http://localhost:11434/models",
             "a root endpoint appends one model path separator")
+        let headerOnly = try? AIModelDiscovery.query(
+            provider: .anthropic, baseURL: URL(string: "https://gateway.example.com")!,
+            apiKey: "", appTitle: "Tinycast",
+            headers: ["anthropic-version": "2024-01-01", "X-Tenant": "acme"]
+        ).request
+        expect(
+            headerOnly?.value(forHTTPHeaderField: "x-api-key") == nil,
+            "an empty key sends no credential header")
+        expect(
+            headerOnly?.value(forHTTPHeaderField: "Anthropic-Version") == "2024-01-01"
+                && headerOnly?.value(forHTTPHeaderField: "x-tenant") == "acme",
+            "custom headers are sent and replace a default of the same name in any case")
+    }
+
+    static func requestHeadersAreValidated() {
+        typealias Headers = AIRequestHeaders
+        expect(
+            (try? Headers.validated([
+                (" X-Tenant ", " acme\n"), ("", " "), ("Authorization", "Bearer\ttoken")
+            ])) == ["X-Tenant": "acme", "Authorization": "Bearer\ttoken"],
+            "names and values are trimmed, a blank row is dropped and a tab is kept")
+        expect(
+            (try? Headers.validated([("", "value")])) == nil
+                && (try? Headers.validated([("X Tenant", "acme")])) == nil,
+            "a missing name or one outside the HTTP token set is refused")
+        expect(
+            (try? Headers.validated([("X-Tenant", "a"), ("x-tenant", "b")])) == nil,
+            "a name repeated in another case is refused")
+        expect(
+            (try? Headers.validated([("X-Tenant", "a\r\nX-Injected: b")])) == nil,
+            "a value cannot carry a line break into another header")
     }
 
     static func modelCatalogDecodesProviderResponses() {
@@ -673,35 +802,56 @@ struct AIProviderTests {
         typealias Policy = AIConnectionKeyPolicy
 
         expect(
-            Policy.resolve(enteredKey: "  sk-new \n", connection: remote, saved: nil, hasStoredKey: false)
+            Policy.resolve(
+                enteredKey: "  sk-new \n", connection: remote, saved: nil, hasStoredKey: false,
+                hasHeaders: false)
                 == .store("sk-new"),
             "a typed key is stored trimmed")
         expect(
-            Policy.resolve(enteredKey: "sk-new", connection: moved, saved: remote, hasStoredKey: true)
+            Policy.resolve(
+                enteredKey: "sk-new", connection: moved, saved: remote, hasStoredKey: true, hasHeaders: false)
                 == .store("sk-new"),
             "a retarget that brings its own key replaces the old one")
         expect(
-            Policy.resolve(enteredKey: " ", connection: moved, saved: remote, hasStoredKey: true)
+            Policy.resolve(
+                enteredKey: " ", connection: moved, saved: remote, hasStoredKey: true, hasHeaders: false)
                 == .reject("Enter an API key for this endpoint — the saved key stays with the old one."),
             "a remote retarget without a key is refused, so the old key never reaches the new host")
         expect(
-            Policy.resolve(enteredKey: "", connection: local, saved: remote, hasStoredKey: true)
+            Policy.resolve(
+                enteredKey: "", connection: local, saved: remote, hasStoredKey: true, hasHeaders: false)
                 == .removeStored,
             "a retarget to loopback drops the key issued for the remote endpoint")
         expect(
-            Policy.resolve(enteredKey: "", connection: remote, saved: nil, hasStoredKey: false)
+            Policy.resolve(
+                enteredKey: "", connection: remote, saved: nil, hasStoredKey: false, hasHeaders: false)
                 == .reject("Enter an API key for this remote provider."),
             "a new remote connection needs a key")
         expect(
-            Policy.resolve(enteredKey: "", connection: local, saved: nil, hasStoredKey: false) == .keep,
+            Policy.resolve(
+                enteredKey: "", connection: local, saved: nil, hasStoredKey: false, hasHeaders: false)
+                == .keep,
             "a loopback endpoint saves without a key")
         expect(
-            Policy.resolve(enteredKey: "", connection: remote, saved: remote, hasStoredKey: true) == .keep,
+            Policy.resolve(
+                enteredKey: "", connection: remote, saved: remote, hasStoredKey: true, hasHeaders: false)
+                == .keep,
             "an unchanged endpoint keeps its saved key")
         expect(
-            Policy.resolve(enteredKey: "", connection: moved, saved: remote, hasStoredKey: false)
+            Policy.resolve(
+                enteredKey: "", connection: moved, saved: remote, hasStoredKey: false, hasHeaders: false)
                 == .reject("Enter an API key for this remote provider."),
             "with no saved key there is nothing to retarget, only a missing key")
+        expect(
+            Policy.resolve(
+                enteredKey: "", connection: remote, saved: nil, hasStoredKey: false, hasHeaders: true)
+                == .keep,
+            "request headers can authenticate a remote endpoint without a key")
+        expect(
+            Policy.resolve(
+                enteredKey: "", connection: moved, saved: remote, hasStoredKey: true, hasHeaders: true)
+                == .removeStored,
+            "a retarget authenticated by headers drops the old key rather than carry it over")
     }
 
     static func sseFramesSurviveSplits() {

@@ -11,6 +11,7 @@ final class DictationCoordinator {
     let models: DictationModelStore
     private let capture = DictationCapture()
     private let audioDucker: DictationAudioDucker
+    private let cues = DictationCueRunner()
     private let panel = DictationPanelController()
     private let injector: TextInjector
     private let showMessage: (String, DialogTone) -> Void
@@ -25,6 +26,8 @@ final class DictationCoordinator {
     @ObservationIgnored private var liveText = ""
     @ObservationIgnored private var liveDeliveryFailed = false
     @ObservationIgnored private var stopTask: Task<Void, Never>?
+    @ObservationIgnored private var cueTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingStartCue: UUID?
     @ObservationIgnored private var finishWhenStarted = false
     @ObservationIgnored private var target: InjectionTarget?
     /// The field a mic button is dictating into; nil for a shortcut's session.
@@ -45,7 +48,11 @@ final class DictationCoordinator {
         self.showMessage = showMessage
         panel.onAccept = { [weak self] in self?.accept() }
         panel.onCancel = { [weak self] in self?.cancel() }
-        capture.onLevels = { [weak self] in self?.panel.state.levels = $0 }
+        capture.onLevels = { [weak self] in
+            guard let self else { return }
+            panel.state.levels = $0
+            if pendingStartCue == token { playStartCue() }
+        }
         capture.onLimit = { [weak self] in self?.accept() }
     }
 
@@ -66,7 +73,8 @@ final class DictationCoordinator {
             let granted = await AVCaptureDevice.requestAccess(for: .audio)
             guard !Task.isCancelled else { return }
             guard granted else {
-                showMessage("Allow Tinycast to use the microphone in System Settings", .danger)
+                showMessage(
+                    String(localized: "Allow Tinycast to use the microphone in System Settings"), .danger)
                 return
             }
             settings.dictationEnabled = true
@@ -87,10 +95,10 @@ final class DictationCoordinator {
     var holdShortcutIssue: String? {
         guard let binding = hotKeys.binding(for: .dictation) else { return nil }
         guard binding.shortcut != nil || binding.holdKey != nil else {
-            return "Record a single modifier or a key combination for hold to talk."
+            return String(localized: "Record a single modifier or a key combination for hold to talk.")
         }
         if let owner = hotKeys.conflictOwner(of: binding, excluding: .dictation) {
-            return "This shortcut is also used by \(owner). Record another shortcut."
+            return String(localized: "This shortcut is also used by \(owner). Record another shortcut.")
         }
         return nil
     }
@@ -102,7 +110,8 @@ final class DictationCoordinator {
             hotKeys.binding(for: .dictation)?.shortcut == nil,
             hotKeys.binding(for: .dictation)?.holdKey == nil
         {
-            showMessage("Hold to talk needs a key combination or a single modifier", .danger)
+            showMessage(
+                String(localized: "Hold to talk needs a key combination or a single modifier"), .danger)
             return
         }
         if phase != .idle {
@@ -137,7 +146,7 @@ final class DictationCoordinator {
     private func begin(target: InjectionTarget?) {
         guard models.isInstalled(settings.dictationModel) else {
             field = nil
-            showMessage("Download the dictation model in Settings first", .danger)
+            showMessage(String(localized: "Download the dictation model in Settings first"), .danger)
             return
         }
         token = UUID()
@@ -147,7 +156,8 @@ final class DictationCoordinator {
         liveOffset = 0
         liveText = ""
         self.target = target
-        audioDucker.begin()
+        pendingStartCue = settings.dictationPlaysSounds ? current : nil
+        if pendingStartCue == nil { audioDucker.begin() }
         startTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -168,6 +178,21 @@ final class DictationCoordinator {
         }
     }
 
+    /// A Bluetooth headset's output resumes up to a quarter second after the first samples.
+    private static let bluetoothSettle = Duration.milliseconds(500)
+
+    private func playStartCue() {
+        pendingStartCue = nil
+        let current = token
+        cueTask = Task { [weak self] in
+            guard let self else { return }
+            if capture.isBluetooth { try? await Task.sleep(for: Self.bluetoothSettle) }
+            guard token == current, phase == .starting || phase == .listening else { return }
+            cues.play(.start)
+            audioDucker.begin()
+        }
+    }
+
     func released() {
         guard settings.dictationMode == .pushToTalk else { return }
         if phase == .starting { finishWhenStarted = true }
@@ -179,7 +204,12 @@ final class DictationCoordinator {
         phase = .transcribing
         panel.state.phase = .transcribing
         field?.isTranscribing = true
-        audioDucker.end()
+        if settings.dictationPlaysSounds {
+            audioDucker.restoreImmediately()
+            cues.play(.stop)
+        } else {
+            audioDucker.end()
+        }
         // A cancelled chunk keeps its audio: the final pass starts at liveOffset, losing nothing.
         let pendingLive = liveTask
         liveTask = nil
@@ -199,7 +229,7 @@ final class DictationCoordinator {
             if tail.count < 1_600 {
                 if liveText.isEmpty {
                     reset(cancelTranscription: false)
-                    showMessage("No speech was recorded", .danger)
+                    showMessage(String(localized: "No speech was recorded"), .danger)
                 } else {
                     finishWithoutRemainder(destination)
                 }
@@ -230,14 +260,16 @@ final class DictationCoordinator {
                             if destination.copies { Paster.copyPlainText(assembled) }
                             reset(cancelTranscription: false)
                             if lost, destination.pastes {
-                                showMessage("Couldn't paste some dictation into this app", .danger)
+                                showMessage(
+                                    String(localized: "Couldn't paste some dictation into this app"),
+                                    .danger)
                             }
                         },
                         onFailed: { [weak self] in
                             guard let self, token == current else { return }
                             reset(cancelTranscription: false)
                             if destination.copies { Paster.copyPlainText(assembled) }
-                            showMessage("Couldn't paste dictation into this app", .danger)
+                            showMessage(String(localized: "Couldn't paste dictation into this app"), .danger)
                         })
                 } else {
                     Paster.copyPlainText(text)
@@ -256,7 +288,9 @@ final class DictationCoordinator {
         let lost = liveDeliveryFailed
         reset(cancelTranscription: false)
         if !text.isEmpty, destination.copies { Paster.copyPlainText(text) }
-        if lost, destination.pastes { showMessage("Couldn't paste some dictation into this app", .danger) }
+        if lost, destination.pastes {
+            showMessage(String(localized: "Couldn't paste some dictation into this app"), .danger)
+        }
     }
 
     /// Chunks already pasted only make sense where text is pasted at all.
@@ -352,6 +386,7 @@ final class DictationCoordinator {
     func prepareForTermination() {
         enableTask?.cancel()
         cancel()
+        cueTask?.cancel()
         audioDucker.restoreImmediately()
         models.prepareForTermination()
     }

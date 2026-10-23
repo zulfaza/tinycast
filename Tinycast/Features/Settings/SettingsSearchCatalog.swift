@@ -16,13 +16,14 @@ struct SettingsSearchEntry: Identifiable, Hashable, Sendable {
     }
 
     /// One setting, which its pane marks with a matching `SettingsRowTitle`.
-    init(_ anchor: SettingsAnchor, _ title: String, keywords: [String] = []) {
-        self.init(.row(anchor, title), title, keywords)
+    init(_ anchor: SettingsAnchor, _ title: LocalizedStringResource, keywords: [String] = []) {
+        let localized = title.resolved()
+        self.init(.row(anchor, localized), localized, keywords + [title.key])
     }
 
     /// A whole group, for a result no single row answers — a list, or a section's master switch.
-    init(group anchor: SettingsAnchor, _ title: String, keywords: [String] = []) {
-        self.init(.section(anchor), title, keywords)
+    init(group anchor: SettingsAnchor, _ title: LocalizedStringResource, keywords: [String] = []) {
+        self.init(.section(anchor), title.resolved(), keywords + [title.key])
     }
 
     init(pane: SettingsTab, keywords: [String] = []) {
@@ -113,8 +114,11 @@ enum SettingsSearchCatalog {
     private static let general: [SettingsSearchEntry] = [
         .init(pane: .general, keywords: ["preferences", "settings"]),
         .init(
-            .generalGlobalShortcuts, "App Launcher",
+            .generalGlobalShortcuts, "Show Launcher",
             keywords: ["hotkey", "shortcut", "summon", "palette"]),
+        .init(
+            .generalGeneral, "Language",
+            keywords: ["localization", "translation", "locale", "region"]),
         .init(
             .generalGeneral, "Launch at login",
             keywords: ["startup", "login item", "start", "boot"]),
@@ -134,8 +138,11 @@ enum SettingsSearchCatalog {
             .generalGeneral, "Auto-switch input source",
             keywords: ["keyboard", "layout", "language", "abc"]),
         .init(
-            .generalAppearance, "Theme",
-            keywords: ["dark", "light", "mode", "appearance"]),
+            .generalAppearance, "Appearance",
+            keywords: ["dark", "light", "mode", "theme"]),
+        .init(
+            .generalAppearance, "Show animations",
+            keywords: ["motion", "transitions", "reduce motion", "effects", "instant"]),
         .init(
             .generalAppearance, "Interface size",
             keywords: ["text size", "font size", "scale", "zoom", "bigger", "larger", "legible"]),
@@ -149,7 +156,7 @@ enum SettingsSearchCatalog {
             .generalAppearance, "Follow the cursor across displays",
             keywords: ["monitor", "screen", "pointer", "multi display"]),
         .init(
-            .generalAppearance, "Drag to reposition",
+            .generalAppearance, "Drag to move the launcher",
             keywords: ["move", "position", "window"]),
         .init(
             .generalHyperKey, "Hyper Key",
@@ -295,6 +302,7 @@ enum SettingsSearchCatalog {
         .init(.aiDefault, "Default model", keywords: ["llm", "gpt", "claude", "grok"]),
         .init(.aiDefault, "Reasoning effort", keywords: ["thinking", "effort", "deepseek"]),
         .init(.aiChat, "Web search", keywords: ["browse", "internet"]),
+        .init(.aiChat, "Suggested replies", keywords: ["choices", "chips", "follow-up", "buttons"]),
         .init(.aiChat, "Tool call rounds", keywords: ["mcp", "tools", "limit", "loop", "agent", "unlimited"]),
         .init(
             .aiConversations, "Opens to",
@@ -345,6 +353,7 @@ enum SettingsSearchCatalog {
         .init(.dictationDictation, "Enable Dictation"),
         .init(.dictationCommands, "Shortcut behavior"),
         .init(.dictationCommands, "Shortcut"),
+        .init(.dictationCommands, "Play sounds", keywords: ["sound", "chime", "beep", "audio", "feedback"]),
         .init(.dictationModel, "Model"),
         .init(.dictationModel, "Engine", keywords: ["parakeet", "redux", "ultra", "qwen"]),
         .init(.dictationModel, "Language"),
@@ -361,7 +370,7 @@ enum SettingsSearchCatalog {
             keywords: ["files", "folders", "find", "disk"]),
         .init(
             .fileSearchFileSearch, "Enable File Search",
-            keywords: ["index", "disk"]),
+            keywords: ["index", "disk", "show in launcher", "root search"]),
         .init(
             group: .fileSearchFullDiskAccess, "Full Disk Access",
             keywords: ["permission", "privacy", "grant", "fda"]),
@@ -430,7 +439,7 @@ enum SettingsSearchCatalog {
             .navigationMenuSearch, "Show Apple menu items",
             keywords: ["apple menu", "about this mac", "recent items", "sleep", "logo"]),
         .init(
-            .navigationMenuSearch, "Disabled Applications",
+            .navigationMenuSearch, "Excluded Applications",
             keywords: ["exclude", "password manager", "ignore", "privacy", "menu bar"])
     ]
 
@@ -513,7 +522,7 @@ enum SettingsSearchCatalog {
             .clipboardHistory, "Default action",
             keywords: ["enter", "return", "paste", "copy", "primary"]),
         .init(
-            group: .clipboardDisabledApplications, "Disabled Applications",
+            group: .clipboardDisabledApplications, "Excluded Applications",
             keywords: ["exclude", "password manager", "ignore", "privacy"]),
         .init(
             .clipboardDisabledApplications, "Clear history",
@@ -546,7 +555,7 @@ enum SettingsSearchCatalog {
             .calendarCalendar, "Upcoming meetings in launcher",
             keywords: ["count", "limit", "events"]),
         .init(
-            .calendarJoining, "Show the join card",
+            .calendarJoining, "Show the meeting card",
             keywords: ["hud", "timing", "early", "reminder"]),
         .init(
             .calendarJoining, "Auto Join Meetings",
@@ -628,6 +637,9 @@ enum SettingsSearchCatalog {
         .init(
             .permissionsAccessibility, "Accessibility",
             keywords: ["paste", "keystrokes", "privacy", "grant"]),
+        .init(
+            .permissionsFullDiskAccess, "Full Disk Access",
+            keywords: ["files", "folders", "uninstall", "leftovers", "privacy", "grant", "fda"]),
         .init(
             .permissionsCalendars, "Calendars",
             keywords: ["events", "privacy", "grant", "eventkit"]),
