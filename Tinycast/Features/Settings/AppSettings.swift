@@ -249,12 +249,8 @@ final class AppSettings {
         didSet { defaults.set(compactMode, forKey: Key.compactMode.rawValue) }
     }
 
-    /// Pin favorite app icons to the right of the compact search bar (⌘1–⌘5 to launch).
-    var showFavoritesInCompactMode: Bool {
-        didSet {
-            defaults.set(
-                showFavoritesInCompactMode, forKey: Key.showFavoritesInCompactMode.rawValue)
-        }
+    var compactBarCommands: [CommandID] {
+        didSet { defaults.set(compactBarCommands.map(\.rawValue), forKey: Key.compactBarCommands.rawValue) }
     }
 
     /// Summon the palette on the display under the pointer instead of the one holding the menu bar.
@@ -402,6 +398,10 @@ final class AppSettings {
 
     var notesShowsFormattingBar: Bool {
         didSet { defaults.set(notesShowsFormattingBar, forKey: Key.notesShowsFormattingBar.rawValue) }
+    }
+
+    var notesShowsInMenuBar: Bool {
+        didSet { defaults.set(notesShowsInMenuBar, forKey: Key.notesShowsInMenuBar.rawValue) }
     }
 
     /// The notes folder as the user wrote it, `~` allowed; nil keeps it in Application Support.
@@ -770,11 +770,12 @@ final class AppSettings {
         interfaceSize =
             defaults.string(forKey: Key.interfaceSize.rawValue).flatMap(InterfaceSize.init)
             ?? .standard
-        compactMode = defaults.bool(forKey: Key.compactMode.rawValue)
-        // Defaults to true, so absence must be distinguished from a stored `false`.
-        showFavoritesInCompactMode =
-            defaults.object(forKey: Key.showFavoritesInCompactMode.rawValue) == nil
-            || defaults.bool(forKey: Key.showFavoritesInCompactMode.rawValue)
+        compactMode =
+            defaults.object(forKey: Key.compactMode.rawValue) == nil
+            || defaults.bool(forKey: Key.compactMode.rawValue)
+        compactBarCommands =
+            defaults.stringArray(forKey: Key.compactBarCommands.rawValue)
+            .flatMap(CommandID.compactBarCommands(from:)) ?? CommandID.defaultCompactBarCommands
         // Unset seeds the defaults; a stored empty array is a deliberately cleared list.
         searchScopes =
             defaults.stringArray(forKey: Key.searchScopes.rawValue) ?? SearchScopes.defaults
@@ -839,6 +840,7 @@ final class AppSettings {
         notesShowsFormattingBar =
             defaults.object(forKey: Key.notesShowsFormattingBar.rawValue) == nil
             || defaults.bool(forKey: Key.notesShowsFormattingBar.rawValue)
+        notesShowsInMenuBar = defaults.bool(forKey: Key.notesShowsInMenuBar.rawValue)
         notesFolder = defaults.string(forKey: Key.notesFolder.rawValue)
         aiEnabled = defaults.bool(forKey: Key.aiEnabled.rawValue)
         mcpEnabled = defaults.bool(forKey: Key.mcpEnabled.rawValue)

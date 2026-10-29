@@ -6,7 +6,7 @@ verifying a change is [testing.md](testing.md).
 ## Requirements
 
 - macOS 26 or later (Liquid Glass).
-- Xcode 26 — it provides the SwiftUI macro plugin and the SDK.
+- Xcode 27 — it provides the SwiftUI macro plugin and the SDK.
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen), and for linting:
   `brew install swiftlint`.
 - Node, for the generators and the local test stub servers `run-tests.sh` drives. It is the only
@@ -201,10 +201,6 @@ node Scripts/gen-emoji.js            # -> Tinycast/Features/Emoji/Model/EmojiDat
 node Scripts/gen-currencies.js       # -> Tinycast/Features/Calculator/Model/CurrencyData.generated.swift
 node Scripts/gen-countries.js        # -> Tinycast/Features/Calculator/Model/CountryZoneData.generated.swift
 ```
-
-`node Scripts/gen-dictation-sounds.js` synthesizes Dictation's start and stop chimes into
-`Tinycast/Resources/DictationStart.wav` and `DictationStop.wav`. It needs no network and writes the same
-bytes every run; change the notes or levels in the script, never the WAV files.
 
 `gen-emoji.js` also writes one CLDR keyword pack per language in its `KEYWORD_LOCALES`; adding a
 language is one line there. Pass a directory to keep the downloads between runs:

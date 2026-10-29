@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: xcode-27
     # macOS 26-only fork; channel identity is derived in one place.
     outputs:
       full_version: ${{ steps.meta.outputs.full_version }}
@@ -38,12 +38,20 @@ jobs:
           fi
 
       - uses: actions/checkout@v7
+        with:
+          # The migration check needs every commit and tag; blobs it never reads.
+          fetch-depth: 0
+          filter: blob:none
 
-      - name: Select Xcode 26
+      - name: Check migrations
+        run: ./Scripts/check-migrations.sh
+
+      - name: Select Xcode 27
         run: |
-          XCODE_PATH="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n1)"
+          # Real folders only: an image's Xcode_27.N.app symlink can point at a release candidate.
+          XCODE_PATH="$(find -E /Applications -maxdepth 1 -type d -regex '.*/Xcode_27(\.[0-9]+)*\.app' | sort -V | tail -n1)"
           if [ -z "$XCODE_PATH" ]; then
-            echo "::error::No Xcode 26.x found on this runner. Installed Xcodes:"
+            echo "::error::No released Xcode 27.x found on this runner. Installed Xcodes:"
             ls /Applications | grep -i xcode || true
             exit 1
           fi
@@ -267,7 +275,7 @@ jobs:
   universal:
     needs: build
     if: ${{ false }}
-    runs-on: macos-26
+    runs-on: xcode-27
     env:
       VERSION: ${{ needs.build.outputs.full_version }}
       DISPLAY_NAME: ${{ needs.build.outputs.display_name }}
@@ -276,11 +284,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Select Xcode 26
+      - name: Select Xcode 27
         run: |
-          XCODE_PATH="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n1)"
+          # Real folders only: an image's Xcode_27.N.app symlink can point at a release candidate.
+          XCODE_PATH="$(find -E /Applications -maxdepth 1 -type d -regex '.*/Xcode_27(\.[0-9]+)*\.app' | sort -V | tail -n1)"
           if [ -z "$XCODE_PATH" ]; then
-            echo "::error::No Xcode 26.x found on this runner. Installed Xcodes:"
+            echo "::error::No released Xcode 27.x found on this runner. Installed Xcodes:"
             ls /Applications | grep -i xcode || true
             exit 1
           fi
