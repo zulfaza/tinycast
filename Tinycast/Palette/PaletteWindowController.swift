@@ -90,6 +90,7 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
             positionPanel(panel, collapsed: core.paletteCoordinator.paletteIsCollapsed)
             // Flush first-mount layout off-screen, so the safe-area settle isn't visible.
             panel.contentView?.layoutSubtreeIfNeeded()
+            panel.displayIfNeeded()
             core.inputSourceSwitcher.beginSession(
                 preferredInputSourceID: core.settings.autoSwitchInputSourceID)
             // Events go stale while the palette is closed, and the countdown only ticks while up.
@@ -99,6 +100,8 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
             // Non-activating, so summoning never raises our own aux windows behind it.
             panel.makeKeyAndOrderFront(nil)
             panel.orderFrontRegardless()
+            // The corner is clipped in SwiftUI, so a stale square shadow rims the first frame.
+            panel.invalidateShadow()
             // A never-activated login item can drop the first key request, so re-assert.
             DispatchQueue.main.async { [weak panel] in
                 guard let panel, panel.isVisible, !panel.isKeyWindow else { return }
@@ -493,6 +496,8 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
         let height = collapsed ? size.compactHeight : size.panelHeight
         let frame = NSRect(
             x: anchor.x, y: anchor.y - height, width: size.panelWidth, height: height)
+        // A shadow is cut once from the window's alpha, so compact's moving glass relies on its own.
+        panel.hasShadow = !collapsed
         panel.setFrame(frame, display: true)
     }
 

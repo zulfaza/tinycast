@@ -31,8 +31,9 @@ Prefer current APIs and language features:
 - **A deprecated API is a defect**, not a warning to live with.
 - **Verify API and language-feature availability** against the SDK and compiler used by the build
   and CI. Use direct availability checks where macOS 27+ APIs require them to preserve macOS 26 support.
-- **No compatibility layers, legacy workarounds or obsolete patterns.** No migration scaffolding,
-  support below macOS 26 or speculative fallbacks. Keep the implementation direct.
+- **No compatibility layers, legacy workarounds or obsolete patterns.** No support below macOS 26 or
+  speculative fallbacks. Keep the implementation direct. Migration code lives only in
+  `Tinycast/Migrations/` and is deleted after one stable release ([migrations.md](docs/migrations.md)).
 
 Carbon is a deliberate capability-gap dependency rather than inertia: nothing modern registers a
 system-wide chord, and HIToolbox's TIS APIs remain the public input-source mechanism. Full reasoning in
@@ -61,6 +62,7 @@ tag must target the exact workflow SHA.
 | `Tinycast/Palette/`      | the palette shell: panel, window controller, `RootPaletteView`, `PaletteScreen`         |
 | `Tinycast/Windows/`      | the non-palette AppKit surfaces: `Dialog/`, `HUD/`, `About/`, `AppWindowController`     |
 | `Tinycast/Features/`     | one folder per feature; larger ones split `Model/` `Service/` `UI/` `Settings/`         |
+| `Tinycast/Migrations/`   | one-shot repairs of state an older release left behind, each deleted after one release  |
 | `Tests/`                 | the standalone harnesses — one Swift file each, no XCTest target                        |
 | `Scripts/`               | every executable script: test runner, data generators, packaging, linting, editor setup |
 
@@ -72,6 +74,7 @@ tag must target the exact workflow SHA.
 | build, run or regenerate data                               | [development.md](docs/development.md)                        |
 | add or restyle any view                                     | [ui.md](docs/ui.md)                                          |
 | touch one feature's internals                               | [features/](docs/features/) — each opens with its invariants |
+| remove or rename anything persisted                         | [migrations.md](docs/migrations.md)                          |
 | package or ship a build                                     | [release.md](docs/release.md)                                |
 
 ## Non-negotiables
@@ -121,8 +124,7 @@ feature's doc, under its own `## Invariants`.
   lists a command is a separate fact, and `SettingsTab.ownedCommands` is the only place that states it.
 - **Generated files are never hand-edited.** `EmojiData.generated.swift` and
   `Resources/EmojiKeywords/` come from `node Scripts/gen-emoji.js`, `CurrencyData.generated.swift` from `node Scripts/gen-currencies.js`,
-  `CountryZoneData.generated.swift` from `node Scripts/gen-countries.js`, `Resources/DictationStart.wav`
-  and `DictationStop.wav` from `node Scripts/gen-dictation-sounds.js`, and
+  `CountryZoneData.generated.swift` from `node Scripts/gen-countries.js`, and
   `Resources/RaycastRuntime.generated.js` from `Scripts/raycast-runtime/build.mjs` — the runtime is
   committed so building the app never needs Node.
 - **`DesignSystem/Scrolling/EdgeDissolve.swift` and `ThinScrollbar.swift` are off-limits.** Both are
