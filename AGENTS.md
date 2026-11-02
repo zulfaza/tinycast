@@ -52,6 +52,11 @@ Before opening the sync PR, verify the pre-sync `origin/main` is an ancestor of 
 work must merge into `main` before another sync or release. Releases run from `main` only, and their
 tag must target the exact workflow SHA.
 
+Never reference an upstream PR or issue in fork text: PR titles, PR bodies, comments and commit
+messages we write. No `#123`, no `abue-ammar/tinycast#123`, no upstream PR or issue URL. Each one
+puts a cross-reference on the upstream thread and notifies the maintainer, who asked us to stop.
+Describe upstream changes by title, and pin the sync point by upstream commit SHA.
+
 ## Where things are
 
 | Folder                   | Holds                                                                                   |
