@@ -12,8 +12,10 @@ struct PaletteBackground: View {
     var body: some View {
         Rectangle()
             .fill(Theme.Colors.panelSurface())
-            // Liquid Glass thins with its own size, so the compact bar keeps the full panel's glass.
-            .background(alignment: .top) { GlassEffectView().frame(height: glassHeight) }
+            // Square at full panel height: rounded glass feathers, and Liquid Glass thins when small.
+            .background(alignment: .top) {
+                Color.clear.glassEffect(.regular, in: Rectangle()).frame(height: glassHeight)
+            }
             .onChange(of: window, initial: true) { applyShadow() }
             .onChange(of: usesSystemShadow) { applyShadow() }
     }

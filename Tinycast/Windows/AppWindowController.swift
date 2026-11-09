@@ -63,6 +63,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             raise(window)
             return false
         }
+        activation?.windowWillOpen()
         let window = makeWindow(content: contentViewController(), chrome: chrome)
         self.chrome = chrome
         self.window = window

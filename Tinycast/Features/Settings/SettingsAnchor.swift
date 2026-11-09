@@ -27,6 +27,7 @@ extension SettingsAnchor {
     static let customThemesText = Self(tab: .customThemes, title: "Text")
     static let customThemesAccents = Self(tab: .customThemes, title: "Accents")
     static let customThemesFile = Self(tab: .customThemes, title: "Theme File")
+    static let generalDeepLinks = Self(tab: .general, title: "Deeplinks")
 
     static let applicationsSearchScopes = Self(tab: .applications, title: "Search Scopes")
     static let applicationsApplications = Self(tab: .applications, title: "Applications")
@@ -56,6 +57,7 @@ extension SettingsAnchor {
     static let aiChat = Self(tab: .ai, title: "Chat")
     static let aiConversations = Self(tab: .ai, title: "Conversations")
     static let aiSystemPrompt = Self(tab: .ai, title: "System prompt")
+    static let aiChatPresets = Self(tab: .ai, title: "Chat Presets")
     static let aiMCPServers = Self(tab: .ai, title: "MCP Servers")
     static let aiCommands = Self(tab: .ai, title: "Commands")
 
