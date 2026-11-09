@@ -9,9 +9,13 @@ final class ActivationPolicy {
     /// LaunchServices answers its activation with a reopen event, which must not move the palette.
     private(set) var isReactivating = false
 
+    /// Before the window exists: one built first joins a fullscreen Space its menus never reach.
+    func windowWillOpen() {
+        NSApp.setActivationPolicy(.regular)
+    }
+
     func windowDidOpen(_ window: NSWindow) {
         openWindows.insert(ObjectIdentifier(window))
-        NSApp.setActivationPolicy(.regular)
     }
 
     func windowDidClose(_ window: NSWindow) {

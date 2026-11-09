@@ -80,6 +80,7 @@ final class AppCore {
     @ObservationIgnored private(set) lazy var mcp = MCPServerManager(oauth: mcpOAuth)
     let quickActionSettings = QuickActionSettingsStore()
     let customQuickActions = CustomQuickActionStore()
+    let chatPresets = ChatPresetStore()
     let chatGPTSubscription = ChatGPTSubscriptionManager()
     let installedAI = InstalledAIManager()
     @ObservationIgnored private var appliedLaunchRevisions: [InstalledAIKind: Int] = [:]
@@ -241,10 +242,16 @@ final class AppCore {
     @ObservationIgnored private(set) lazy var quickAICoordinator = QuickAICoordinator(
         chats: aiChats, settings: settings, palette: palette,
         paletteCoordinator: paletteCoordinator, core: self)
+    @ObservationIgnored private(set) lazy var deepLinkCoordinator = DeepLinkCoordinator(
+        scheme: AppURLScheme.current, settings: settings, hotKeys: hotKeys,
+        paletteCoordinator: paletteCoordinator, settingsCoordinator: settingsCoordinator,
+        core: self)
 
     @ObservationIgnored private lazy var windowController = PaletteWindowController(core: self)
     @ObservationIgnored private lazy var messageHUD = MessageHUDController(settings: settings)
     private(set) var isShowingDialog = false
+    /// A link that launched the app can arrive before `start` wires anything; it waits, then runs.
+    @ObservationIgnored private var pendingURLs: [URL]? = []
     var isDimmingPaletteForDialog: Bool { isShowingDialog && windowController.isVisible }
     @ObservationIgnored private lazy var dialogs = DialogController(
         settings: settings,
@@ -287,7 +294,6 @@ final class AppCore {
         Signposts.interval("AppCore.start") {
             // Shorten AppKit's ~2–3s tooltip delay; registration domain, so a user default wins.
             UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 250])
-            CompactFavoritesMigration.run(settingsFileEnabled: settings.settingsFileEnabled)
             NSApp.setActivationPolicy(.accessory)
             dictationAudioDucker.recover()
             applyAppearance()
@@ -356,9 +362,7 @@ final class AppCore {
             Task { await appIndex.refresh() }
             Task { await emojiIndex.load(languages: SystemLanguages.preferred) }
             currencyRates.start()
-            updateChecker.onUpdateAvailable = { [weak self] release in
-                self?.updateCoordinator.presentIfAvailable(release) ?? true
-            }
+            updateChecker.onUpdateAvailable = { [weak self] in self?.updateCoordinator.offer($0) }
             updateCoordinator.applyAutomaticChecking()
             supportReminders.onDue = { [weak self] in self?.supportCoordinator.presentIfDue() }
             supportReminders.start()
@@ -420,13 +424,7 @@ final class AppCore {
                 }
             }
             hotKeys.displayName = { [weak self] action in self?.hotKeyDisplayName(for: action) }
-            hotKeys.allowsAction = { [weak self] action in
-                guard let self, visibility.allowsHotKey(action) else { return false }
-                if action == .dictation { return settings.dictationEnabled }
-                // A disabled feature drops its commands from the launcher; their shortcuts go too.
-                guard case .command(let id) = action else { return true }
-                return appIndex.isCommandEnabled(id)
-            }
+            hotKeys.allowsAction = { [weak self] in self?.allowsHotKeyAction($0) ?? false }
             KeyShortcut.displayedHyperChord = { [settings] in
                 guard settings.hyperKey != .none else { return nil }
                 return KeyShortcut.hyperChord(includesShift: settings.hyperKeyIncludesShift)
@@ -470,10 +468,32 @@ final class AppCore {
             } else if launchedByUser {
                 paletteCoordinator.showPalette(mode: .launcher)
             }
-            if let version = updateChecker.takeInstalledVersion() {
-                showMessage(String(localized: "Updated to Tinycast \(version.description)"))
-            }
+            reportInstall(updateChecker.takeInstallReport())
         }
+        openPendingURLs()
+    }
+
+    private func reportInstall(_ report: UpdateCheckStore.InstallReport?) {
+        switch report {
+        case .installed(let version):
+            showMessage(String(localized: "Updated to Tinycast \(version.description)"))
+        case .notInstalled(let version):
+            showMessage(
+                String(
+                    localized: """
+                        Tinycast \(version.description) could not be installed. \
+                        Check for updates to try again.
+                        """),
+                tone: .danger)
+        case nil:
+            break
+        }
+    }
+
+    private func openPendingURLs() {
+        let waiting = pendingURLs ?? []
+        pendingURLs = nil
+        waiting.forEach(handleOpenURL)
     }
 
     func handleReopen() {
@@ -481,13 +501,20 @@ final class AppCore {
         if settingsCoordinator.focusExisting() { return }
         if aiChatCoordinator.focusExisting() { return }
         if onboardingCoordinator.focusExisting() { return }
-        if updateCoordinator.focusExisting() { return }
         if supportCoordinator.focusExisting() { return }
         if customCommandCoordinator.focusOutputWindow() { return }
         paletteCoordinator.showPalette(mode: .launcher, restoreAnyMode: true)
     }
 
     func handleOpenURL(_ url: URL) {
+        if pendingURLs != nil {
+            pendingURLs?.append(url)
+            return
+        }
+        if deepLinkCoordinator.handles(url) {
+            deepLinkCoordinator.open(url)
+            return
+        }
         guard ExtensionDeepLink.claims(url) else { return }
         guard let route = ExtensionDeepLink.route(url: url) else {
             paletteCoordinator.showPalette(mode: .launcher, restoreAnyMode: true)
@@ -499,6 +526,14 @@ final class AppCore {
         case .storeInstall(let install):
             extensionCoordinator.showStoreInstall(install)
         }
+    }
+
+    func allowsHotKeyAction(_ action: HotKeyAction) -> Bool {
+        guard visibility.allowsHotKey(action) else { return false }
+        if action == .dictation { return settings.dictationEnabled }
+        // A disabled feature drops its commands from the launcher; their shortcuts go too.
+        guard case .command(let id) = action else { return true }
+        return appIndex.isCommandEnabled(id)
     }
 
     /// The store-backed half of the conflict message; `HotKeyManager` names the catalogs itself.
@@ -598,6 +633,7 @@ final class AppCore {
         mcpOAuth.stop()
         mcp.stop()
         installedAI.stop()
+        updateCoordinator.installStagedUpdate()
         if relaunchRequested { RelaunchRunner.relaunchAfterExit(Bundle.main.bundleURL) }
     }
 

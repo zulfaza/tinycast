@@ -264,23 +264,25 @@ selected button. Typing, pasting or clicking Search resets the selection. The Ap
 boundary-arrow hook handles navigation without moving input focus away from Search; marked IME text
 and modified arrows retain their normal editing behavior.
 
-Keyboard selection uses a filled circle and white monochrome glyph, without an outline. Symbols use
+Keyboard selection tints the existing glass circle and draws its glyph in white. Symbols use
 `SymbolImage`, including the appearance-aware outline for Emoji & Symbols. Settings keeps each icon
 beside its name in a command menu, with borderless move/remove controls at the trailing edge.
-The contrast fill sits behind the glyph above `GlassEffectContainer`, where the material cannot wash
-it out. Light uses a medium gray fill; Dark adds a subtle white wash over its existing glass selection.
+The system glass material draws the selected face and contour together; no fill or stroke is painted
+over it. The glyph stays above `GlassEffectContainer` so a morph cannot smear it.
 
 Mouse and keyboard activation synchronously call `LauncherCoordinator.runCommand` in a transaction
 with animations disabled. No merge animation or delayed activation survives beneath the destination
 screen. Palette screens push over root search as before; Show Notes closes the palette and opens
 its existing window. The summon reveal still animates independently.
-A shared scrim mask prevents overlapping surface fills from painting twice beneath the query.
-Selected Dark buttons keep their native glass scrim outside that mask to preserve their highlight.
-The original fill and travel timing is unchanged.
+The compact bar lays `panelScrim` over its capsule and buttons through a mask that follows the
+reveal, as the expanded panel lays it over its glass; the selected button stays out of the mask so
+its tint reads undimmed.
 
 At expanded launcher root, Escape clears the query while setting `forceExpanded`, so clearing and
 collapsing remain separate presses. The next Escape clears that flag and collapses; another closes.
 Menus and argument fields still take precedence, and sub-screen navigation keeps its own behavior.
+A summon clears `forceExpanded` whenever the field is empty, so a launcher Pop to Root Search
+restores still opens as the bar; a kept query, screen or extension restores expanded as before.
 
 The glass is a background of the header, not a wrapper around it: the field keeps its one structural
 position, and a container never paints its merged glass over the row. While compact the row is
@@ -290,9 +292,11 @@ layer would fill it. See [ui.md](../ui.md#panel-structure) for the shapes and th
 
 ## Window placement
 
-`PaletteWindowController` resolves an anchor (left edge + top edge) **once per summon** and reuses it
+`PaletteWindowController` resolves the visible content anchor (left edge + top edge) **once per summon** and reuses it
 for every compact↔expanded resize, so only the height changes and the top edge never drifts. The
 anchor is dropped on hide, so the next summon re-resolves for wherever the user is then.
+The compact window adds a four-point transparent drawing margin for the native glass rim.
+Its content remains at the same anchor; dragging and snapping convert back to that visible anchor.
 
 All of the arithmetic lives in `PalettePlacement`, which is CoreGraphics-only and takes every screen
 fact as a parameter, so `palette-placement-test` drives the shipped rules rather than a copy of them.
@@ -424,6 +428,9 @@ The same empty `query` would read as "nothing left to delete" to the bare-backsp
 `PalettePanel.sendEvent` asks the editor's `hasMarkedText()` itself and lets Backspace through to the
 IME while a composition is in flight. That covers every screen, an extension's search field included.
 
+The palette's arrow, ⇥ and esc handlers return `.ignored` while `isComposing` holds, so the IME
+pages, expands and cancels its candidate window with them. An open menu still claims them first.
+
 The observation follows first responder, since SwiftUI hands the window's one field editor to
 whichever field holds focus, and it watches `NSTextView.didChangeSelectionNotification`. Measured,
 that is the **only** notification a marked-text change posts: `NSText.didChangeNotification` fires on
@@ -479,7 +486,8 @@ The textarea routes undo/redo to its own manager, as the Notes editor does in a 
 `RootPaletteView` holds a single `OpenMenu?` rather than a flag per menu, so "at most one is open" is
 structural instead of a pair of `onChange` handlers pushing each other closed. The ⌘K Actions menu
 hangs `.bottomTrailing`, the app menu `.bottomLeading`, and everything drawn as a header control —
-the clipboard type filter, the AI model and effort menus, an `options=` argument field's choices and
+the clipboard type filter, the dictionary selector, the AI model and effort menus, an `options=`
+argument field's choices and
 a running command's `searchBarAccessory` dropdown — hangs `.belowHeaderTrailing`, under its own
 button. Native editor inputs supply their own choices and control frame through `openInputOptions`;
 `.belowControl` aligns the menu with either edge of that field and allows it beyond the palette's bounds.
@@ -495,7 +503,8 @@ both its ⌘K panel and its search-bar dropdown, and the reason the seam exists 
 [extensions.md](extensions.md)). The view is a closure because `moveMenu` resolves the open menu on
 every arrow key and needs the row count alone. Every open path goes through `open(_:highlighting:)`
 and states where the highlight starts: the first row, except the pop-up-shaped menus — the type
-filter, the AI model and effort menus, an extension's search-bar dropdown — which open on the choice
+filter, the dictionary selector, the AI model and effort menus, an extension's search-bar dropdown —
+which open on the choice
 they already hold.
 
 **The palette window consumes a click-away press through its release.** While a menu is open,

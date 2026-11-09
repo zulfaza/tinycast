@@ -297,9 +297,9 @@ private struct SettingsEditorPanelSurface: ViewModifier {
                 .background(Theme.Colors.panelScrim, in: shape)
                 .glassEffect(.regular, in: shape)
         } else {
-            draggable.background {
-                shape.fill(Theme.Colors.panelScrim).glassEffect(.regular, in: shape)
-            }
+            draggable
+                .background(Theme.Colors.panelScrim, in: shape)
+                .background { Color.clear.glassEffect(.regular, in: shape) }
         }
     }
 }

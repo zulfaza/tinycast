@@ -49,9 +49,7 @@ Removing that line would reintroduce exactly those three problems. See
 
 ## Pull request review
 
-There is no CI workflow. CodeRabbit reviews every PR against `.coderabbit.yaml`: it runs SwiftLint
-with `.swiftlint.yml`, annotates the diff and applies the pre-merge checks. It is a reviewer, not a
-gate — it neither runs the harnesses nor builds the app, so the whole bar in
+There is no CI workflow and no automated reviewer, so the whole bar in
 [testing.md](testing.md#definition-of-done) is run locally before a PR is opened.
 
 ## Releasing
@@ -83,10 +81,16 @@ A stable run then fans out to a second job, `universal`, which rebuilds the same
 `ARCHS="arm64 x86_64"` and attaches `Tinycast-Universal-<version>.dmg` / `.zip` to the release the
 first job created, then bumps `tinycast-universal`. macOS 26 is the last release that boots on Intel,
 and those Macs need both slices. Both jobs pin `ARCHS` explicitly and assert the slices on *every*
-shipping binary — the app, `ClipboardTextHelper` and `Tinycast Dictation`: trusting `ARCHS_STANDARD` is what
+shipping binary — the app, `ClipboardTextHelper`, `FileIndexHelper` and `Tinycast Dictation`: trusting `ARCHS_STANDARD` is what
 shipped a thin arm64 build to Intel users once already, and it also keeps the Apple silicon download
 from silently gaining a slice it never needs. A thin helper inside a universal app is the quiet form
 of the same bug: the app boots on Intel and only clipboard OCR or dictation stops working.
+
+After `verify-signature.sh`, `Scripts/check-update-path.sh` fails the run unless the last release on
+the channel would install this build. The fork ships self-signed with no `.zip.sig` and no
+`TinycastUpdatePublicKey`, so that check and the updater both rely on the running copy's designated
+requirement. Upstream's Developer ID scripts (`package-release.sh`, `sign-update.swift`,
+`import-signing-identity.sh`) stay in `Scripts/` but no workflow runs them.
 
 Channel builds override `TINYCAST_BUNDLE_IDENTIFIER`, not the target-wide `PRODUCT_BUNDLE_IDENTIFIER`.
 The Dictation helper derives its own identifier with a `.dictation` suffix; signature verification
@@ -112,9 +116,9 @@ Two details the script exists for:
   commit can carry both — so "the previous release" is only ever right within one channel. A stable
   release therefore spans every beta since the last stable.
 - **The body is split by `<!-- tinycast:install -->`.** Everything above it is the changelog;
-  everything below is the Homebrew and quarantine text, which only a download page needs. The update
-  window cuts at that marker — see [features/updates.md](features/updates.md). Full PR URLs are
-  shortened to `#304`, which still autolinks on the web and fits a 460pt window.
+  everything below is the install text, which only a download page needs. The website's changelog
+  cuts at that marker in `website/src/lib/changelog.ts`. Full PR URLs are shortened to `#304`, which
+  still autolinks on the web.
 
 The Discord announcement carries the same changelog, truncated to fit Discord's component limit, and
 pings `@everyone`.

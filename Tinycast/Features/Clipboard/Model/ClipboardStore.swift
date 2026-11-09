@@ -222,6 +222,7 @@ final class ClipboardStore {
     @ObservationIgnored var onSearchResultsChanged: ((String, [ClipboardItem], [ClipboardItem]) -> Void)?
     /// Rotated whenever the history is replaced, so a helper's late answer lands on nothing.
     @ObservationIgnored private(set) var extractionGeneration = UUID()
+    @ObservationIgnored private(set) var captureGeneration = UUID()
     /// The only thing a view observes for search freshness; `items` cannot speak for OCR.
     private var searchRevision = 0
     @ObservationIgnored private(set) var textSearchEnabled = false
@@ -378,6 +379,7 @@ final class ClipboardStore {
     func close() {
         setTextSearchEnabled(false)
         extractionGeneration = UUID()
+        captureGeneration = UUID()
         closeDatabase()
         representationsByID.removeAll()
         filePathsByID.removeAll()
@@ -456,15 +458,27 @@ final class ClipboardStore {
     }
 
     func addImage(
-        _ data: Data, sourceBundleID: String?, representations: [ClipboardRepresentation] = []
+        _ data: Data, sourceBundleID: String?, capture: UUID,
+        representations: [ClipboardRepresentation] = []
     ) {
+        guard capture == captureGeneration else { return }
         let url = imagesDir.appendingPathComponent(UUID().uuidString + ".png")
         let item = ClipboardItem(imagePath: url.path, sourceBundleID: sourceBundleID)
         // The blob write is multi-MB I/O; only the row insert returns to the main actor.
         Task.detached(priority: .utility) { [weak self] in
             guard (try? data.write(to: url, options: .atomic)) != nil else { return }
-            await self?.insert(item, representations: representations)
+            await self?.insertCapture(item, from: capture, representations: representations)
         }
+    }
+
+    private func insertCapture(
+        _ item: ClipboardItem, from capture: UUID, representations: [ClipboardRepresentation]
+    ) {
+        guard capture == captureGeneration else {
+            deleteBlob(item)
+            return
+        }
+        insert(item, representations: representations)
     }
 
     /// Inserts a captured item while retaining the source pasteboard types.
@@ -670,6 +684,7 @@ final class ClipboardStore {
     func clearAll() {
         invalidateSearch()
         extractionGeneration = UUID()
+        captureGeneration = UUID()
         // RETURNING hands back the deleted blobs in the same pass, so no separate SELECT is needed.
         let removedIDs = Set(items.lazy.filter { !$0.isPinned }.map(\.id))
         if db != nil,
