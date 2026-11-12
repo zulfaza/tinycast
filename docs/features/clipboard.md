@@ -317,7 +317,8 @@ the way back out.
 `ClipboardFilter` owns the seven cases and everything the UI needs from them — title, glyph, and the
 `emptyMessage` that stops "Clipboard history is empty" from appearing over a history that only looks
 empty. The cases are **exclusive**: a copied URL is a link, not a narrower kind of text, so *Text
-Only* means prose, and *Colors Only* takes `#FF5733` out of it.
+Only* means prose, and *Colors Only* takes `#FF5733` out of it. A file entry that references an
+image is an image, so *Images Only* shows a screenshot copied as a file and *Files Only* does not.
 
 `ClipboardItem.textForm` derives `plain`/`color`/`link`/`email` from the text on demand — nil for an
 image.

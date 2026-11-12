@@ -47,12 +47,12 @@ enum ClipboardFilter: CaseIterable, Sendable {
         }
     }
 
-    /// The kinds are exclusive: a copied URL is a link rather than a narrower kind of text.
+    /// The kinds are exclusive: a copied URL is a link, and a copied `.png` file is an image.
     func matches(_ item: ClipboardItem) -> Bool {
         switch self {
         case .all: return true
-        case .image: return item.kind == .image
-        case .file: return item.kind == .file
+        case .image: return item.kind == .image || item.isImageFile
+        case .file: return item.kind == .file && !item.isImageFile
         case .text: return item.textForm == .plain
         case .color: return item.textForm == .color
         case .link: return item.textForm == .link
