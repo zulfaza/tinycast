@@ -9,32 +9,11 @@ struct SnippetsScreen: PaletteScreen {
     let openActions: () -> Void
     let openArgumentOptions: (String) -> Void
 
-    /// A disabled snippet is off everywhere, so the browser lists exactly what the launcher does.
-    var rows: [StoredSnippet] {
-        let _ = store.usageRevision
-        let filter = SnippetFilter(query: vm.query.trimmingCharacters(in: .whitespaces))
-        let usage = store.usage
-        // Grouping is Calendar maths and this runs several times a render, so classify once per row.
-        let keyed = store.snippets
-            .filter { $0.snippet.isEnabled && filter.matches($0) }
-            .map { record in
-                (
-                    record: record,
-                    group: SnippetUsageGroup.allCases.firstIndex(of: usage.group(for: record.id)) ?? 0,
-                    lastUsed: usage.lastUsed(for: record.id) ?? .distantPast
-                )
-            }
-        return keyed.sorted { lhs, rhs in
-            if lhs.group != rhs.group { return lhs.group < rhs.group }
-            if lhs.lastUsed != rhs.lastUsed { return lhs.lastUsed > rhs.lastUsed }
-            let names = lhs.record.snippet.name.localizedCaseInsensitiveCompare(rhs.record.snippet.name)
-            if names != .orderedSame { return names == .orderedAscending }
-            return lhs.record.id < rhs.record.id
-        }
-        .map(\.record)
-    }
+    var rows: [StoredSnippet] { store.browserRows(matching: vm.query) }
 
-    let primaryActionTitle = String(localized: "Paste Snippet")
+    private var defaultAction: SnippetDefaultAction { core.settings.snippetDefaultAction }
+
+    var primaryActionTitle: String { defaultAction.menuTitle }
 
     private func record(at selection: Int) -> StoredSnippet? {
         let rows = rows
@@ -44,25 +23,25 @@ struct SnippetsScreen: PaletteScreen {
     func actions(at selection: Int) -> PopoverMenuContent? {
         guard let record = record(at: selection) else { return nil }
         return SnippetActionsMenu.content(
-            record: record, core: core,
-            canEdit: store.isWritable(record),
-            userArguments: SnippetArgumentsAccessory.values(
-                for: record, coordinator: core.snippetCoordinator, vm: vm))
+            record: record, defaultAction: defaultAction, core: core,
+            canEdit: store.isWritable(record), userArguments: userArguments(for: record))
     }
 
     func activate(at selection: Int) {
         guard let record = record(at: selection) else { return }
-        core.snippetCoordinator.expandSnippetFromPalette(
-            id: record.id,
-            userArguments: SnippetArgumentsAccessory.values(
-                for: record, coordinator: core.snippetCoordinator, vm: vm))
+        core.snippetCoordinator.performFromPalette(
+            defaultAction, id: record.id, userArguments: userArguments(for: record))
     }
 
-    /// ⌘↵ reveals the file, as it does on a snippet's launcher row.
     func secondary(at selection: Int) -> Bool {
         guard let record = record(at: selection) else { return false }
-        core.snippetCoordinator.showSnippetInFinder(record)
+        core.snippetCoordinator.performFromPalette(
+            defaultAction.alternate, id: record.id, userArguments: userArguments(for: record))
         return true
+    }
+
+    private func userArguments(for record: StoredSnippet) -> [String: String] {
+        SnippetArgumentsAccessory.values(for: record, coordinator: core.snippetCoordinator, vm: vm)
     }
 
     func perform(_ shortcut: PaletteShortcut, at selection: Int) -> Bool {
@@ -75,6 +54,10 @@ struct SnippetsScreen: PaletteScreen {
         case .edit:
             guard store.isWritable(record) else { return false }
             core.snippetCoordinator.editSnippet(record)
+        case .pin:
+            Task { await core.snippetCoordinator.toggleSnippetPinned(id: record.id) }
+        case .showInFinder:
+            core.snippetCoordinator.showSnippetInFinder(record)
         case .delete:
             Task { await core.snippetCoordinator.deleteSnippet(id: record.id) }
         default: return false
@@ -132,15 +115,15 @@ struct SnippetsScreen: PaletteScreen {
 @MainActor
 enum SnippetActionsMenu {
     static func content(
-        record: StoredSnippet, core: AppCore, canEdit: Bool, userArguments: [String: String]
+        record: StoredSnippet, defaultAction: SnippetDefaultAction, core: AppCore, canEdit: Bool,
+        userArguments: [String: String]
     ) -> PopoverMenuContent {
+        let isPinned = record.snippet.isPinned
         var items = [
-            PopoverMenuItem(
-                title: String(localized: "Paste Snippet"), systemImage: "text.quote", shortcut: "↵"
-            ) {
-                core.snippetCoordinator.expandSnippetFromPalette(
-                    id: record.id, userArguments: userArguments)
-            }
+            item(defaultAction, shortcut: "↵", record: record, core: core, userArguments: userArguments),
+            item(
+                defaultAction.alternate, shortcut: "⌘↵", record: record, core: core,
+                userArguments: userArguments),
         ]
         if canEdit {
             items.append(
@@ -158,8 +141,14 @@ enum SnippetActionsMenu {
                 core.snippetCoordinator.editSnippet(nil)
             },
             PopoverMenuItem(
+                title: isPinned ? String(localized: "Unpin Snippet") : String(localized: "Pin Snippet"),
+                systemImage: isPinned ? "pin.slash" : "pin", shortcut: "⌘."
+            ) {
+                Task { await core.snippetCoordinator.toggleSnippetPinned(id: record.id) }
+            },
+            PopoverMenuItem(
                 title: String(localized: "Show in Finder"), systemImage: "folder", startsSection: true,
-                shortcut: "⌘↵"
+                shortcut: "⌘F"
             ) {
                 core.snippetCoordinator.showSnippetInFinder(record)
             },
@@ -171,5 +160,30 @@ enum SnippetActionsMenu {
             },
         ]
         return PopoverMenuContent(header: record.snippet.name, items: items)
+    }
+
+    private static func item(
+        _ action: SnippetDefaultAction, shortcut: String, record: StoredSnippet, core: AppCore,
+        userArguments: [String: String]
+    ) -> PopoverMenuItem {
+        PopoverMenuItem(title: action.menuTitle, systemImage: action.systemImage, shortcut: shortcut) {
+            core.snippetCoordinator.performFromPalette(action, id: record.id, userArguments: userArguments)
+        }
+    }
+}
+
+extension SnippetDefaultAction {
+    fileprivate var menuTitle: String {
+        switch self {
+        case .paste: String(localized: "Paste Snippet")
+        case .copy: String(localized: "Copy Snippet")
+        }
+    }
+
+    fileprivate var systemImage: String {
+        switch self {
+        case .paste: "text.quote"
+        case .copy: "doc.on.doc"
+        }
     }
 }

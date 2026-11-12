@@ -234,6 +234,23 @@ final class SnippetCoordinator {
         AppLauncher.showInFinder(record.fileURL)
     }
 
+    func toggleSnippetPinned(id: StoredSnippet.ID) async {
+        guard settings.snippetsEnabled, var record = store.record(id: id) else { return }
+        record.snippet.isPinned.toggle()
+        do {
+            try await store.save(record)
+        } catch {
+            await core.showNotice(
+                title: String(localized: "Couldn’t Save the Change"),
+                message: error.localizedDescription, symbol: "pin", tone: .danger)
+            return
+        }
+        guard palette.mode == .snippets,
+            let index = store.browserRows(matching: palette.query).firstIndex(where: { $0.id == id })
+        else { return }
+        palette.selection = index
+    }
+
     func deleteSnippet(id: StoredSnippet.ID) async {
         guard settings.snippetsEnabled, let record = store.record(id: id) else { return }
         guard
@@ -304,6 +321,63 @@ final class SnippetCoordinator {
 
     func promptedArguments(for record: StoredSnippet) -> [SnippetTemplateEngine.MissingArgument] {
         SnippetTemplateEngine.declaredArguments(in: record, snippets: store.snippets)
+    }
+
+    func performFromPalette(
+        _ action: SnippetDefaultAction, id: StoredSnippet.ID, userArguments: [String: String]
+    ) {
+        switch action {
+        case .paste: expandSnippetFromPalette(id: id, userArguments: userArguments)
+        case .copy: copySnippetFromPalette(id: id, userArguments: userArguments)
+        }
+    }
+
+    /// Unmarked, so the expansion enters clipboard history like any other copy.
+    func copySnippetFromPalette(id: StoredSnippet.ID, userArguments: [String: String]) {
+        let target = windowController.previousTarget
+        paletteCoordinator.hidePalette()
+        let records = store.snippets
+        guard let record = records.first(where: { $0.id == id }) else { return }
+        let output = settings.snippetsOutput
+        let context = injector.captureExpansionContext(
+            target: target,
+            clipboardHistory: clipboardHistoryForExpansion())
+        let result = SnippetTemplateEngine.expand(
+            record, snippets: records, context: context, userArguments: userArguments, output: output)
+        guard result.missingArguments.isEmpty else {
+            promptSnippetArguments(
+                record: record,
+                records: records,
+                context: context,
+                missingArgs: result.missingArguments,
+                userArguments: userArguments,
+                output: output,
+                onCancel: { target?.restoreFocus() },
+                onExpanded: { [weak self] result in
+                    self?.copy(result, of: record, output: output)
+                    target?.restoreFocus()
+                })
+            return
+        }
+        copy(result, of: record, output: output)
+    }
+
+    private func copy(
+        _ result: SnippetTemplateEngine.ExpansionResult, of record: StoredSnippet,
+        output: SnippetExpansionOutput
+    ) {
+        let injected = Self.injectedText(result, output: output)
+        let item = NSPasteboardItem()
+        guard item.setString(injected.text, forType: .string) else { return }
+        for representation in injected.content.representations {
+            item.setData(representation.data, forType: NSPasteboard.PasteboardType(representation.type))
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard pasteboard.writeObjects([item]) else { return }
+        store.recordUse(id: record.id)
+        guard record.snippet.showsConfirmation || settings.snippetsCompletionFeedback else { return }
+        showMessage(String(localized: "Copied \(record.snippet.name)"), .success)
     }
 
     /// A shortcut lands where the caret is; over the palette, that's what the palette covered.
@@ -421,14 +495,25 @@ final class SnippetCoordinator {
                 records: records,
                 context: context,
                 missingArgs: result.missingArguments,
-                target: target,
-                expectedKeyword: expectedKeyword,
-                keywordLength: keywordLength,
-                automaticGeneration: automaticGeneration,
-                confirmation: confirmation,
                 userArguments: userArguments,
                 output: expansionOutput,
-                injectionDelay: expansionDelay)
+                onCancel: { [weak self] in
+                    self?.injector.cancelArgumentPrompt(
+                        automaticGeneration: automaticGeneration,
+                        target: target)
+                },
+                onExpanded: { [weak self] result in
+                    self?.completeSnippetExpansion(
+                        result,
+                        recordID: record.id,
+                        target: target,
+                        expectedKeyword: expectedKeyword,
+                        keywordLength: keywordLength,
+                        automaticGeneration: automaticGeneration,
+                        confirmation: confirmation,
+                        injectionDelay: expansionDelay,
+                        output: expansionOutput)
+                })
             return
         }
         completeSnippetExpansion(
@@ -448,51 +533,27 @@ final class SnippetCoordinator {
         records: [StoredSnippet],
         context: SnippetTemplateEngine.ExpansionContext,
         missingArgs: [SnippetTemplateEngine.MissingArgument],
-        target: InjectionTarget?,
-        expectedKeyword: String?,
-        keywordLength: Int,
-        automaticGeneration: UInt?,
-        confirmation: String?,
         userArguments: [String: String],
         output: SnippetExpansionOutput,
-        injectionDelay: Duration
+        onCancel: @escaping @MainActor () -> Void,
+        onExpanded: @escaping @MainActor (SnippetTemplateEngine.ExpansionResult) -> Void
     ) {
         // The open dialog would refuse this prompt, and its end must not clear the flag under it.
-        guard !core.isShowingDialog else {
-            injector.cancelArgumentPrompt(
-                automaticGeneration: automaticGeneration,
-                target: target)
-            return
-        }
+        guard !core.isShowingDialog else { return onCancel() }
         listener.isPromptingForArguments = true
         Task {
             let arguments = await core.fillSnippetArguments(
                 snippetName: record.snippet.name,
                 arguments: missingArgs)
             listener.isPromptingForArguments = false
-            guard let arguments else {
-                injector.cancelArgumentPrompt(
-                    automaticGeneration: automaticGeneration,
-                    target: target)
-                return
-            }
-
-            let result = SnippetTemplateEngine.expand(
-                record,
-                snippets: records,
-                context: context,
-                userArguments: userArguments.merging(arguments) { _, prompted in prompted },
-                output: output)
-            completeSnippetExpansion(
-                result,
-                recordID: record.id,
-                target: target,
-                expectedKeyword: expectedKeyword,
-                keywordLength: keywordLength,
-                automaticGeneration: automaticGeneration,
-                confirmation: confirmation,
-                injectionDelay: injectionDelay,
-                output: output)
+            guard let arguments else { return onCancel() }
+            onExpanded(
+                SnippetTemplateEngine.expand(
+                    record,
+                    snippets: records,
+                    context: context,
+                    userArguments: userArguments.merging(arguments) { _, prompted in prompted },
+                    output: output))
         }
     }
 
@@ -507,18 +568,8 @@ final class SnippetCoordinator {
         injectionDelay: Duration,
         output: SnippetExpansionOutput
     ) {
-        let injected: InjectedText
-        switch output {
-        case .markdown:
-            injected = InjectedText(
-                markdown: result.text,
-                plainText: SnippetMarkdownSerializer.plainText(from: result.text),
-                cursorOffsetFromEnd: result.cursorOffsetFromEnd)
-        case .plainText:
-            injected = InjectedText(result.text, cursorOffsetFromEnd: result.cursorOffsetFromEnd)
-        }
         injector.deliver(
-            injected,
+            Self.injectedText(result, output: output),
             target: target,
             expectedKeyword: expectedKeyword,
             keywordLength: keywordLength,
@@ -529,5 +580,19 @@ final class SnippetCoordinator {
                 self.store.recordUse(id: recordID)
                 if let confirmation { self.showMessage(confirmation, .success) }
             })
+    }
+
+    private static func injectedText(
+        _ result: SnippetTemplateEngine.ExpansionResult, output: SnippetExpansionOutput
+    ) -> InjectedText {
+        switch output {
+        case .markdown:
+            InjectedText(
+                markdown: result.text,
+                plainText: SnippetMarkdownSerializer.plainText(from: result.text),
+                cursorOffsetFromEnd: result.cursorOffsetFromEnd)
+        case .plainText:
+            InjectedText(result.text, cursorOffsetFromEnd: result.cursorOffsetFromEnd)
+        }
     }
 }

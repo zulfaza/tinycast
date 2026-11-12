@@ -11,40 +11,47 @@ struct SnippetsList: View {
     let onActivate: () -> Void
     let onActions: (StoredSnippet) -> Void
 
-    private struct Section: Identifiable {
-        let group: SnippetUsageGroup
-        let records: [StoredSnippet]
-        var id: SnippetUsageGroup { group }
+    private enum Row: Identifiable {
+        case header(String)
+        case item(StoredSnippet)
+        var id: String {
+            switch self {
+            case .header(let title): return "header-" + title
+            case .item(let record): return record.id
+            }
+        }
     }
 
     private var firstRowSelected: Bool {
         selectedID != nil && selectedID == results.first?.id
     }
 
-    private var sections: [Section] {
-        let grouped = Dictionary(grouping: results) { usage.group(for: $0.id) }
-        return SnippetUsageGroup.allCases.compactMap { group in
-            guard let records = grouped[group], !records.isEmpty else { return nil }
-            return Section(group: group, records: records)
+    /// The store lists pinned first, then by usage group, so this emits a header on each boundary.
+    private var rows: [Row] {
+        var rows: [Row] = []
+        var currentTitle: String?
+        for record in results {
+            let title = record.snippet.isPinned
+                ? String(localized: "Pinned") : usage.group(for: record.id).title
+            if title != currentTitle {
+                rows.append(.header(title))
+                currentTitle = title
+            }
+            rows.append(.item(record))
         }
+        return rows
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
+        let rows = rows
+        return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(sections) { section in
-                        Text(section.group.title)
-                            .font(metrics.typography.sectionHeader)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, metrics.spacing.md)
-                            .padding(
-                                .top,
-                                section.id == sections.first?.id
-                                    ? metrics.spacing.xs : metrics.spacing.lg)
-                            .padding(.bottom, metrics.spacing.xs)
-                        ForEach(section.records) { record in
+                    ForEach(rows) { row in
+                        switch row {
+                        case .header(let title):
+                            SectionHeader(title: title, isFirst: row.id == rows.first?.id)
+                        case .item(let record):
                             SnippetRow(record: record, selected: record.id == selectedID)
                                 .selectionFrame(record.id == selectedID)
                                 .contentShape(Rectangle())
