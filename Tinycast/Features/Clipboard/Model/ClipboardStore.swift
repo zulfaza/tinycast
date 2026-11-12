@@ -28,6 +28,9 @@ struct ClipboardItem: Identifiable, Hashable, Sendable {
     /// The referenced path, so no call site re-derives a file entry's meaning from `text`.
     var filePath: String? { kind == .file ? filePaths.first : nil }
 
+    /// A file entry that references an image, such as a screenshot copied from its file.
+    var isImageFile: Bool { filePath.map { ClipboardFileKind.of(path: $0) == .image } ?? false }
+
     /// What Paste as Plain Text writes: the text, or a file's path in place of the file.
     var plainText: String? { kind == .image ? nil : text }
 
@@ -35,7 +38,7 @@ struct ClipboardItem: Identifiable, Hashable, Sendable {
     var offersTextExtraction: Bool {
         switch kind {
         case .image: return imagePath != nil
-        case .file: return filePath.map { ClipboardFileKind.of(path: $0) == .image } ?? false
+        case .file: return isImageFile
         case .text: return false
         }
     }
