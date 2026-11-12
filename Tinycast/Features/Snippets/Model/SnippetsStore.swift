@@ -156,6 +156,33 @@ final class SnippetsStore {
         usageRevision &+= 1
     }
 
+    /// A disabled snippet is off everywhere, so the browser lists exactly what the launcher does.
+    func browserRows(matching query: String) -> [StoredSnippet] {
+        let _ = usageRevision
+        let filter = SnippetFilter(query: query.trimmingCharacters(in: .whitespaces))
+        // Grouping is Calendar maths and this runs several times a render, so classify once per row.
+        let keyed = snippets
+            .filter { $0.snippet.isEnabled && filter.matches($0) }
+            .map { record in
+                (
+                    record: record,
+                    group: SnippetUsageGroup.allCases.firstIndex(of: usage.group(for: record.id)) ?? 0,
+                    lastUsed: usage.lastUsed(for: record.id) ?? .distantPast
+                )
+            }
+        return keyed.sorted { lhs, rhs in
+            if lhs.record.snippet.isPinned != rhs.record.snippet.isPinned {
+                return lhs.record.snippet.isPinned
+            }
+            if lhs.group != rhs.group { return lhs.group < rhs.group }
+            if lhs.lastUsed != rhs.lastUsed { return lhs.lastUsed > rhs.lastUsed }
+            let names = lhs.record.snippet.name.localizedCaseInsensitiveCompare(rhs.record.snippet.name)
+            if names != .orderedSame { return names == .orderedAscending }
+            return lhs.record.id < rhs.record.id
+        }
+        .map(\.record)
+    }
+
     private enum RepositoryResult<Value: Sendable>: Sendable {
         case success(Value)
         case failure(SnippetRepository.RepositoryError)

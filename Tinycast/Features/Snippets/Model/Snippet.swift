@@ -7,6 +7,7 @@ struct Snippet: Sendable, Hashable {
     var tags: [String]
     var isEnabled: Bool
     var showsConfirmation: Bool
+    var isPinned: Bool
 
     init(
         name: String,
@@ -14,7 +15,8 @@ struct Snippet: Sendable, Hashable {
         keyword: String? = nil,
         tags: [String] = [],
         isEnabled: Bool = true,
-        showsConfirmation: Bool = false
+        showsConfirmation: Bool = false,
+        isPinned: Bool = false
     ) {
         self.name = name
         self.text = text
@@ -22,6 +24,7 @@ struct Snippet: Sendable, Hashable {
         self.tags = Self.normalizedTags(tags)
         self.isEnabled = isEnabled
         self.showsConfirmation = showsConfirmation
+        self.isPinned = isPinned
     }
 
     private static func normalizedTags(_ tags: [String]) -> [String] {
@@ -76,6 +79,22 @@ struct SnippetExpansionTrigger: Sendable, Equatable {
         self.delimiter = delimiter.isEmpty ? "whitespace" : delimiter
         self.retainsDelimiter = retainsDelimiter
     }
+}
+
+enum SnippetDefaultAction: String, CaseIterable, Identifiable, Sendable {
+    case paste
+    case copy
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .paste: String(localized: "Paste")
+        case .copy: String(localized: "Copy to Clipboard")
+        }
+    }
+
+    var alternate: Self { self == .paste ? .copy : .paste }
 }
 
 /// Fingerprint of a snippet file's bytes, detecting an external edit before a save or delete.

@@ -56,6 +56,7 @@ enum AppSettingsKey: String, CaseIterable {
     case snippetsExcludedApps = "snippetsExcludedApps"
     case snippetsSharedLibraries = "snippetsSharedLibraries"
     case snippetsFolder = "snippetsFolder"
+    case snippetDefaultAction = "snippetDefaultAction"
     case navigationEnabled = "navigationEnabled"
     case menuSearchDisabledApps = "menuSearchDisabledApps"
     case menuSearchShowsAppleMenu = "menuSearchShowsAppleMenu"

@@ -48,6 +48,7 @@ enum SettingsBackupCoverage {
         "snippetsInjectionDelay": .snippetsInjectionDelay,
         "snippetsCompletionFeedback": .snippetsCompletionFeedback,
         "snippetsExcludedApps": .snippetsExcludedApps,
+        "snippetDefaultAction": .snippetDefaultAction,
         "navigationEnabled": .navigationEnabled,
         "menuSearchDisabledApps": .menuSearchDisabledApps,
         "menuSearchShowsAppleMenu": .menuSearchShowsAppleMenu,

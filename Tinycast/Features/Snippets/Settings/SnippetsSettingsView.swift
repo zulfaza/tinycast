@@ -46,6 +46,16 @@ struct SnippetsSettingsView: View {
             expansion
 
             Group {
+                Section {
+                    Picker(selection: $settings.snippetDefaultAction) {
+                        ForEach(SnippetDefaultAction.allCases) { action in
+                            Text(action.title).tag(action)
+                        }
+                    } label: {
+                        SettingsRowTitle(.snippetsSnippets, "Default action")
+                        Text("↵ does this, and Paste takes its shortcut.")
+                    }
+                }
                 FeatureCommandsSection(owner: .snippets, anchor: .snippetsCommands)
                 library
                 libraryNotices
